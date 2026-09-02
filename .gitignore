@@ -1,0 +1,17 @@
+node_modules/
+
+.env
+.env.*
+_tmp-*.json
+
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+
+broker-secrets/
+secrets/
+alpaca-keys.*
+ibkr-credentials.*
+
