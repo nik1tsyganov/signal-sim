@@ -1,0 +1,36 @@
+[
+  {
+    "id": "ptr-house-2026-0001",
+    "source": "house-clerk",
+    "kind": "congress_trade",
+    "ticker": "NVDA",
+    "entities": ["NVIDIA"],
+    "person": "Rep. Example Member",
+    "chamber": "house",
+    "transaction": "purchase",
+    "amount_range_usd": [15001, 50000],
+    "occurred_at": "2026-07-15T00:00:00Z",
+    "filed_at": "2026-08-10T21:00:00Z",
+    "observed_at": "2026-08-11T14:02:00Z",
+    "confidence": 0.9,
+    "raw_ref": "fixture:house-clerk-ptr:example-doc-1",
+    "source_license": "us-gov-public"
+  },
+  {
+    "id": "ptr-senate-2026-0002",
+    "source": "senate-efd",
+    "kind": "congress_trade",
+    "ticker": "NVDA",
+    "entities": ["NVIDIA"],
+    "person": "Sen. Sample Senator",
+    "chamber": "senate",
+    "transaction": "sale",
+    "amount_range_usd": [1001, 15000],
+    "occurred_at": "2026-08-03T00:00:00Z",
+    "filed_at": "2026-08-28T20:30:00Z",
+    "observed_at": "2026-08-29T13:15:00Z",
+    "confidence": 0.9,
+    "raw_ref": "fixture:senate-efd-ptr:example-doc-2",
+    "source_license": "us-gov-public"
+  }
+]

@@ -1,0 +1,14 @@
+﻿{
+  "id": "tr-1",
+  "source": "trendradar",
+  "kind": "news",
+  "ticker": "NVDA",
+  "entities": ["NVIDIA", "GPU", "AI"],
+  "headline": "Nvidia announces next generation AI chip architecture",
+  "url": "https://trendradar.example.com/hotspot/nvda-gen",
+  "occurred_at": "2026-09-02T10:00:00Z",
+  "filed_at": "2026-09-02T10:05:00Z",
+  "observed_at": "2026-09-02T10:10:00Z",
+  "confidence": 0.95,
+  "raw_ref": "tr-hotspot-892"
+}

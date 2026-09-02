@@ -1,0 +1,14 @@
+﻿{
+  "id": "wm-1",
+  "source": "worldmonitor",
+  "kind": "intel_brief",
+  "ticker": "XLE",
+  "entities": ["Exxon", "Chevron", "Oil", "Gas", "OPEC"],
+  "headline": "Energy sector rally expected ahead of OPEC meeting",
+  "url": "https://worldmonitor.example.com/briefs/xle-rally",
+  "occurred_at": "2026-09-02T09:00:00Z",
+  "filed_at": "2026-09-02T09:30:00Z",
+  "observed_at": "2026-09-02T10:15:00Z",
+  "confidence": 0.88,
+  "raw_ref": "wm-brief-441"
+}

@@ -1,0 +1,36 @@
+[
+  {
+    "id": "form4-2026-1001",
+    "source": "sec-edgar",
+    "kind": "insider",
+    "ticker": "NVDA",
+    "entities": ["NVIDIA"],
+    "person": "Sample Officer",
+    "role": "officer",
+    "transaction": "sale",
+    "amount_range_usd": [240000, 240000],
+    "occurred_at": "2026-08-20T00:00:00Z",
+    "filed_at": "2026-08-21T22:10:00Z",
+    "observed_at": "2026-08-22T01:05:00Z",
+    "confidence": 0.95,
+    "raw_ref": "fixture:sec-edgar-form4:example-accession-1",
+    "source_license": "us-gov-public"
+  },
+  {
+    "id": "form4-2026-1002",
+    "source": "sec-edgar",
+    "kind": "insider",
+    "ticker": "NVDA",
+    "entities": ["NVIDIA"],
+    "person": "Sample Chair",
+    "role": "chair",
+    "transaction": "purchase",
+    "amount_range_usd": [98000, 98000],
+    "occurred_at": "2026-08-25T00:00:00Z",
+    "filed_at": "2026-08-26T21:45:00Z",
+    "observed_at": "2026-08-27T00:30:00Z",
+    "confidence": 0.95,
+    "raw_ref": "fixture:sec-edgar-form4:example-accession-2",
+    "source_license": "us-gov-public"
+  }
+]

@@ -1,0 +1,36 @@
+[
+  {
+    "id": "poison-2026-0001",
+    "source": "house-clerk",
+    "kind": "congress_trade",
+    "ticker": "NVDA",
+    "entities": ["NVIDIA"],
+    "person": "Rep. Lookahead Poison",
+    "chamber": "house",
+    "transaction": "purchase",
+    "amount_range_usd": [1001, 15000],
+    "occurred_at": "2026-08-01T00:00:00Z",
+    "filed_at": "2026-08-30T21:00:00Z",
+    "observed_at": "2026-08-05T12:00:00Z",
+    "confidence": 0.9,
+    "raw_ref": "fixture:poison:observed-before-filed",
+    "source_license": "us-gov-public"
+  },
+  {
+    "id": "poison-2026-0002",
+    "source": "sec-edgar",
+    "kind": "insider",
+    "ticker": "NVDA",
+    "entities": ["NVIDIA"],
+    "person": "Sample Time Traveler",
+    "role": "officer",
+    "transaction": "sale",
+    "amount_range_usd": [50000, 50000],
+    "occurred_at": "2026-08-20T00:00:00Z",
+    "filed_at": "2026-08-15T21:00:00Z",
+    "observed_at": "2026-08-21T12:00:00Z",
+    "confidence": 0.95,
+    "raw_ref": "fixture:poison:filed-before-occurred",
+    "source_license": "us-gov-public"
+  }
+]
