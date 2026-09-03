@@ -26,7 +26,7 @@ from signal_sim.events import Event
 from signal_sim.indicators import UNIVERSE
 from signal_sim.safety import assert_event_timestamps
 
-KINDS = ("congress_trade", "insider")
+KINDS = ("congress_trade", "insider", "gov_contract")
 TRANSACTIONS = ("purchase", "sale")
 REQUIRED_FIELDS = (
     "id",

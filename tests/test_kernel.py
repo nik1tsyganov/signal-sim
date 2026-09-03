@@ -112,6 +112,9 @@ class RankingTests(unittest.TestCase):
         store.add(original)
 
         self.assertEqual(store.all(), [original])
+        with self.assertRaises(ValueError):
+            store.add(event(id="stored", headline="rewrite"))
+        self.assertEqual(store.all()[0].headline, original.headline)
 
 
 class PaperOnlyCliTests(unittest.TestCase):
@@ -128,9 +131,12 @@ class PaperOnlyCliTests(unittest.TestCase):
         for host in ("api." + "alpaca.markets", "local" + "host", "127.0.0.1"):
             self.assertNotIn(host, rendered)
             self.assertNotIn(host, source)
-        self.assertTrue(all(set(item) == {"ticker", "score", "news_breakout", "insider_confirm"} for item in payload))
+        allowed = {"ticker", "score", "news_breakout", "insider_confirm", "gov_confirm"}
+        self.assertTrue(all(set(item) <= allowed for item in payload))
+        self.assertTrue(all({"ticker", "score", "news_breakout", "insider_confirm"} <= set(item) for item in payload))
         nvda = next(item for item in payload if item["ticker"] == "NVDA")
         self.assertGreaterEqual(nvda["insider_confirm"], 1)
+        self.assertGreaterEqual(nvda.get("gov_confirm", 0), 1)
 
     def test_rank_without_fixtures_flag_is_refused(self):
         output = io.StringIO()

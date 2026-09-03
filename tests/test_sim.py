@@ -13,8 +13,9 @@ from pathlib import Path
 
 from signal_sim import cli
 from signal_sim.indicators import load_universe
-from signal_sim.sim import MAX_GROSS_FRAC, load_mark_book, run_fixture_replay
+from signal_sim.sim import MAX_GROSS_FRAC, _inventory, load_mark_book, run_fixture_replay
 from signal_sim.sizer import size_targets
+from signal_sim.paper import submit_paper_order
 
 
 REPO = Path(__file__).resolve().parent.parent
@@ -31,7 +32,8 @@ class MarkBookTests(unittest.TestCase):
         self.assertEqual(book["source"], "fixture")
         self.assertGreater(book["exit_at"], book["decision_at"])
         self.assertLessEqual(book["size_frac"], MAX_GROSS_FRAC)
-        self.assertEqual(set(book["marks"]), {"NVDA", "XLE", "DIS"})
+        self.assertTrue({"NVDA", "XLE", "DIS", "SPY", "XLK"}.issubset(set(book["marks"])))
+        self.assertGreaterEqual(len(book["marks"]), 15)
 
 
 class ReplayRoundTripTests(unittest.TestCase):
@@ -79,6 +81,9 @@ class ReplayRoundTripTests(unittest.TestCase):
             book["starting_cash"] + summary["total_pnl"],
         )
         self.assertTrue(math.isfinite(summary["total_pnl"]))
+        self.assertTrue(math.isfinite(summary["hawkes_log_likelihood"]))
+        self.assertEqual(summary["stats"]["n_orders"], 2)
+        self.assertEqual(summary["stats"]["n_positions"], 2)
 
         connection = sqlite3.connect(self.ledger)
         try:
@@ -251,6 +256,33 @@ class ReplayRoundTripTests(unittest.TestCase):
             universe=universe,
         )
         self.assertEqual({row["ticker"] for row in summary["orders"]}, {"NVDA", "XLE"})
+
+
+class InventoryCostTests(unittest.TestCase):
+    def test_two_buys_use_volume_weighted_average_cost(self):
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        ledger = os.path.join(tmp, "ledger.sqlite")
+        audit = os.path.join(tmp, "audit.jsonl")
+        starting = 1000.0
+        for key, px, frac in (("a", 100.0, 0.1), ("b", 200.0, 0.1)):
+            submit_paper_order(
+                {
+                    "ticker": "NVDA",
+                    "side": "buy",
+                    "size_frac": frac,
+                    "event_ids": [f"e-{key}"],
+                    "idempotency_key": key,
+                },
+                ledger_path=ledger,
+                audit_path=audit,
+                mark_px=px,
+                kill_root=tmp,
+            )
+        held, cash, _pnl = _inventory(ledger, starting)
+        self.assertAlmostEqual(held["NVDA"]["shares"], 1.0 + 0.5)
+        self.assertAlmostEqual(held["NVDA"]["fill_px"], (100.0 * 1.0 + 200.0 * 0.5) / 1.5)
+        self.assertAlmostEqual(cash, 800.0)
 
 
 class SizerTests(unittest.TestCase):

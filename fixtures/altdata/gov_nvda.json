@@ -1,0 +1,20 @@
+[
+  {
+    "id": "usa-2026-5001",
+    "source": "fixture",
+    "kind": "gov_contract",
+    "ticker": "NVDA",
+    "entities": ["NVIDIA"],
+    "headline": "Fixture Department of Energy award",
+    "url": "https://example.invalid/usaspending/usa-2026-5001",
+    "person": "Department of Energy",
+    "transaction": "purchase",
+    "amount_range_usd": [2500000, 2500000],
+    "occurred_at": "2026-08-01T00:00:00Z",
+    "filed_at": "2026-08-15T21:00:00Z",
+    "observed_at": "2026-08-16T12:00:00Z",
+    "confidence": 0.8,
+    "raw_ref": "fixture:usaspending:example-1",
+    "source_license": "us-gov-public"
+  }
+]

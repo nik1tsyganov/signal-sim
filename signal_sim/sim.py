@@ -18,6 +18,7 @@ from typing import Any
 
 from .cli import load_fixture_events
 from .events import Event
+from .hawkes import log_likelihood
 from .indicators import UNIVERSE, rank_candidates
 from .paper import OrderRefused, submit_paper_order
 from .sizer import MAX_GROSS_FRAC, size_targets
@@ -73,14 +74,14 @@ def load_mark_book(path: Path | None = None) -> dict[str, Any]:
         raise ValueError("exit_at must be after decision_at")
     starting_cash = _positive(raw.get("starting_cash"), "starting_cash")
     size_frac = _positive(raw.get("size_frac"), "size_frac")
-    if size_frac > MAX_GROSS_FRAC:
-        raise ValueError("size_frac must be at most 1")
     max_drawdown = raw.get("max_drawdown", 0.2)
     max_drawdown = _positive(max_drawdown, "max_drawdown")
     if max_drawdown > 1:
         raise ValueError("max_drawdown must be at most 1")
     max_gross_frac = raw.get("max_gross_frac", MAX_GROSS_FRAC)
     max_gross_frac = _positive(max_gross_frac, "max_gross_frac")
+    if size_frac > max_gross_frac:
+        raise ValueError("size_frac must be at most max_gross_frac")
     marks = raw.get("marks")
     if not isinstance(marks, dict) or not marks:
         raise ValueError("marks must be a non-empty object")
@@ -161,13 +162,16 @@ def _inventory(ledger_path: str, starting_cash: float) -> tuple[dict[str, dict[s
         if side == "buy":
             cash -= shares * float(price)
             new_shares = current["shares"] + shares
+            if new_shares > 0:
+                current["fill_px"] = (
+                    current["shares"] * current["fill_px"] + shares * float(price)
+                ) / new_shares
             current["size_frac"] = current["size_frac"] + float(size_frac)
         else:
             cash += shares * float(price)
             new_shares = current["shares"] - shares
             current["size_frac"] = current["size_frac"] - float(size_frac)
         current["shares"] = new_shares
-        current["fill_px"] = float(price)
         current["event_ids"] = ids or current["event_ids"]
         current["side"] = "buy"
         if new_shares <= 1e-12:
@@ -374,6 +378,7 @@ def run_fixture_replay(
         )
 
     total_pnl = math.fsum(row["pnl"] for row in positions)
+    hawkes_ll = log_likelihood(events, start=book["decision_at"], end=book["exit_at"])
     summary = {
         "mode": "local-paper-replay",
         "mark_source": book.get("source", "fixture"),
@@ -404,6 +409,17 @@ def run_fixture_replay(
         "positions": positions,
         "total_pnl": total_pnl,
         "ending_equity": starting_cash + total_pnl,
+        "hawkes_log_likelihood": hawkes_ll,
+        "stats": {
+            "n_candidates": len(candidates),
+            "n_orders": len(orders),
+            "n_refusals": len(refusals),
+            "n_positions": len(positions),
+            "gross_frac": math.fsum(row["size_frac"] for row in positions),
+            "total_pnl": total_pnl,
+            "ending_equity": starting_cash + total_pnl,
+            "hawkes_log_likelihood": hawkes_ll,
+        },
         "ledger_path": str(ledger_path),
     }
     _write_account(ledger_path, summary)

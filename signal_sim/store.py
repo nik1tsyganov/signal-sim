@@ -37,12 +37,13 @@ class EventStore:
         values["entities"] = json.dumps(values["entities"], separators=(",", ":"))
         columns = tuple(values)
         placeholders = ", ".join("?" for _ in columns)
-        updates = ", ".join(f"{column}=excluded.{column}" for column in columns if column != "id")
-        self.connection.execute(
-            f"INSERT INTO events ({', '.join(columns)}) VALUES ({placeholders}) "
-            f"ON CONFLICT(id) DO UPDATE SET {updates}",
-            tuple(values[column] for column in columns),
-        )
+        try:
+            self.connection.execute(
+                f"INSERT INTO events ({', '.join(columns)}) VALUES ({placeholders})",
+                tuple(values[column] for column in columns),
+            )
+        except sqlite3.IntegrityError as error:
+            raise ValueError(f"duplicate event id: {event.id}") from error
         self.connection.commit()
 
     def add_many(self, events: list[Event]) -> None:

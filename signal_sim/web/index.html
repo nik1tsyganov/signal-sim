@@ -95,6 +95,12 @@
         <div id="content">
             <p>Loading ranks...</p>
         </div>
+        <section id="paper">
+            <h2>Paper replay</h2>
+            <p>Fixture marks only. POST /api/replay. GET does not place orders.</p>
+            <button type="button" id="replay-btn">Run paper replay</button>
+            <div id="replay-result"></div>
+        </section>
     </main>
     <script>
         async function loadRanks() {
@@ -134,6 +140,9 @@
                     if (row.insider_confirm) {
                         sources.push(`<span class="badge">Insider Confirm: ${row.insider_confirm}</span>`);
                     }
+                    if (row.gov_confirm) {
+                        sources.push(`<span class="badge">Gov Confirm: ${row.gov_confirm}</span>`);
+                    }
                     
                     const sourcesHtml = sources.length > 0 ? sources.join('') : '-';
 
@@ -166,7 +175,29 @@
                  .replace(/'/g, "&#039;");
         }
 
-        document.addEventListener('DOMContentLoaded', loadRanks);
+        async function runReplay() {
+            const box = document.getElementById('replay-result');
+            box.textContent = 'Running…';
+            try {
+                const response = await fetch('/api/replay', { method: 'POST' });
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                const data = await response.json();
+                const stats = data.stats || {};
+                box.innerHTML = `<pre>${escapeHtml(JSON.stringify(stats, null, 2))}</pre>`;
+            } catch (err) {
+                box.innerHTML = `<div class="error">Replay failed: ${escapeHtml(err.message)}</div>`;
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            loadRanks();
+            const button = document.getElementById('replay-btn');
+            if (button) {
+                button.addEventListener('click', runReplay);
+            }
+        });
     </script>
 </body>
 </html>

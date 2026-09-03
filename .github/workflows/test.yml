@@ -14,3 +14,5 @@ jobs:
           python-version: "3.12"
       - name: Run unittest
         run: python -m unittest discover -s tests -v
+      - name: Run fixture paper replay
+        run: python -m signal_sim replay --fixtures
