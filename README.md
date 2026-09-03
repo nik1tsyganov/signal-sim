@@ -26,7 +26,7 @@ python3 -m unittest discover -s tests -v
 
 ## Operate (paper only)
 
-`rank`, `intensity`, `diagnose`, and `replay` require `--fixtures`. Omitting that flag exits with status 2. Those commands read checked-in files under `fixtures/`. There is no live broker, no vendor bars, and no Quiver live path.
+`rank`, `intensity`, `diagnose`, and `replay` require `--fixtures`. Omitting that flag exits with status 2. Those commands read checked-in files under `fixtures/`. `rank --fixtures` and `GET /api/rank` cut at the default mark-book `decision_at`, the same window replay uses. Prints first seen after that decision do not change the rank. There is no live broker, no vendor bars, and no Quiver live path.
 
 Every name in `fixtures/universe.json` either has a real fixture mark or cannot fill. Default replay fills only rows in `fixtures/marks/universe.json` (NVDA, XLE). Other ranked names are refused with `no_mark`. That skip is honest: the allocator does not invent a 100.0 fill. `fixtures/marks/liquid.json` is the sector book: tagged `fixture_mark` rows for NVDA/MSFT (tech), XLE/XOM (energy), DIS/NFLX (media), and SPY/QQQ (ETF). Remaining universe names stay `no_mark`. These are research fixtures, not Yahoo/Stooq/vendor bars. Prints are admitted on `observed_at` / `first_seen_at` only; `occurred_at` and congress trade dates do not fill.
 

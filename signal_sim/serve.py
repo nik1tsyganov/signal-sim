@@ -9,10 +9,8 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from . import safety
-from .cli import load_fixture_events
+from .cli import load_fixture_events, rank_fixture_events
 from .diagnose import fixture_diagnostics
-from .indicators import rank_candidates
-from .store import EventStore
 
 
 DEFAULT_PORT = 8765
@@ -24,10 +22,7 @@ _FALLBACK = b"PAPER ONLY\nOpen /api/rank to view ranked fixture events.\n"
 
 
 def _ranked_fixtures() -> list[dict[str, int | str]]:
-    events = load_fixture_events(_FIXTURES_PATH)
-    with EventStore() as store:
-        store.add_many(events)
-        return rank_candidates(store.all())
+    return rank_fixture_events(_FIXTURES_PATH)
 
 
 class _DeskHandler(BaseHTTPRequestHandler):

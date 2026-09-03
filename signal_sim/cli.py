@@ -68,6 +68,18 @@ def load_fixture_events(fixtures: Path) -> list[Event]:
     return _load_group("news", fixtures / "news") + _load_group("altdata", fixtures / "altdata")
 
 
+def rank_fixture_events(fixtures: Path | None = None) -> list[dict[str, int | str]]:
+    """Rank fixture events at the default mark-book decision. Not a live feed."""
+    from .sim import load_mark_book
+
+    root = fixtures if fixtures is not None else Path(__file__).resolve().parent.parent / "fixtures"
+    events = load_fixture_events(root)
+    decision_at = load_mark_book()["decision_at"]
+    with EventStore() as store:
+        store.add_many(events)
+        return rank_candidates(store.all(), window_end=decision_at)
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="signal_sim")
     commands = parser.add_subparsers(dest="command", required=True)
@@ -128,12 +140,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 2
     if args.command == "rank":
-        fixtures = Path(__file__).resolve().parent.parent / "fixtures"
-        events = load_fixture_events(fixtures)
-        with EventStore() as store:
-            store.add_many(events)
-            candidates = rank_candidates(store.all())
-        print(json.dumps(candidates, separators=(",", ":")))
+        print(json.dumps(rank_fixture_events(), separators=(",", ":")))
         return 0
     if args.command == "intensity":
         fixtures = Path(__file__).resolve().parent.parent / "fixtures"

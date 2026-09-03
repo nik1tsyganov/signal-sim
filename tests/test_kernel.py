@@ -145,6 +145,33 @@ class PaperOnlyCliTests(unittest.TestCase):
         nvda = next(item for item in payload if item["ticker"] == "NVDA")
         self.assertGreaterEqual(nvda["insider_confirm"], 1)
         self.assertGreaterEqual(nvda.get("gov_confirm", 0), 1)
+        self.assertEqual(nvda["news_breakout"], 1)
+
+    def test_rank_fixtures_matches_replay_candidates_not_post_decision_prints(self):
+        import os
+        import shutil
+        import tempfile
+
+        from signal_sim.sim import run_fixture_replay
+
+        rank_out = io.StringIO()
+        with redirect_stdout(rank_out):
+            self.assertEqual(cli.main(["rank", "--fixtures"]), 0)
+        ranked = json.loads(rank_out.getvalue())
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        replay = run_fixture_replay(
+            fixtures=Path(__file__).resolve().parent.parent / "fixtures",
+            ledger_path=os.path.join(tmp, "ledger.sqlite"),
+            audit_path=os.path.join(tmp, "audit.jsonl"),
+            kill_root=tmp,
+        )
+        self.assertEqual(
+            [row["ticker"] for row in ranked],
+            [row["ticker"] for row in replay["candidates"]],
+        )
+        nvda = next(item for item in ranked if item["ticker"] == "NVDA")
+        self.assertEqual(nvda["news_breakout"], 1)
 
     def test_rank_without_fixtures_flag_is_refused(self):
         output = io.StringIO()
