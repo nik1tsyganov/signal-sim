@@ -304,7 +304,11 @@ def run_fixture_replay(
     if candidates is None:
         with EventStore() as store:
             store.add_many(events)
-            candidates = rank_candidates(store.all(), universe=universe)
+            candidates = rank_candidates(
+                store.all(),
+                universe=universe,
+                window_end=book["decision_at"],
+            )
 
     size_frac = float(book["size_frac"])
     starting_cash = float(book["starting_cash"])

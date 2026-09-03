@@ -108,6 +108,11 @@ class Event:
         """Docs alias for observed_at. Never use occurred_at for ordering."""
         return self.observed_at
 
+    @property
+    def published_at(self) -> datetime:
+        """Docs alias for occurred_at. Ordering and rank still use observed_at."""
+        return self.occurred_at
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "id": self.id,

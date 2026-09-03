@@ -258,6 +258,13 @@ class IdempotencyTests(PaperOrderPathBase):
         self.assertEqual(lines[1]["outcome"], "refused")
         self.assertEqual(lines[1]["idempotency_key"], "prop-0001")
 
+    def test_same_key_on_a_fresh_ledger_reuses_the_order_id(self):
+        first = self._submit(good_proposal(idempotency_key="stable-key"))
+        other = os.path.join(self.tmp, "ledger-b.sqlite")
+        second = self._submit(good_proposal(idempotency_key="stable-key"), ledger_path=other)
+        self.assertEqual(first["order_id"], second["order_id"])
+        self.assertEqual(len(first["order_id"]), 32)
+
 
 class SingleOrderPathTests(unittest.TestCase):
     def test_only_paper_py_inserts_order_rows(self):

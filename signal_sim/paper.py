@@ -11,10 +11,10 @@ runtime-assembled or bare-number form so no forbidden fragment is a
 contiguous substring of this file (SafetyRailTests scans the package).
 """
 
+import hashlib
 import json
 import math
 import sqlite3
-import uuid
 from datetime import datetime, timezone
 
 from . import safety
@@ -202,7 +202,8 @@ def submit_paper_order(proposal, *, ledger_path, mark_px, audit_path=None, kill_
     if failure is not None:
         refuse(f"R9: {failure}")
 
-    order_id = uuid.uuid4().hex
+    order_id = hashlib.sha256(proposal["idempotency_key"].encode("utf-8")).hexdigest()[:32]
+    fill_id = hashlib.sha256(f"{proposal['idempotency_key']}:fill".encode("utf-8")).hexdigest()[:32]
     con = sqlite3.connect(ledger_path)
     try:
         con.executescript(_SCHEMA)
@@ -227,7 +228,7 @@ def submit_paper_order(proposal, *, ledger_path, mark_px, audit_path=None, kill_
         con.execute(
             "INSERT INTO fills (fill_id, order_id, price, filled_at)"
             " VALUES (?, ?, ?, ?)",
-            (uuid.uuid4().hex, order_id, float(mark_px), decision_at),
+            (fill_id, order_id, float(mark_px), decision_at),
         )
         record["verdict"] = "approved"
         record["outcome"] = "filled"
