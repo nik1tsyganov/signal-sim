@@ -1,0 +1,13 @@
+{
+  "source": "fixture",
+  "note": "Research marks for the local paper ledger. Not a vendor feed, not live prices, not execution quality evidence.",
+  "decision_at": "2026-09-02T10:15:00Z",
+  "exit_at": "2026-09-03T21:00:00Z",
+  "starting_cash": 100000.0,
+  "size_frac": 0.1,
+  "marks": {
+    "NVDA": {"entry_px": 178.5, "exit_px": 180.0},
+    "XLE": {"entry_px": 90.0, "exit_px": 88.5},
+    "DIS": {"entry_px": 110.0, "exit_px": 110.0}
+  }
+}

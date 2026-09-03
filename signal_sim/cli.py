@@ -84,12 +84,25 @@ def _parser() -> argparse.ArgumentParser:
     )
     serve = commands.add_parser("serve", help="serve the local paper-only desk")
     serve.add_argument("--port", type=int, default=8765, help="local desk port")
+    replay = commands.add_parser(
+        "replay",
+        help="replay fixture ranks through the local paper ledger",
+    )
+    replay.add_argument(
+        "--fixtures",
+        action="store_true",
+        help="load local fixture events and marks (required; the only supported input)",
+    )
+    replay.add_argument(
+        "--ledger",
+        help="sqlite ledger path (default: a temporary file)",
+    )
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
-    if args.command in {"rank", "intensity"} and not args.fixtures:
+    if args.command in {"rank", "intensity", "replay"} and not args.fixtures:
         print(
             f"{args.command} requires --fixtures; only local fixture events are supported",
             file=sys.stderr,
@@ -120,6 +133,17 @@ def main(argv: list[str] | None = None) -> int:
         from .serve import serve
 
         serve(args.port)
+        return 0
+    if args.command == "replay":
+        import tempfile
+        from .sim import run_fixture_replay
+
+        fixtures = Path(__file__).resolve().parent.parent / "fixtures"
+        ledger = args.ledger
+        if not ledger:
+            ledger = tempfile.NamedTemporaryFile(prefix="paper-replay-", suffix=".sqlite", delete=False).name
+        summary = run_fixture_replay(fixtures=fixtures, ledger_path=ledger)
+        print(json.dumps(summary, separators=(",", ":")))
         return 0
     return 2
 

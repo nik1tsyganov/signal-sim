@@ -26,7 +26,7 @@ python3 -m unittest discover -s tests -v
 
 ## Run
 
-`rank` and `intensity` require `--fixtures`. That flag is the only supported input; omitting it exits with status 2. Both commands read the checked-in files under `fixtures/`.
+`rank`, `intensity`, and `replay` require `--fixtures`. That flag is the only supported input; omitting it exits with status 2. Those commands read the checked-in files under `fixtures/`.
 
 Rank local fixture events as paper-trade candidates:
 
@@ -47,6 +47,24 @@ python -m signal_sim intensity --fixtures
 ```bash
 python3 -m signal_sim intensity --fixtures
 ```
+
+Replay the existing rank signal through the local paper ledger (fixture entry marks, fixture exit marks, mark-to-market PnL). This is not a vendor price feed and not a live broker:
+
+```powershell
+python -m signal_sim replay --fixtures
+```
+
+```bash
+python3 -m signal_sim replay --fixtures
+```
+
+Optional durable ledger:
+
+```bash
+python3 -m signal_sim replay --fixtures --ledger paper-replay.sqlite
+```
+
+`replay` uses `rank_candidates` as-is, buys each positive-score name at `fixtures/marks/universe.json` `entry_px`, and marks the position to `exit_px`. It does not add a new ranking rule.
 
 ### Desk
 
