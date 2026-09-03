@@ -128,8 +128,12 @@ class AltDataLoaderTests(unittest.TestCase):
 
 class QuiverSourceTests(unittest.TestCase):
     def test_live_raises_without_key_and_terms(self):
-        with self.assertRaisesRegex(NotImplementedError, r"no verified key \+ terms"):
-            QuiverSource().live()
+        with mock.patch("signal_sim.sources.altdata.read_env", return_value=None), mock.patch(
+            "signal_sim.sources.altdata.urllib.request.urlopen"
+        ) as mock_urlopen:
+            with self.assertRaisesRegex(NotImplementedError, r"no verified key \+ terms"):
+                QuiverSource().live()
+        mock_urlopen.assert_not_called()
 
 
 class SafetyRailTests(unittest.TestCase):
