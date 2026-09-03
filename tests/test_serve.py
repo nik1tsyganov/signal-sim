@@ -86,6 +86,10 @@ class ServeTests(unittest.TestCase):
         self.assertIn("MSFT", payload["liquid_fillable"])
         self.assertIn("AAPL", payload["no_mark_default"])
         self.assertIn("AAPL", payload["no_mark_liquid"])
+        self.assertIn("AAPL", payload["universe"])
+        self.assertIn("NVDA", payload["universe"])
+        self.assertEqual(len(payload["universe"]), 15)
+        self.assertTrue(set(payload["default_fillable"]).isdisjoint(payload["no_mark_default"]))
         self.assertNotIn("sharpe", json.dumps(payload).lower())
 
     def test_api_diagnose_matches_diagnose_fixtures(self):
@@ -205,6 +209,8 @@ class ServeTests(unittest.TestCase):
         self.assertIn(b"/api/marks", body)
         self.assertIn(b"no_mark", body)
         self.assertIn(b"data.steps", body)
+        self.assertIn(b"not_in_rank_cut", body)
+        self.assertIn(b"equity_curve", body)
         self.assertNotIn(b"sharpe", body.lower())
 
     def test_root_falls_back_to_paper_only_message(self):

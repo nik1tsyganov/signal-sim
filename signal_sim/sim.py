@@ -195,7 +195,8 @@ def fixture_mark_map() -> dict[str, Any]:
     universe = set(UNIVERSE)
     return {
         "mode": "local-paper-marks",
-        "note": "Fixture marks only. Ranked names without a row are no_mark. Not a vendor feed.",
+        "note": "Fixture marks only. Ranked names without a row are no_mark. Unranked names have no print at decision_at. Not a vendor feed.",
+        "universe": list(UNIVERSE),
         "default_fillable": sorted(default),
         "liquid_fillable": sorted(liquid),
         "no_mark_default": sorted(universe - default),

@@ -69,7 +69,7 @@ Sector mark book (same loop as `replay --fixtures --marks fixtures/marks/liquid.
 curl -sS -X POST http://127.0.0.1:8765/api/liquid
 ```
 
-`GET /api/replay`, `GET /api/path`, and `GET /api/liquid` return 405 and do not place orders. The browser page at that loopback URL loads `GET /api/rank`, `GET /api/marks`, and `GET /api/diagnose`, and has buttons for `POST /api/replay` (default two-name book), `POST /api/liquid` (sector book), and `POST /api/path`. The rank table labels default-fill vs liquid-only vs `no_mark` before anyone posts. Bind is loopback only. Paper only.
+`GET /api/replay`, `GET /api/path`, and `GET /api/liquid` return 405 and do not place orders. The browser page at that loopback URL loads `GET /api/rank`, `GET /api/marks`, and `GET /api/diagnose`, and has buttons for `POST /api/replay` (default two-name book), `POST /api/liquid` (sector book), and `POST /api/path`. The rank table labels default-fill vs liquid-only vs `no_mark` before anyone posts. The Marks section lists the frozen universe, who can fill, and who is not in the rank cut (no print at `decision_at`). Bind is loopback only. Paper only.
 
 ```powershell
 python -m signal_sim replay --fixtures
