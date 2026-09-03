@@ -436,6 +436,15 @@ class SizerTests(unittest.TestCase):
         self.assertEqual(len(skipped), 2)
         self.assertEqual([row["reason"] for row in skipped], ["gross_frac_cap", "gross_frac_cap"])
 
+    def test_max_name_frac_skips_without_a_three_name_ceiling(self):
+        names = [{"ticker": name, "score": 1} for name in ("NVDA", "XLE", "DIS", "SPY", "QQQ")]
+        targets, skipped = size_targets(
+            names, size_frac=0.6, horizon_hours=24.0, max_gross_frac=1.0, max_name_frac=0.5
+        )
+        self.assertEqual(targets, [])
+        self.assertEqual(len(skipped), 5)
+        self.assertTrue(all(row["reason"] == "max_name_frac" for row in skipped))
+
 
 class ReplayCliTests(unittest.TestCase):
     def test_replay_requires_fixtures_flag(self):

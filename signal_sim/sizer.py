@@ -19,6 +19,7 @@ def size_targets(
     size_frac: float,
     horizon_hours: float,
     max_gross_frac: float = MAX_GROSS_FRAC,
+    max_name_frac: float = 1.0,
 ) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
     if size_frac <= 0:
         raise ValueError("size_frac must be positive")
@@ -26,11 +27,16 @@ def size_targets(
         raise ValueError("horizon_hours must be positive")
     if max_gross_frac <= 0:
         raise ValueError("max_gross_frac must be positive")
+    if max_name_frac <= 0:
+        raise ValueError("max_name_frac must be positive")
     targets: list[dict[str, Any]] = []
     skipped: list[dict[str, str]] = []
     gross = 0.0
     for row in candidates:
         ticker = str(row["ticker"])
+        if size_frac > max_name_frac:
+            skipped.append({"ticker": ticker, "reason": "max_name_frac"})
+            continue
         if gross + size_frac > max_gross_frac:
             skipped.append({"ticker": ticker, "reason": "gross_frac_cap"})
             continue

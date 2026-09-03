@@ -91,6 +91,10 @@ def _parse_mark_book(raw: dict[str, Any], marks_path: Path) -> dict[str, Any]:
     max_gross_frac = _positive(max_gross_frac, "max_gross_frac")
     if size_frac > max_gross_frac:
         raise ValueError("size_frac must be at most max_gross_frac")
+    max_name_frac = raw.get("max_name_frac", 1.0)
+    max_name_frac = _positive(max_name_frac, "max_name_frac")
+    if max_name_frac > 1:
+        raise ValueError("max_name_frac must be at most 1")
     cost_bps = _non_negative(raw.get("cost_bps", 0), "cost_bps")
     decision_delay_hours = _positive(raw.get("decision_delay_hours", 1.0), "decision_delay_hours")
     fill_at = decision_at + timedelta(hours=decision_delay_hours)
@@ -119,6 +123,7 @@ def _parse_mark_book(raw: dict[str, Any], marks_path: Path) -> dict[str, Any]:
         "size_frac": size_frac,
         "max_drawdown": max_drawdown,
         "max_gross_frac": max_gross_frac,
+        "max_name_frac": max_name_frac,
         "cost_bps": cost_bps,
         "decision_delay_hours": decision_delay_hours,
         "fill_at": fill_at,
@@ -355,6 +360,7 @@ def run_fixture_replay(
         size_frac=size_frac,
         horizon_hours=horizon_hours,
         max_gross_frac=max_gross_frac,
+        max_name_frac=float(book.get("max_name_frac", 1.0)),
     )
     held, cash, last_pnl = _inventory(ledger_path, starting_cash)
     for ticker in held:
