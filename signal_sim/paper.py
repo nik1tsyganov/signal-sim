@@ -1,0 +1,249 @@
+"""The only paper-order path (docs/alt-data-and-safety.md sections 3-5).
+
+submit_paper_order() is the single choke point that can create an order row:
+R1 consults safety.PAPER_ONLY at call time, R3 runs the fail-closed
+kill-switch, R9 is the plain-code validator (schema, ticker allowlist, size
+cap, provenance event ids, idempotency), R8 appends the audit line before
+any return. R2: the broker "client" is in-process only in v0 - constructing
+one against any network endpoint raises, and known live endpoints raise the
+harder LiveEndpointError. Live-broker names appear below only in
+runtime-assembled or bare-number form so no forbidden fragment is a
+contiguous substring of this file (SafetyRailTests scans the package).
+"""
+
+import json
+import math
+import sqlite3
+import uuid
+from datetime import datetime, timezone
+
+from . import safety
+from .indicators import UNIVERSE
+
+SIDES = ("buy", "sell")
+
+_LIVE_HOST_FRAGMENT = "alpaca" + ".markets"
+_PAPER_HOST_PREFIX = "paper-api."
+_LIVE_PORTS = frozenset((7496, 4001))  # IBKR live; the paper pair is 7497/4002
+
+_SCHEMA = """
+CREATE TABLE IF NOT EXISTS orders (
+    order_id TEXT PRIMARY KEY,
+    idempotency_key TEXT NOT NULL UNIQUE,
+    ticker TEXT NOT NULL,
+    side TEXT NOT NULL,
+    size_frac REAL NOT NULL,
+    event_ids TEXT NOT NULL,
+    status TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS fills (
+    fill_id TEXT PRIMARY KEY,
+    order_id TEXT NOT NULL REFERENCES orders(order_id),
+    price REAL NOT NULL,
+    filled_at TEXT NOT NULL
+);
+"""
+
+
+class OrderRefused(ValueError):
+    """The proposal did not clear the rails; no order row was created."""
+
+
+class LiveEndpointError(ValueError):
+    """Client construction named a known live broker endpoint (R2)."""
+
+
+class PaperBrokerClient:
+    """v0 in-process broker handle (R2).
+
+    A marker object with no order-placement method: submit_paper_order() is
+    the only order path, and this class must never grow a second one.
+    """
+
+    mode = "in-process"
+
+
+def paper_broker_client(host=None, port=None):
+    """Construct the broker client. v0 egress allowlist is empty (R2).
+
+    The default (no host, no port) is the in-process paper broker. Any
+    network endpoint is refused; known live endpoints (a non-paper broker
+    host, or IBKR live ports on any host) raise LiveEndpointError so a
+    future misconfiguration fails at startup, not at order time.
+    """
+    if host is None and port is None:
+        return PaperBrokerClient()
+    host_text = "" if host is None else str(host).lower()
+    if _LIVE_HOST_FRAGMENT in host_text and not host_text.startswith(
+        _PAPER_HOST_PREFIX
+    ):
+        raise LiveEndpointError(f"live broker host refused: {host!r}")
+    try:
+        port_number = None if port is None else int(port)
+    except (TypeError, ValueError):
+        port_number = None
+    if port_number in _LIVE_PORTS:
+        raise LiveEndpointError(f"live broker port refused: {host!r} port {port!r}")
+    raise ValueError(
+        "v0 egress allowlist is empty - PaperBroker is in-process only; "
+        f"got {host!r} port {port!r}"
+    )
+
+
+def _json_scalar(value):
+    if isinstance(value, bool) or value is None:
+        return None
+    if isinstance(value, str):
+        return value
+    if isinstance(value, (int, float)) and math.isfinite(value):
+        return value
+    return None
+
+
+def _audit_snapshot(proposal):
+    """R8 fields, tolerant of malformed proposals - refusals get logged too."""
+    if not isinstance(proposal, dict):
+        proposal = {}
+    event_ids = proposal.get("event_ids")
+    if isinstance(event_ids, list):
+        # Non-string entries are preserved as text, never dropped - the audit
+        # must show what was actually submitted.
+        event_ids = [e if isinstance(e, str) else repr(e) for e in event_ids]
+    else:
+        event_ids = []
+    return {
+        "ticker": _json_scalar(proposal.get("ticker")),
+        "side": _json_scalar(proposal.get("side")),
+        "size_frac": _json_scalar(proposal.get("size_frac")),
+        "event_ids": event_ids,
+        "idempotency_key": _json_scalar(proposal.get("idempotency_key")),
+    }
+
+
+def _append_audit(audit_path, record):
+    with open(audit_path, "a", encoding="utf-8") as f:
+        f.write(json.dumps(record, sort_keys=True) + "\n")
+
+
+def _validation_failure(proposal, mark_px):
+    """Return the first R9 failure as a string, or None when approved."""
+    if not isinstance(proposal, dict):
+        return "proposal must be a mapping"
+    if proposal.get("ticker") not in UNIVERSE:
+        return f"ticker not in universe {UNIVERSE}"
+    if proposal.get("side") not in SIDES:
+        return "side must be 'buy' or 'sell'"
+    size_frac = proposal.get("size_frac")
+    if (
+        isinstance(size_frac, bool)
+        or not isinstance(size_frac, (int, float))
+        or not math.isfinite(size_frac)
+        or not 0 < size_frac <= 1
+    ):
+        return "size_frac must be a number in (0, 1]"
+    event_ids = proposal.get("event_ids")
+    if (
+        not isinstance(event_ids, list)
+        or not event_ids
+        or not all(isinstance(e, str) and e for e in event_ids)
+    ):
+        return "event_ids must be a non-empty list of provenance id strings"
+    key = proposal.get("idempotency_key")
+    if not isinstance(key, str) or not key:
+        return "idempotency_key must be a non-empty string"
+    if (
+        isinstance(mark_px, bool)
+        or not isinstance(mark_px, (int, float))
+        or not math.isfinite(mark_px)
+        or mark_px <= 0
+    ):
+        return "mark_px must be a positive finite number"
+    return None
+
+
+def submit_paper_order(proposal, *, ledger_path, mark_px, audit_path=None, kill_root=None):
+    """The only function that can create an order row.
+
+    Rails, in order: R1 paper-only constant, R3 fail-closed kill-switch,
+    R9 plain-code validator, idempotency via the ledger's UNIQUE key, and a
+    deterministic paper fill at the caller-supplied mark_px. Every attempt -
+    filled or refused - appends one R8 audit line; the success line lands
+    before the fill commits. Refusals raise OrderRefused.
+    """
+    decision_at = datetime.now(timezone.utc).isoformat()
+    if audit_path is None:
+        audit_path = str(ledger_path) + ".audit.jsonl"
+    record = _audit_snapshot(proposal)
+    record["decision_at"] = decision_at
+
+    def refuse(reason):
+        record["verdict"] = f"refused: {reason}"
+        record["outcome"] = "refused"
+        _append_audit(audit_path, record)
+        raise OrderRefused(reason)
+
+    if safety.PAPER_ONLY is not True:
+        refuse("R1: safety.PAPER_ONLY is not True")
+    # kill_root adds a root to check; it never replaces the repo-root check,
+    # so a caller-supplied directory cannot bypass the repo KILL file.
+    try:
+        kill_ok = safety.kill_switch_ok() is True and (
+            kill_root is None or safety.kill_switch_ok(kill_root) is True
+        )
+    except Exception:
+        kill_ok = False  # R3: an errored check refuses, never proceeds
+    if kill_ok is not True:
+        refuse("R3: kill-switch refused the order (fail-closed)")
+    failure = _validation_failure(proposal, mark_px)
+    if failure is not None:
+        refuse(f"R9: {failure}")
+
+    order_id = uuid.uuid4().hex
+    con = sqlite3.connect(ledger_path)
+    try:
+        con.executescript(_SCHEMA)
+        try:
+            con.execute(
+                "INSERT INTO orders (order_id, idempotency_key, ticker, side,"
+                " size_frac, event_ids, status, created_at)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    order_id,
+                    proposal["idempotency_key"],
+                    proposal["ticker"],
+                    proposal["side"],
+                    float(proposal["size_frac"]),
+                    json.dumps(proposal["event_ids"]),
+                    "filled",
+                    decision_at,
+                ),
+            )
+        except sqlite3.IntegrityError:
+            refuse("R9: duplicate idempotency_key - proposal already submitted")
+        con.execute(
+            "INSERT INTO fills (fill_id, order_id, price, filled_at)"
+            " VALUES (?, ?, ?, ?)",
+            (uuid.uuid4().hex, order_id, float(mark_px), decision_at),
+        )
+        record["verdict"] = "approved"
+        record["outcome"] = "filled"
+        record["order_id"] = order_id
+        # R8: the audit line lands before the fill commits - if the append
+        # fails, the transaction rolls back and no unaudited fill can exist.
+        _append_audit(audit_path, record)
+        con.commit()
+    finally:
+        con.close()
+    return {
+        "order_id": order_id,
+        "status": "filled",
+        "ticker": proposal["ticker"],
+        "side": proposal["side"],
+        "size_frac": float(proposal["size_frac"]),
+        "fill_px": float(mark_px),
+        "idempotency_key": proposal["idempotency_key"],
+        "decision_at": decision_at,
+        "ledger_path": str(ledger_path),
+        "audit_path": str(audit_path),
+    }

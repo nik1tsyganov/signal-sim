@@ -11,7 +11,8 @@ from pathlib import Path
 from typing import Any, Callable
 
 from .events import Event
-from .indicators import rank_candidates
+from .hawkes import intensity_at
+from .indicators import UNIVERSE, rank_candidates
 from .store import EventStore
 
 
@@ -70,6 +71,8 @@ def _parser() -> argparse.ArgumentParser:
     commands = parser.add_subparsers(dest="command", required=True)
     rank = commands.add_parser("rank", help="rank paper-trade candidates")
     rank.add_argument("--fixtures", action="store_true", help="load local fixture events")
+    intensity = commands.add_parser("intensity", help="calculate fixture event intensity")
+    intensity.add_argument("--fixtures", action="store_true", help="load local fixture events")
     serve = commands.add_parser("serve", help="serve the local paper-only desk")
     serve.add_argument("--port", type=int, default=8765, help="local desk port")
     return parser
@@ -84,6 +87,19 @@ def main(argv: list[str] | None = None) -> int:
             store.add_many(events)
             candidates = rank_candidates(store.all())
         print(json.dumps(candidates, separators=(",", ":")))
+        return 0
+    if args.command == "intensity":
+        fixtures = Path(__file__).resolve().parent.parent / "fixtures"
+        events = load_fixture_events(fixtures)
+        when = max(event.observed_at for event in events)
+        intensities = {
+            ticker: intensity_at(
+                (event for event in events if event.ticker == ticker),
+                when,
+            )
+            for ticker in UNIVERSE
+        }
+        print(json.dumps(intensities, separators=(",", ":")))
         return 0
     if args.command == "serve":
         from .serve import serve

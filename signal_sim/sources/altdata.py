@@ -99,4 +99,42 @@ class QuiverSource:
     to be live (docs/alt-data-and-safety.md section 5, item 4)."""
 
     def live(self):
-        raise NotImplementedError("no verified key + terms")
+        from signal_sim.secrets import read_env
+        import urllib.request
+        from datetime import datetime, timezone
+        
+        key = read_env("QUIVER_API_KEY")
+        if not key:
+            raise NotImplementedError("no verified key + terms")
+            
+        req = urllib.request.Request("https://api.quiverquant.com/beta/live/congresstrading")
+        req.add_header("Authorization", f"Bearer {key}")
+        
+        with urllib.request.urlopen(req) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+            
+        validated = []
+        observed_now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        
+        for raw in payload:
+            mapped = {
+                "id": str(raw.get("id", "quiver-unknown")),
+                "source": "quiver",
+                "kind": "congress_trade",
+                "ticker": raw.get("ticker", "UNKNOWN"),
+                "person": raw.get("representative", "Unknown"),
+                "transaction": raw.get("transaction", "purchase").lower(),
+                "amount_range_usd": raw.get("amount_range_usd", [0, 0]),
+                "occurred_at": raw.get("trade_date"),
+                "filed_at": raw.get("report_date"),
+                "observed_at": observed_now,
+                "raw_ref": f"quiver:{raw.get('id', 'unknown')}"
+            }
+            if mapped["filed_at"] and mapped["observed_at"] < mapped["filed_at"]:
+                mapped["observed_at"] = mapped["filed_at"]
+                
+            event, _filed = _validated(mapped, "quiver.live")
+            validated.append((event, _filed))
+            
+        validated.sort(key=lambda pair: pair[1])
+        return [event for event, _filed in validated]
