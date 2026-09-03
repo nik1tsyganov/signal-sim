@@ -1,6 +1,6 @@
 {
   "source": "fixture",
-  "note": "Three-step fixture rebalance across NVDA/XLE/DIS/SPY. Rankings are a test input. Not vendor bars.",
+  "note": "Three-step fixture rebalance across NVDA/XLE/DIS/SPY. AAPL is a same-run no_mark skip. Rankings are a test input. Not vendor bars.",
   "starting_cash": 100000.0,
   "max_drawdown": 0.2,
   "max_gross_frac": 1.0,
@@ -15,13 +15,14 @@
       "candidates": [
         {"ticker": "NVDA", "score": 3},
         {"ticker": "XLE", "score": 1},
-        {"ticker": "DIS", "score": 1}
+        {"ticker": "DIS", "score": 1},
+        {"ticker": "AAPL", "score": 1}
       ],
       "marks": {
-        "NVDA": {"entry_px": 178.5, "exit_px": 179.0},
-        "XLE": {"entry_px": 90.0, "exit_px": 89.5},
-        "DIS": {"entry_px": 55.5, "exit_px": 55.8},
-        "SPY": {"entry_px": 40.0, "exit_px": 40.0}
+        "NVDA": {"entry_px": 178.5, "exit_px": 179.0, "source": "fixture", "kind": "fixture_mark"},
+        "XLE": {"entry_px": 90.0, "exit_px": 89.5, "source": "fixture", "kind": "fixture_mark"},
+        "DIS": {"entry_px": 55.5, "exit_px": 55.8, "source": "fixture", "kind": "fixture_mark"},
+        "SPY": {"entry_px": 40.0, "exit_px": 40.0, "source": "fixture", "kind": "fixture_mark"}
       }
     },
     {
@@ -33,10 +34,10 @@
         {"ticker": "DIS", "score": 1}
       ],
       "marks": {
-        "NVDA": {"entry_px": 179.0, "exit_px": 179.5},
-        "XLE": {"entry_px": 89.5, "exit_px": 89.0},
-        "DIS": {"entry_px": 55.8, "exit_px": 55.6},
-        "SPY": {"entry_px": 40.0, "exit_px": 40.2}
+        "NVDA": {"entry_px": 179.0, "exit_px": 179.5, "source": "fixture", "kind": "fixture_mark"},
+        "XLE": {"entry_px": 89.5, "exit_px": 89.0, "source": "fixture", "kind": "fixture_mark"},
+        "DIS": {"entry_px": 55.8, "exit_px": 55.6, "source": "fixture", "kind": "fixture_mark"},
+        "SPY": {"entry_px": 40.0, "exit_px": 40.2, "source": "fixture", "kind": "fixture_mark"}
       }
     },
     {
@@ -47,10 +48,10 @@
         {"ticker": "SPY", "score": 1}
       ],
       "marks": {
-        "NVDA": {"entry_px": 179.5, "exit_px": 180.0},
-        "XLE": {"entry_px": 89.0, "exit_px": 88.5},
-        "DIS": {"entry_px": 55.6, "exit_px": 56.0},
-        "SPY": {"entry_px": 40.2, "exit_px": 39.8}
+        "NVDA": {"entry_px": 179.5, "exit_px": 180.0, "source": "fixture", "kind": "fixture_mark"},
+        "XLE": {"entry_px": 89.0, "exit_px": 88.5, "source": "fixture", "kind": "fixture_mark"},
+        "DIS": {"entry_px": 55.6, "exit_px": 56.0, "source": "fixture", "kind": "fixture_mark"},
+        "SPY": {"entry_px": 40.2, "exit_px": 39.8, "source": "fixture", "kind": "fixture_mark"}
       }
     }
   ]

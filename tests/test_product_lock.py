@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from unittest import mock
 
 from signal_sim.events import Event
-from signal_sim.indicators import UNIVERSE, load_universe, rank_candidates
+from signal_sim.indicators import SECTORS, UNIVERSE, load_universe, rank_candidates
 from signal_sim.sizer import size_targets
 from signal_sim.sources.altdata import QuiverSource, load_events
 from signal_sim.sources import worldmonitor
@@ -52,6 +52,8 @@ class ProductLockTests(unittest.TestCase):
         self.assertGreater(len(universe), 3)
         self.assertTrue({"NVDA", "XLE", "DIS", "SPY", "XOM"}.issubset(set(universe)))
         self.assertEqual(universe, UNIVERSE)
+        self.assertEqual(set(SECTORS), {"tech", "energy", "media", "etf"})
+        self.assertEqual({ticker for names in SECTORS.values() for ticker in names}, set(universe))
 
     def test_quiver_and_world_monitor_live_stay_stubbed_without_keys(self):
         with mock.patch("signal_sim.sources.altdata.read_env", return_value=None):
@@ -90,3 +92,9 @@ class ProductLockTests(unittest.TestCase):
             rank_candidates([congress], window_end=window_end, universe=("NVDA",)),
             [],
         )
+
+    def test_package_has_no_yfinance_or_vendor_bar_client(self):
+        package = __import__("pathlib").Path(__file__).resolve().parent.parent / "signal_sim"
+        source = "\n".join(path.read_text(encoding="utf-8") for path in package.rglob("*.py")).lower()
+        for fragment in ("yfinance", "stooq", "yahoo"):
+            self.assertNotIn(fragment, source, fragment)

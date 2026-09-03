@@ -1,6 +1,12 @@
 {
   "frozen_at": "2026-09-02",
   "note": "Frozen research basket for US tech, energy, media, and ETFs. Unit tests may pass a 3-name subset. This file is the ceiling-free default.",
+  "sectors": {
+    "tech": ["NVDA", "AAPL", "MSFT", "META", "GOOGL", "AMZN"],
+    "energy": ["XLE", "XOM", "CVX"],
+    "media": ["DIS", "NFLX", "CMCSA"],
+    "etf": ["SPY", "QQQ", "XLK"]
+  },
   "tickers": [
     "NVDA",
     "AAPL",

@@ -28,7 +28,35 @@ def load_universe(path: Path | None = None) -> tuple[str, ...]:
     return tuple(names)
 
 
+def load_sectors(path: Path | None = None) -> dict[str, tuple[str, ...]]:
+    """Load sector membership for the frozen universe."""
+    raw = json.loads((path or _UNIVERSE_PATH).read_text(encoding="utf-8"))
+    sectors = raw.get("sectors")
+    if not isinstance(sectors, dict) or not sectors:
+        raise ValueError("universe sectors must be a non-empty object")
+    universe = set(load_universe(path))
+    parsed: dict[str, tuple[str, ...]] = {}
+    seen: set[str] = set()
+    for name, tickers in sectors.items():
+        if not isinstance(name, str) or not name:
+            raise ValueError("sector names must be non-empty strings")
+        if not isinstance(tickers, list) or not tickers:
+            raise ValueError(f"sector {name!r} tickers must be a non-empty list")
+        names = tuple(str(ticker) for ticker in tickers)
+        if any(ticker not in universe for ticker in names):
+            raise ValueError(f"sector {name!r} contains a ticker outside the universe")
+        overlap = seen.intersection(names)
+        if overlap:
+            raise ValueError(f"duplicate sector ticker: {sorted(overlap)[0]!r}")
+        seen.update(names)
+        parsed[name] = names
+    if seen != universe:
+        raise ValueError("sector membership must cover the frozen universe")
+    return parsed
+
+
 UNIVERSE = load_universe()
+SECTORS = load_sectors()
 NEWS_KINDS = {"news", "intel_brief"}
 CONFIRM_KINDS = {"insider", "congress_trade"}
 GOV_CONFIRM_KINDS = {"gov_contract"}

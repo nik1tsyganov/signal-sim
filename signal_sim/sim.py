@@ -109,10 +109,16 @@ def _parse_mark_book(raw: dict[str, Any], marks_path: Path) -> dict[str, Any]:
             raise ValueError(f"mark ticker not in universe: {ticker!r}")
         if not isinstance(row, dict):
             raise ValueError(f"marks.{ticker} must be an object")
+        mark_source = str(row.get("source", "fixture"))
+        mark_kind = str(row.get("kind", "fixture_mark"))
+        if mark_source != "fixture" or mark_kind != "fixture_mark":
+            raise ValueError(f"marks.{ticker} must be tagged source=fixture kind=fixture_mark")
         parsed[ticker] = {
             "entry_px": _positive(row.get("entry_px"), f"marks.{ticker}.entry_px"),
             "exit_px": _positive(row.get("exit_px"), f"marks.{ticker}.exit_px"),
             "unused": bool(row.get("unused", False)),
+            "source": mark_source,
+            "kind": mark_kind,
         }
     book = {
         "source": raw.get("source", "fixture"),
@@ -190,7 +196,11 @@ def load_mark_path(path: Path | None = None) -> list[dict[str, Any]]:
 
 
 def _events_at(events: list[Event], when: datetime) -> list[Event]:
-    """Prints observed after ``when`` are not in the decision information set."""
+    """Prints first seen after ``when`` are not in the decision information set.
+
+    Order time is ``observed_at`` / ``first_seen_at`` only. ``occurred_at``
+    and congress trade dates do not admit a print.
+    """
     return [event for event in events if event.observed_at <= when]
 
 

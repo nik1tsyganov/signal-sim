@@ -12,7 +12,7 @@ from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 
 from signal_sim import cli
-from signal_sim.indicators import load_universe
+from signal_sim.indicators import load_sectors, load_universe
 from signal_sim.sim import MAX_GROSS_FRAC, _inventory, load_mark_book, load_mark_path, run_fixture_path, run_fixture_replay
 from signal_sim.sizer import size_targets
 from signal_sim.paper import submit_paper_order
@@ -35,13 +35,31 @@ class MarkBookTests(unittest.TestCase):
         self.assertEqual(set(book["marks"]), {"NVDA", "XLE"})
         self.assertNotIn("AAPL", book["marks"])
         liquid = load_mark_book(FIXTURES / "marks" / "liquid.json")
-        self.assertEqual(set(liquid["marks"]), {"NVDA", "XLE", "DIS", "SPY"})
+        self.assertEqual(
+            set(liquid["marks"]),
+            {"NVDA", "MSFT", "XLE", "XOM", "DIS", "NFLX", "SPY", "QQQ"},
+        )
+        self.assertTrue(all(row["kind"] == "fixture_mark" for row in liquid["marks"].values()))
+        self.assertTrue(all(row["source"] == "fixture" for row in liquid["marks"].values()))
         self.assertNotEqual(liquid["marks"]["DIS"]["entry_px"], 100.0)
         self.assertNotEqual(liquid["marks"]["SPY"]["entry_px"], 100.0)
+        self.assertNotIn(100.0, [row["entry_px"] for row in liquid["marks"].values()])
+        sectors = load_sectors()
+        for names in sectors.values():
+            self.assertTrue(set(names) & set(liquid["marks"]))
+        self.assertTrue(set(load_universe()) - set(liquid["marks"]))
         self.assertGreaterEqual(book["cost_bps"], 0)
         self.assertGreater(book["decision_delay_hours"], 0)
         self.assertLess(book["decision_at"], book["fill_at"])
         self.assertLess(book["fill_at"], book["exit_at"])
+
+    def test_vendor_tagged_mark_is_rejected(self):
+        from signal_sim.sim import _parse_mark_book
+
+        raw = json.loads((FIXTURES / "marks" / "universe.json").read_text(encoding="utf-8"))
+        raw["marks"]["NVDA"]["source"] = "yahoo"
+        with self.assertRaisesRegex(ValueError, "fixture_mark"):
+            _parse_mark_book(raw, FIXTURES / "marks" / "universe.json")
 
 
 class ReplayRoundTripTests(unittest.TestCase):
@@ -66,6 +84,10 @@ class ReplayRoundTripTests(unittest.TestCase):
         self.assertEqual({row["ticker"] for row in summary["orders"]}, {"NVDA", "XLE"})
         self.assertIn({"ticker": "DIS", "reason": "no_mark"}, summary["refusals"])
         self.assertIn({"ticker": "SPY", "reason": "no_mark"}, summary["refusals"])
+        self.assertIn({"ticker": "MSFT", "reason": "no_mark"}, summary["refusals"])
+        self.assertIn({"ticker": "XOM", "reason": "no_mark"}, summary["refusals"])
+        self.assertIn({"ticker": "NFLX", "reason": "no_mark"}, summary["refusals"])
+        self.assertIn({"ticker": "QQQ", "reason": "no_mark"}, summary["refusals"])
         self.assertEqual(len(summary["positions"]), 2)
 
         expected = {
@@ -232,6 +254,7 @@ class ReplayRoundTripTests(unittest.TestCase):
         finally:
             connection.close()
         self.assertNotIn("fx-nvda-late", json.loads(raw_ids))
+        self.assertNotIn("fx-nvda-trade-date", json.loads(raw_ids))
         self.assertEqual(summary["stats"]["hawkes_n_arrivals"], 1)
 
     def test_second_replay_at_target_places_no_new_orders(self):
@@ -375,7 +398,7 @@ class ReplayRoundTripTests(unittest.TestCase):
                 self.assertEqual(summary["orders"], [], ticker)
                 self.assertEqual(summary["refusals"], [{"ticker": ticker, "reason": "no_mark"}], ticker)
 
-    def test_liquid_marks_fill_four_names(self):
+    def test_liquid_marks_fill_each_sector(self):
         summary = run_fixture_replay(
             fixtures=FIXTURES,
             ledger_path=self.ledger,
@@ -383,9 +406,13 @@ class ReplayRoundTripTests(unittest.TestCase):
             kill_root=self.tmp,
             mark_book_path=FIXTURES / "marks" / "liquid.json",
         )
-        self.assertEqual({row["ticker"] for row in summary["orders"]}, {"NVDA", "XLE", "DIS", "SPY"})
+        filled = {row["ticker"] for row in summary["orders"]}
+        self.assertEqual(filled, {"NVDA", "MSFT", "XLE", "XOM", "DIS", "NFLX", "SPY", "QQQ"})
         self.assertEqual(summary["refusals"], [])
         self.assertNotIn(100.0, [row["fill_px"] for row in summary["orders"]])
+        sectors = load_sectors()
+        for names in sectors.values():
+            self.assertTrue(filled & set(names))
 
     def test_cost_bps_reduces_ending_equity_by_declared_fees(self):
         book = load_mark_book()
@@ -584,7 +611,10 @@ class ReplayCliTests(unittest.TestCase):
             )
         self.assertEqual(exit_code, 0)
         payload = json.loads(output.getvalue())
-        self.assertEqual({row["ticker"] for row in payload["orders"]}, {"NVDA", "XLE", "DIS", "SPY"})
+        self.assertEqual(
+            {row["ticker"] for row in payload["orders"]},
+            {"NVDA", "MSFT", "XLE", "XOM", "DIS", "NFLX", "SPY", "QQQ"},
+        )
         self.assertEqual(payload["refusals"], [])
         self.assertNotIn(100.0, [row["fill_px"] for row in payload["orders"]])
 
@@ -613,6 +643,11 @@ class MarkPathTests(unittest.TestCase):
         self.assertEqual(len(summary["steps"]), 3)
         first_tickers = {row["ticker"] for row in summary["steps"][0]["orders"]}
         self.assertEqual(first_tickers, {"NVDA", "XLE", "DIS"})
+        self.assertIn({"ticker": "AAPL", "reason": "no_mark"}, summary["steps"][0]["refusals"])
+        sectors = load_sectors()
+        self.assertTrue(first_tickers & set(sectors["tech"]))
+        self.assertTrue(first_tickers & set(sectors["energy"]))
+        self.assertTrue(first_tickers & set(sectors["media"]))
         second_sides = {(row["ticker"], row["side"]) for row in summary["steps"][1]["orders"]}
         self.assertIn(("NVDA", "buy"), second_sides)
         self.assertIn(("XLE", "sell"), second_sides)

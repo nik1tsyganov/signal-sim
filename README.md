@@ -28,7 +28,7 @@ python3 -m unittest discover -s tests -v
 
 `rank`, `intensity`, `diagnose`, and `replay` require `--fixtures`. Omitting that flag exits with status 2. Those commands read checked-in files under `fixtures/`. There is no live broker, no vendor bars, and no Quiver live path.
 
-Every name in `fixtures/universe.json` either has a real fixture mark or cannot fill. Default replay fills only rows in `fixtures/marks/universe.json` (NVDA, XLE). Ranked names without a row, including DIS and SPY from checked-in news, are refused with `no_mark`. That skip is honest: the allocator does not invent a 100.0 fill. A second checked-in book, `fixtures/marks/liquid.json`, adds fixture marks for DIS and SPY (media / ETF) so a four-name replay can fill without a placeholder price. Prints observed after `decision_at` are not attached to orders.
+Every name in `fixtures/universe.json` either has a real fixture mark or cannot fill. Default replay fills only rows in `fixtures/marks/universe.json` (NVDA, XLE). Other ranked names are refused with `no_mark`. That skip is honest: the allocator does not invent a 100.0 fill. `fixtures/marks/liquid.json` is the sector book: tagged `fixture_mark` rows for NVDA/MSFT (tech), XLE/XOM (energy), DIS/NFLX (media), and SPY/QQQ (ETF). Remaining universe names stay `no_mark`. These are research fixtures, not Yahoo/Stooq/vendor bars. Prints are admitted on `observed_at` / `first_seen_at` only; `occurred_at` and congress trade dates do not fill.
 
 ```bash
 python3 -m signal_sim replay --fixtures
@@ -37,7 +37,7 @@ python3 -m signal_sim replay --fixtures --marks fixtures/marks/liquid.json
 python3 -m signal_sim replay --fixtures --path
 ```
 
-`--path` walks `fixtures/marks/path.json`: three fixture steps on one ledger (open → add/reduce/close → rotate onto SPY) across NVDA, XLE, DIS, and SPY. Rankings on that path are a test input. Marks stay fixtures. Ordering is `observed_at` / `decision_at`. This is not a market and not a live result.
+`--path` walks `fixtures/marks/path.json`: three fixture steps on one ledger (open → add/reduce/close → rotate onto SPY) across NVDA, XLE, DIS, and SPY. Step 1 also ranks AAPL and skips it with `no_mark`. Rankings on that path are a test input. Marks stay fixtures. Ordering is `observed_at` / `decision_at`. This is not a market and not a live result.
 
 Desk (same paper loop as `replay --fixtures`):
 

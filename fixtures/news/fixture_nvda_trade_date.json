@@ -1,0 +1,14 @@
+{
+  "id": "fx-nvda-trade-date",
+  "source": "fixture",
+  "kind": "news",
+  "ticker": "NVDA",
+  "entities": ["NVIDIA"],
+  "headline": "Trade-date print observed after the decision; replay must ignore occurred_at",
+  "url": "https://example.invalid/fixture-nvda-trade-date",
+  "occurred_at": "2026-09-01T09:00:00Z",
+  "filed_at": "2026-09-01T09:01:00Z",
+  "observed_at": "2026-09-04T15:00:00Z",
+  "confidence": 0.7,
+  "raw_ref": "fixture:nvda-trade-date"
+}

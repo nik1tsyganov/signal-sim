@@ -162,6 +162,53 @@ class DiagnoseCliTests(unittest.TestCase):
             "local-paper-replay",
         )
 
+    def test_mutated_intensity_does_not_change_rank_or_replay_fills(self):
+        import os
+        import shutil
+        import tempfile
+        from pathlib import Path
+
+        from signal_sim.cli import load_fixture_events
+        from signal_sim.diagnose import fixture_diagnostics
+        from signal_sim.indicators import rank_candidates
+        from signal_sim.sim import load_mark_book, run_fixture_replay
+
+        fixtures = Path(__file__).resolve().parent.parent / "fixtures"
+        events = load_fixture_events(fixtures)
+        decision_at = load_mark_book()["decision_at"]
+        rank_before = rank_candidates(events, window_end=decision_at)
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        first = run_fixture_replay(
+            fixtures=fixtures,
+            ledger_path=os.path.join(tmp, "before.sqlite"),
+            audit_path=os.path.join(tmp, "before.audit"),
+            kill_root=tmp,
+        )
+        fills_before = [(row["ticker"], row["side"], row["fill_px"]) for row in first["orders"]]
+
+        def inflated(_events, _when, **_kwargs):
+            return 99.0
+
+        with patch("signal_sim.diagnose.intensity_at", side_effect=inflated), patch(
+            "signal_sim.hawkes.intensity_at", side_effect=inflated
+        ):
+            rank_after = rank_candidates(events, window_end=decision_at)
+            second = run_fixture_replay(
+                fixtures=fixtures,
+                ledger_path=os.path.join(tmp, "after.sqlite"),
+                audit_path=os.path.join(tmp, "after.audit"),
+                kill_root=tmp,
+            )
+            diagnose = fixture_diagnostics(events)
+
+        fills_after = [(row["ticker"], row["side"], row["fill_px"]) for row in second["orders"]]
+        self.assertEqual(rank_before, rank_after)
+        self.assertEqual(fills_before, fills_after)
+        self.assertEqual(fills_before, [("NVDA", "buy", 178.5), ("XLE", "buy", 90.0)])
+        self.assertTrue(all(value == 99.0 for value in diagnose["intensity"].values()))
+        self.assertNotIn("sharpe", json.dumps(diagnose).lower())
+
 
 if __name__ == "__main__":
     unittest.main()
