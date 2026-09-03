@@ -80,6 +80,10 @@ class ReplayRoundTripTests(unittest.TestCase):
             summary["ending_equity"],
             book["starting_cash"] + summary["total_pnl"],
         )
+        self.assertAlmostEqual(
+            summary["ending_equity"],
+            summary["cash"] + math.fsum(row["shares"] * row["exit_px"] for row in summary["positions"]),
+        )
         self.assertTrue(math.isfinite(summary["total_pnl"]))
         self.assertTrue(math.isfinite(summary["hawkes_log_likelihood"]))
         self.assertEqual(summary["stats"]["n_orders"], 2)
@@ -350,9 +354,15 @@ class InventoryCostTests(unittest.TestCase):
         self.assertEqual(closed["orders"][0]["side"], "sell")
         self.assertAlmostEqual(closed["orders"][0]["size_frac"], 1.5 * 150.0 / starting)
         self.assertEqual(closed["positions"], [])
+        realized = 1.5 * (150.0 - (100.0 * 1.0 + 200.0 * 0.5) / 1.5)
         held, cash, _pnl = _inventory(ledger, starting)
         self.assertEqual(held, {})
-        self.assertAlmostEqual(cash, starting + 1.5 * (150.0 - (100.0 * 1.0 + 200.0 * 0.5) / 1.5))
+        self.assertAlmostEqual(cash, starting + realized)
+        self.assertAlmostEqual(closed["cash"], starting + realized)
+        self.assertAlmostEqual(closed["ending_equity"], starting + realized)
+        self.assertAlmostEqual(closed["total_pnl"], realized)
+        self.assertAlmostEqual(closed["stats"]["realized_pnl"], realized)
+        self.assertAlmostEqual(closed["stats"]["unrealized_pnl"], 0.0)
 
 
 class SizerTests(unittest.TestCase):
@@ -459,6 +469,11 @@ class MarkPathTests(unittest.TestCase):
             summary["starting_cash"] + summary["total_pnl"],
         )
         self.assertAlmostEqual(summary["ending_equity"], summary["equity_curve"][-1])
+        last = summary["steps"][-1]
+        self.assertAlmostEqual(
+            last["ending_equity"],
+            last["cash"] + math.fsum(row["shares"] * row["exit_px"] for row in last["positions"]),
+        )
         self.assertNotIn("sharpe", json.dumps(summary).lower())
         self.assertLessEqual(summary["worst_drawdown"], 0.0)
 

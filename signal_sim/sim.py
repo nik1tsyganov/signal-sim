@@ -420,7 +420,9 @@ def run_fixture_replay(
             }
         )
 
-    total_pnl = math.fsum(row["pnl"] for row in positions)
+    mark_value = math.fsum(row["shares"] * row["exit_px"] for row in positions)
+    ending_equity = cash + mark_value
+    total_pnl = ending_equity - starting_cash
     hawkes_ll = log_likelihood(events, start=book["decision_at"], end=book["exit_at"])
     hawkes_n_arrivals = sum(
         1
@@ -433,7 +435,8 @@ def run_fixture_replay(
     hit_rate = (n_winners / len(positions)) if positions else None
     turnover = math.fsum(order["size_frac"] for order in orders)
     max_name_frac = max((row["size_frac"] for row in positions), default=0.0)
-    ending_equity = starting_cash + total_pnl
+    unrealized_pnl = math.fsum(row["pnl"] for row in positions)
+    realized_pnl = total_pnl - unrealized_pnl
     gross_frac = math.fsum(row["size_frac"] for row in positions)
     summary = {
         "mode": "local-paper-replay",
@@ -479,6 +482,9 @@ def run_fixture_replay(
             "turnover": turnover,
             "max_name_frac": max_name_frac,
             "gross_frac": gross_frac,
+            "mark_value": mark_value,
+            "unrealized_pnl": unrealized_pnl,
+            "realized_pnl": realized_pnl,
             "total_pnl": total_pnl,
             "ending_equity": ending_equity,
             "hawkes_log_likelihood": hawkes_ll,
