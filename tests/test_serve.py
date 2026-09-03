@@ -182,6 +182,11 @@ class ServeTests(unittest.TestCase):
 
         self.assertEqual(body, serve.INDEX_PATH.read_bytes())
         self.assertEqual(content_type, "text/html")
+        self.assertIn(b"/api/liquid", body)
+        self.assertIn(b"/api/path", body)
+        self.assertIn(b"/api/diagnose", body)
+        self.assertIn(b"no_mark", body)
+        self.assertNotIn(b"sharpe", body.lower())
 
     def test_root_falls_back_to_paper_only_message(self):
         missing = Path(__file__).with_name("missing-index.html")

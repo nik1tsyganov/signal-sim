@@ -86,6 +86,26 @@
             font-size: 0.85em;
             margin-right: 0.5rem;
         }
+        .actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            margin: 0.75rem 0;
+        }
+        button {
+            background: var(--border);
+            color: var(--text);
+            border: 1px solid var(--accent);
+            padding: 0.45rem 0.8rem;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        pre {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            padding: 0.75rem 1rem;
+            overflow: auto;
+        }
     </style>
 </head>
 <body>
@@ -95,10 +115,19 @@
         <div id="content">
             <p>Loading ranks...</p>
         </div>
+        <section id="diagnose">
+            <h2>Diagnose</h2>
+            <p>GET /api/diagnose. Hawkes intensity and clusters only. Not a ranking input.</p>
+            <div id="diagnose-result">Loading diagnose…</div>
+        </section>
         <section id="paper">
             <h2>Paper replay</h2>
-            <p>Fixture marks only. POST /api/replay. GET does not place orders.</p>
-            <button type="button" id="replay-btn">Run paper replay</button>
+            <p>Fixture marks only. GET does not place orders. Default replay fills NVDA/XLE; unmarked ranked names are no_mark. Liquid fills the sector book. Path walks the three-step ledger.</p>
+            <div class="actions">
+                <button type="button" id="replay-btn">Run default replay</button>
+                <button type="button" id="liquid-btn">Run sector liquid</button>
+                <button type="button" id="path-btn">Run three-step path</button>
+            </div>
             <div id="replay-result"></div>
         </section>
     </main>
@@ -175,28 +204,63 @@
                  .replace(/'/g, "&#039;");
         }
 
-        async function runReplay() {
+        function renderPaperSummary(data) {
+            const last = data.steps && data.steps.length ? data.steps[data.steps.length - 1] : data;
+            const orders = (data.orders || last.orders || []).map((row) => row.ticker);
+            const refusals = data.refusals || last.refusals || [];
+            const held = (last.positions || []).map((row) => row.ticker);
+            return {
+                mode: data.mode,
+                orders,
+                refusals,
+                held,
+                n_steps: (data.steps || []).length || undefined,
+            };
+        }
+
+        async function postPaper(path) {
             const box = document.getElementById('replay-result');
             box.textContent = 'Running…';
             try {
-                const response = await fetch('/api/replay', { method: 'POST' });
+                const response = await fetch(path, { method: 'POST' });
                 if (!response.ok) {
                     throw new Error(`HTTP ${response.status}: ${response.statusText}`);
                 }
                 const data = await response.json();
-                const stats = data.stats || {};
-                box.innerHTML = `<pre>${escapeHtml(JSON.stringify(stats, null, 2))}</pre>`;
+                box.innerHTML = `<pre>${escapeHtml(JSON.stringify(renderPaperSummary(data), null, 2))}</pre>`;
             } catch (err) {
                 box.innerHTML = `<div class="error">Replay failed: ${escapeHtml(err.message)}</div>`;
             }
         }
 
+        async function loadDiagnose() {
+            const box = document.getElementById('diagnose-result');
+            try {
+                const response = await fetch('/api/diagnose');
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                const data = await response.json();
+                box.innerHTML = `<pre>${escapeHtml(JSON.stringify({
+                    mode: data.mode,
+                    note: data.note,
+                    when: data.when,
+                    n_clusters: (data.stats || {}).n_clusters,
+                }, null, 2))}</pre>`;
+            } catch (err) {
+                box.innerHTML = `<div class="error">Diagnose failed: ${escapeHtml(err.message)}</div>`;
+            }
+        }
+
         document.addEventListener('DOMContentLoaded', () => {
             loadRanks();
-            const button = document.getElementById('replay-btn');
-            if (button) {
-                button.addEventListener('click', runReplay);
-            }
+            loadDiagnose();
+            const replay = document.getElementById('replay-btn');
+            const liquid = document.getElementById('liquid-btn');
+            const path = document.getElementById('path-btn');
+            if (replay) replay.addEventListener('click', () => postPaper('/api/replay'));
+            if (liquid) liquid.addEventListener('click', () => postPaper('/api/liquid'));
+            if (path) path.addEventListener('click', () => postPaper('/api/path'));
         });
     </script>
 </body>
