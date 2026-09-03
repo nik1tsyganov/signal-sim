@@ -37,7 +37,7 @@ python3 -m signal_sim replay --fixtures --marks fixtures/marks/liquid.json
 python3 -m signal_sim replay --fixtures --path
 ```
 
-`--path` walks `fixtures/marks/path.json`: three fixture steps on one ledger (open → add/reduce/close → rotate onto SPY) across NVDA, XLE, DIS, and SPY. Step 1 also ranks AAPL and skips it with `no_mark`. Rankings on that path are a test input. Marks stay fixtures. Ordering is `observed_at` / `decision_at`. This is not a market and not a live result.
+`--path` walks `fixtures/marks/path.json`: three fixture steps on one ledger across the sector mark set (open NVDA/XOM/DIS/QQQ → rotate in MSFT/NFLX → hold MSFT/SPY). AAPL is `no_mark` on every step. Rankings on that path are a test input. Marks stay fixtures. Ordering is `observed_at` / `decision_at`. This is not a market and not a live result.
 
 Desk (same paper loop as `replay --fixtures`):
 
@@ -63,7 +63,13 @@ Three-step paper path (same loop as `replay --fixtures --path`):
 curl -sS -X POST http://127.0.0.1:8765/api/path
 ```
 
-`GET /api/replay` and `GET /api/path` return 405 and do not place orders. The browser page at that loopback URL has a "Run paper replay" button that issues `POST /api/replay`. Bind is loopback only. Paper only.
+Sector mark book (same loop as `replay --fixtures --marks fixtures/marks/liquid.json`):
+
+```bash
+curl -sS -X POST http://127.0.0.1:8765/api/liquid
+```
+
+`GET /api/replay`, `GET /api/path`, and `GET /api/liquid` return 405 and do not place orders. The browser page at that loopback URL has a "Run paper replay" button that issues `POST /api/replay` (default two-name book). Bind is loopback only. Paper only.
 
 ```powershell
 python -m signal_sim replay --fixtures

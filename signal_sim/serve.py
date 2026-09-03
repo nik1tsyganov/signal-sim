@@ -61,6 +61,12 @@ class _DeskHandler(BaseHTTPRequestHandler):
             ).encode("utf-8")
             self._send(body, "application/json", 405)
             return
+        if path == "/api/liquid":
+            body = json.dumps(
+                {"error": "POST /api/liquid to run the sector mark book; GET does not place orders"}
+            ).encode("utf-8")
+            self._send(body, "application/json", 405)
+            return
         if path == "/":
             if INDEX_PATH.is_file():
                 self._send(INDEX_PATH.read_bytes(), "text/html")
@@ -89,6 +95,19 @@ class _DeskHandler(BaseHTTPRequestHandler):
                 prefix="desk-path-", suffix=".sqlite", delete=False
             ).name
             summary = run_fixture_path(fixtures=_FIXTURES_PATH, ledger_path=ledger)
+            self._send(json.dumps(summary, separators=(",", ":")).encode("utf-8"), "application/json")
+            return
+        if path == "/api/liquid":
+            from .sim import run_fixture_replay
+
+            ledger = tempfile.NamedTemporaryFile(
+                prefix="desk-liquid-", suffix=".sqlite", delete=False
+            ).name
+            summary = run_fixture_replay(
+                fixtures=_FIXTURES_PATH,
+                ledger_path=ledger,
+                mark_book_path=_FIXTURES_PATH / "marks" / "liquid.json",
+            )
             self._send(json.dumps(summary, separators=(",", ":")).encode("utf-8"), "application/json")
             return
         self._send(b"Not found\n", "text/plain", 404)

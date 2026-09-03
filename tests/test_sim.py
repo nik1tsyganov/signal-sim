@@ -626,7 +626,7 @@ class MarkPathTests(unittest.TestCase):
         self.assertLess(books[0]["decision_at"], books[0]["exit_at"])
         self.assertLessEqual(books[0]["exit_at"], books[1]["decision_at"])
         self.assertLessEqual(books[1]["exit_at"], books[2]["decision_at"])
-        self.assertTrue({"NVDA", "XLE", "DIS", "SPY"}.issubset(set(books[0]["marks"])))
+        self.assertTrue({"NVDA", "XOM", "DIS", "QQQ", "MSFT", "NFLX", "SPY"}.issubset(set(books[0]["marks"])))
 
     def test_path_replay_opens_adds_and_closes_across_four_names(self):
         tmp = tempfile.mkdtemp()
@@ -642,19 +642,24 @@ class MarkPathTests(unittest.TestCase):
         self.assertEqual(summary["mode"], "local-paper-path")
         self.assertEqual(len(summary["steps"]), 3)
         first_tickers = {row["ticker"] for row in summary["steps"][0]["orders"]}
-        self.assertEqual(first_tickers, {"NVDA", "XLE", "DIS"})
+        self.assertEqual(first_tickers, {"NVDA", "XOM", "DIS", "QQQ"})
         self.assertIn({"ticker": "AAPL", "reason": "no_mark"}, summary["steps"][0]["refusals"])
         sectors = load_sectors()
         self.assertTrue(first_tickers & set(sectors["tech"]))
         self.assertTrue(first_tickers & set(sectors["energy"]))
         self.assertTrue(first_tickers & set(sectors["media"]))
+        self.assertTrue(first_tickers & set(sectors["etf"]))
         second_sides = {(row["ticker"], row["side"]) for row in summary["steps"][1]["orders"]}
-        self.assertIn(("NVDA", "buy"), second_sides)
-        self.assertIn(("XLE", "sell"), second_sides)
+        self.assertIn(("XOM", "sell"), second_sides)
+        self.assertIn(("DIS", "sell"), second_sides)
+        self.assertIn(("MSFT", "buy"), second_sides)
+        self.assertIn(("NFLX", "buy"), second_sides)
+        self.assertIn({"ticker": "AAPL", "reason": "no_mark"}, summary["steps"][1]["refusals"])
         third_tickers = {row["ticker"] for row in summary["steps"][2]["orders"]}
         self.assertIn("NVDA", third_tickers)
         self.assertIn("SPY", third_tickers)
-        self.assertEqual({row["ticker"] for row in summary["steps"][2]["positions"]}, {"SPY"})
+        self.assertEqual({row["ticker"] for row in summary["steps"][2]["positions"]}, {"MSFT", "SPY"})
+        self.assertIn({"ticker": "AAPL", "reason": "no_mark"}, summary["steps"][2]["refusals"])
         self.assertEqual(len(summary["equity_curve"]), 3)
         self.assertAlmostEqual(
             summary["ending_equity"],

@@ -116,9 +116,47 @@ class ServeTests(unittest.TestCase):
         self.assertEqual(content_type, "application/json")
         self.assertEqual(payload["mode"], "local-paper-path")
         self.assertEqual(len(payload["steps"]), 3)
-        self.assertEqual({row["ticker"] for row in payload["steps"][0]["orders"]}, {"NVDA", "XLE", "DIS"})
-        self.assertEqual({row["ticker"] for row in payload["steps"][2]["positions"]}, {"SPY"})
+        self.assertEqual({row["ticker"] for row in payload["steps"][0]["orders"]}, {"NVDA", "XOM", "DIS", "QQQ"})
+        self.assertIn({"ticker": "AAPL", "reason": "no_mark"}, payload["steps"][0]["refusals"])
+        self.assertEqual({row["ticker"] for row in payload["steps"][2]["positions"]}, {"MSFT", "SPY"})
         self.assertNotIn("sharpe", json.dumps(payload).lower())
+
+    def test_get_api_liquid_does_not_place_orders(self):
+        with patch.object(serve.safety, "PAPER_ONLY", True), patch.object(
+            serve.safety, "kill_switch_ok", return_value=True
+        ):
+            with serve._make_server(0) as server:
+                thread = threading.Thread(target=server.handle_request)
+                thread.start()
+                host, port = server.server_address
+                with self.assertRaises(HTTPError) as error:
+                    urlopen(f"http://{host}:{port}/api/liquid", timeout=2)
+                thread.join(timeout=2)
+        self.assertEqual(error.exception.code, 405)
+        self.assertIn(b"GET does not place orders", error.exception.read())
+
+    def test_post_api_liquid_fills_sector_mark_book(self):
+        with patch.object(serve.safety, "PAPER_ONLY", True), patch.object(
+            serve.safety, "kill_switch_ok", return_value=True
+        ):
+            with serve._make_server(0) as server:
+                thread = threading.Thread(target=server.handle_request)
+                thread.start()
+                host, port = server.server_address
+                request = Request(f"http://{host}:{port}/api/liquid", data=b"", method="POST")
+                with urlopen(request, timeout=5) as response:
+                    body = response.read()
+                    content_type = response.headers.get_content_type()
+                thread.join(timeout=5)
+        payload = json.loads(body)
+        self.assertEqual(content_type, "application/json")
+        self.assertEqual(payload["mode"], "local-paper-replay")
+        self.assertEqual(
+            {row["ticker"] for row in payload["orders"]},
+            {"NVDA", "MSFT", "XLE", "XOM", "DIS", "NFLX", "SPY", "QQQ"},
+        )
+        self.assertEqual(payload["refusals"], [])
+        self.assertNotIn(100.0, [row["fill_px"] for row in payload["orders"]])
 
     def test_post_api_replay_runs_paper_round_trip(self):
         with patch.object(serve.safety, "PAPER_ONLY", True), patch.object(
