@@ -71,6 +71,55 @@ class ServeTests(unittest.TestCase):
         self.assertEqual(error.exception.code, 405)
         self.assertIn(b"GET does not place orders", error.exception.read())
 
+    def test_api_diagnose_matches_diagnose_fixtures(self):
+        expected = io.StringIO()
+        with redirect_stdout(expected):
+            cli.main(["diagnose", "--fixtures"])
+
+        body, content_type = self.request("/api/diagnose")
+
+        self.assertEqual(json.loads(body), json.loads(expected.getvalue()))
+        self.assertEqual(content_type, "application/json")
+        payload = json.loads(body)
+        self.assertEqual(payload["mode"], "local-paper-diagnose")
+        self.assertNotIn("candidates", payload)
+        self.assertNotIn("sharpe", json.dumps(payload).lower())
+
+    def test_get_api_path_does_not_place_orders(self):
+        with patch.object(serve.safety, "PAPER_ONLY", True), patch.object(
+            serve.safety, "kill_switch_ok", return_value=True
+        ):
+            with serve._make_server(0) as server:
+                thread = threading.Thread(target=server.handle_request)
+                thread.start()
+                host, port = server.server_address
+                with self.assertRaises(HTTPError) as error:
+                    urlopen(f"http://{host}:{port}/api/path", timeout=2)
+                thread.join(timeout=2)
+        self.assertEqual(error.exception.code, 405)
+        self.assertIn(b"GET does not place orders", error.exception.read())
+
+    def test_post_api_path_runs_three_step_paper_path(self):
+        with patch.object(serve.safety, "PAPER_ONLY", True), patch.object(
+            serve.safety, "kill_switch_ok", return_value=True
+        ):
+            with serve._make_server(0) as server:
+                thread = threading.Thread(target=server.handle_request)
+                thread.start()
+                host, port = server.server_address
+                request = Request(f"http://{host}:{port}/api/path", data=b"", method="POST")
+                with urlopen(request, timeout=5) as response:
+                    body = response.read()
+                    content_type = response.headers.get_content_type()
+                thread.join(timeout=5)
+        payload = json.loads(body)
+        self.assertEqual(content_type, "application/json")
+        self.assertEqual(payload["mode"], "local-paper-path")
+        self.assertEqual(len(payload["steps"]), 3)
+        self.assertEqual({row["ticker"] for row in payload["steps"][0]["orders"]}, {"NVDA", "XLE", "DIS"})
+        self.assertEqual({row["ticker"] for row in payload["steps"][2]["positions"]}, {"SPY"})
+        self.assertNotIn("sharpe", json.dumps(payload).lower())
+
     def test_post_api_replay_runs_paper_round_trip(self):
         with patch.object(serve.safety, "PAPER_ONLY", True), patch.object(
             serve.safety, "kill_switch_ok", return_value=True

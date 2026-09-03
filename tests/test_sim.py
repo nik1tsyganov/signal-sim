@@ -204,18 +204,35 @@ class ReplayRoundTripTests(unittest.TestCase):
         self.assertTrue(summary["refusals"])
         self.assertTrue(all("R3" in row["reason"] for row in summary["refusals"]))
 
-    def test_decision_before_last_observation_is_rejected(self):
+    def test_prints_after_decision_are_not_used(self):
         book = load_mark_book()
         book = dict(book)
         book["decision_at"] = book["decision_at"].replace(year=2020)
-        with self.assertRaisesRegex(ValueError, "decision_at must not precede"):
-            run_fixture_replay(
-                fixtures=FIXTURES,
-                ledger_path=self.ledger,
-                audit_path=self.audit,
-                kill_root=self.tmp,
-                mark_book=book,
-            )
+        empty = run_fixture_replay(
+            fixtures=FIXTURES,
+            ledger_path=os.path.join(self.tmp, "early.sqlite"),
+            audit_path=os.path.join(self.tmp, "early.audit"),
+            kill_root=self.tmp,
+            mark_book=book,
+        )
+        self.assertEqual(empty["orders"], [])
+        self.assertEqual(empty["candidates"], [])
+
+        summary = run_fixture_replay(
+            fixtures=FIXTURES,
+            ledger_path=self.ledger,
+            audit_path=self.audit,
+            kill_root=self.tmp,
+        )
+        connection = sqlite3.connect(self.ledger)
+        try:
+            raw_ids = connection.execute(
+                "SELECT event_ids FROM orders WHERE ticker = 'NVDA'"
+            ).fetchone()[0]
+        finally:
+            connection.close()
+        self.assertNotIn("fx-nvda-late", json.loads(raw_ids))
+        self.assertEqual(summary["stats"]["hawkes_n_arrivals"], 1)
 
     def test_second_replay_at_target_places_no_new_orders(self):
         first = run_fixture_replay(
@@ -329,6 +346,34 @@ class ReplayRoundTripTests(unittest.TestCase):
         )
         self.assertEqual(summary["orders"], [])
         self.assertEqual(summary["refusals"], [{"ticker": "AAPL", "reason": "no_mark"}])
+
+    def test_every_universe_name_has_mark_or_no_mark_skip(self):
+        universe = load_universe()
+        book = load_mark_book()
+        marked = {
+            ticker
+            for ticker, row in book["marks"].items()
+            if not row.get("unused")
+        }
+        self.assertTrue(marked)
+        self.assertTrue(set(universe) - marked)
+        for ticker in universe:
+            ledger = os.path.join(self.tmp, f"{ticker}.sqlite")
+            audit = os.path.join(self.tmp, f"{ticker}.audit")
+            summary = run_fixture_replay(
+                fixtures=FIXTURES,
+                ledger_path=ledger,
+                audit_path=audit,
+                kill_root=self.tmp,
+                candidates=[{"ticker": ticker, "score": 1, "news_breakout": 1, "insider_confirm": 0}],
+            )
+            if ticker in marked:
+                self.assertEqual([row["ticker"] for row in summary["orders"]], [ticker], ticker)
+                self.assertNotEqual(summary["orders"][0]["fill_px"], 100.0, ticker)
+                self.assertEqual(summary["refusals"], [], ticker)
+            else:
+                self.assertEqual(summary["orders"], [], ticker)
+                self.assertEqual(summary["refusals"], [{"ticker": ticker, "reason": "no_mark"}], ticker)
 
     def test_liquid_marks_fill_four_names(self):
         summary = run_fixture_replay(

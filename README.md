@@ -28,7 +28,7 @@ python3 -m unittest discover -s tests -v
 
 `rank`, `intensity`, `diagnose`, and `replay` require `--fixtures`. Omitting that flag exits with status 2. Those commands read checked-in files under `fixtures/`. There is no live broker, no vendor bars, and no Quiver live path.
 
-Default replay fills only names that have a real row in `fixtures/marks/universe.json` (NVDA, XLE). Other ranked names, including the rest of `fixtures/universe.json`, are refused with `no_mark`. That skip is honest: the allocator does not invent a 100.0 fill. A second checked-in book, `fixtures/marks/liquid.json`, adds fixture marks for DIS and SPY (media / ETF) so a four-name replay can fill without a placeholder price.
+Every name in `fixtures/universe.json` either has a real fixture mark or cannot fill. Default replay fills only rows in `fixtures/marks/universe.json` (NVDA, XLE). Ranked names without a row, including DIS and SPY from checked-in news, are refused with `no_mark`. That skip is honest: the allocator does not invent a 100.0 fill. A second checked-in book, `fixtures/marks/liquid.json`, adds fixture marks for DIS and SPY (media / ETF) so a four-name replay can fill without a placeholder price. Prints observed after `decision_at` are not attached to orders.
 
 ```bash
 python3 -m signal_sim replay --fixtures
@@ -51,7 +51,19 @@ Then `POST /api/replay` against the loopback desk (default port 8765). Example:
 curl -sS -X POST http://127.0.0.1:8765/api/replay
 ```
 
-`GET /api/replay` returns 405 and does not place orders. The browser page at that loopback URL has a "Run paper replay" button that issues the same POST. Bind is loopback only. Paper only.
+Read-only desk diagnostics (same JSON as `diagnose --fixtures`):
+
+```bash
+curl -sS http://127.0.0.1:8765/api/diagnose
+```
+
+Three-step paper path (same loop as `replay --fixtures --path`):
+
+```bash
+curl -sS -X POST http://127.0.0.1:8765/api/path
+```
+
+`GET /api/replay` and `GET /api/path` return 405 and do not place orders. The browser page at that loopback URL has a "Run paper replay" button that issues `POST /api/replay`. Bind is loopback only. Paper only.
 
 ```powershell
 python -m signal_sim replay --fixtures
@@ -68,7 +80,7 @@ python3 -m signal_sim diagnose --fixtures
 
 `diagnose` prints Hawkes intensity at the latest fixture `observed_at` plus online cluster diagnostics. It is not a ranking input and not a return. Do not change `rank_candidates` to chase fixture-mark PnL.
 
-`replay` uses `rank_candidates` as-is (unless a mark book supplies an explicit `candidates` list, as the path fixture does). A sizer turns each positive-score name into a signed long target of `size_frac` with a horizon equal to the fixture `decision_at`→`exit_at` window. The local ledger opens, adds, reduces, or closes to that book, subject to cash and a prior-run drawdown halt. Rebalance is share-accurate at the decision mark: a close sells held shares, not the sum of prior `size_frac` tickets. Ending equity is cash plus remaining shares at `exit_px`, so intra-path sells keep realized PnL. `cost_bps` (default 0) is a declared bid-ask fee on each fill. `decision_delay_hours` (default 1) sets `fill_at` after `decision_at`; the fill price is still the fixture `entry_px`. Online news clusters in replay `stats` are rebuilt at `decision_at` and are not a ranking input. The JSON `stats` object is from the run (hit rate, turnover, winner/loser counts, Hawkes arrivals in the decision→exit window). It is not a Sharpe or a market backtest. The frozen ticker list is `fixtures/universe.json`. The sizer has no 3-name ceiling; `max_name_frac` and `max_gross_frac` are the size rails. World Monitor / Quiver live adapters stay stubbed without keys; recorded JSON under `fixtures/recorded/` maps offline.
+`replay` uses `rank_candidates` as-is (unless a mark book supplies an explicit `candidates` list, as the path fixture does). A sizer turns each positive-score name into a signed long target of `size_frac` with a horizon equal to the fixture `decision_at`→`exit_at` window. The local ledger opens, adds, reduces, or closes to that book, subject to cash and a prior-run drawdown halt. Rebalance is share-accurate at the decision mark: a close sells held shares, not the sum of prior `size_frac` tickets. Ending equity is cash plus remaining shares at `exit_px`, so intra-path sells keep realized PnL. `cost_bps` (default 0) is a declared bid-ask fee on each fill. `decision_delay_hours` (default 1) sets `fill_at` after `decision_at`; the fill price is still the fixture `entry_px`. Online news clusters in replay `stats` are rebuilt at `decision_at` and are not a ranking input. The JSON `stats` object is from the run (hit rate, turnover, winner/loser counts, Hawkes arrivals in the decision→exit window). It is a fixture-mark run, not a market backtest. The frozen ticker list is `fixtures/universe.json`. The sizer has no 3-name ceiling; `max_name_frac` and `max_gross_frac` are the size rails. World Monitor / Quiver live adapters stay stubbed without keys; recorded JSON under `fixtures/recorded/` maps offline.
 
 The desk refuses to start unless the paper-only flag is on and no `KILL` file sits in the repository root.
 

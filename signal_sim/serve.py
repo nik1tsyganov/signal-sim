@@ -10,6 +10,7 @@ from urllib.parse import urlsplit
 
 from . import safety
 from .cli import load_fixture_events
+from .diagnose import fixture_diagnostics
 from .indicators import rank_candidates
 from .store import EventStore
 
@@ -43,9 +44,20 @@ class _DeskHandler(BaseHTTPRequestHandler):
             body = json.dumps(_ranked_fixtures(), separators=(",", ":")).encode("utf-8")
             self._send(body, "application/json")
             return
+        if path == "/api/diagnose":
+            events = load_fixture_events(_FIXTURES_PATH)
+            body = json.dumps(fixture_diagnostics(events), separators=(",", ":")).encode("utf-8")
+            self._send(body, "application/json")
+            return
         if path == "/api/replay":
             body = json.dumps(
                 {"error": "POST /api/replay to run the paper replay; GET does not place orders"}
+            ).encode("utf-8")
+            self._send(body, "application/json", 405)
+            return
+        if path == "/api/path":
+            body = json.dumps(
+                {"error": "POST /api/path to run the paper path; GET does not place orders"}
             ).encode("utf-8")
             self._send(body, "application/json", 405)
             return
@@ -59,18 +71,27 @@ class _DeskHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         path = urlsplit(self.path).path
-        if path != "/api/replay":
-            self._send(b"Not found\n", "text/plain", 404)
-            return
         import tempfile
 
-        from .sim import run_fixture_replay
+        if path == "/api/replay":
+            from .sim import run_fixture_replay
 
-        ledger = tempfile.NamedTemporaryFile(
-            prefix="desk-replay-", suffix=".sqlite", delete=False
-        ).name
-        summary = run_fixture_replay(fixtures=_FIXTURES_PATH, ledger_path=ledger)
-        self._send(json.dumps(summary, separators=(",", ":")).encode("utf-8"), "application/json")
+            ledger = tempfile.NamedTemporaryFile(
+                prefix="desk-replay-", suffix=".sqlite", delete=False
+            ).name
+            summary = run_fixture_replay(fixtures=_FIXTURES_PATH, ledger_path=ledger)
+            self._send(json.dumps(summary, separators=(",", ":")).encode("utf-8"), "application/json")
+            return
+        if path == "/api/path":
+            from .sim import run_fixture_path
+
+            ledger = tempfile.NamedTemporaryFile(
+                prefix="desk-path-", suffix=".sqlite", delete=False
+            ).name
+            summary = run_fixture_path(fixtures=_FIXTURES_PATH, ledger_path=ledger)
+            self._send(json.dumps(summary, separators=(",", ":")).encode("utf-8"), "application/json")
+            return
+        self._send(b"Not found\n", "text/plain", 404)
 
     def log_message(self, format: str, *args: object) -> None:
         return

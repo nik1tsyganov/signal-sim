@@ -189,9 +189,9 @@ def load_mark_path(path: Path | None = None) -> list[dict[str, Any]]:
     return books
 
 
-def _assert_decision_after_events(events: list[Event], decision_at: datetime) -> None:
-    if events and max(event.observed_at for event in events) > decision_at:
-        raise ValueError("decision_at must not precede the latest fixture observed_at")
+def _events_at(events: list[Event], when: datetime) -> list[Event]:
+    """Prints observed after ``when`` are not in the decision information set."""
+    return [event for event in events if event.observed_at <= when]
 
 
 def proposal_from_candidate(
@@ -358,8 +358,8 @@ def run_fixture_replay(
 ) -> dict[str, Any]:
     """Rank fixture events, rebalance through submit_paper_order, mark to fixture exits."""
     book = mark_book if mark_book is not None else load_mark_book(mark_book_path)
-    events = load_fixture_events(fixtures)
-    _assert_decision_after_events(events, book["decision_at"])
+    all_events = load_fixture_events(fixtures)
+    events = _events_at(all_events, book["decision_at"])
     if candidates is None:
         book_candidates = book.get("candidates")
         if isinstance(book_candidates, list) and book_candidates:
@@ -500,10 +500,11 @@ def run_fixture_replay(
     mark_value = math.fsum(row["shares"] * row["exit_px"] for row in positions)
     ending_equity = cash + mark_value
     total_pnl = ending_equity - starting_cash
-    hawkes_ll = log_likelihood(events, start=book["decision_at"], end=book["exit_at"])
+    hold_events = _events_at(all_events, book["exit_at"])
+    hawkes_ll = log_likelihood(hold_events, start=book["decision_at"], end=book["exit_at"])
     hawkes_n_arrivals = sum(
         1
-        for event in events
+        for event in hold_events
         if event.ticker in UNIVERSE and book["decision_at"] <= event.observed_at <= book["exit_at"]
     )
     n_winners = sum(1 for row in positions if row["pnl"] > 0)

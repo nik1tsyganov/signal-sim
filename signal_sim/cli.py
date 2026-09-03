@@ -11,9 +11,9 @@ import sys
 from pathlib import Path
 from typing import Any, Callable
 
-from .clusters import online_clusters
+from .diagnose import fixture_diagnostics
 from .events import Event
-from .hawkes import intensity_at, log_likelihood
+from .hawkes import intensity_at
 from .indicators import UNIVERSE, rank_candidates
 from .store import EventStore
 
@@ -151,29 +151,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "diagnose":
         fixtures = Path(__file__).resolve().parent.parent / "fixtures"
         events = load_fixture_events(fixtures)
-        when = max(event.observed_at for event in events)
-        intensities = {
-            ticker: intensity_at(
-                (event for event in events if event.ticker == ticker),
-                when,
-            )
-            for ticker in UNIVERSE
-        }
-        clusters = online_clusters(events, when)
-        payload = {
-            "mode": "local-paper-diagnose",
-            "note": "Diagnostics only. Not a ranking input and not a return.",
-            "when": when.isoformat().replace("+00:00", "Z"),
-            "intensity": intensities,
-            "online_clusters": clusters,
-            "hawkes_log_likelihood": log_likelihood(events),
-            "stats": {
-                "n_events": len(events),
-                "n_clusters": len(clusters),
-                "max_cluster_size": max((row["size"] for row in clusters), default=0),
-            },
-        }
-        print(json.dumps(payload, separators=(",", ":")))
+        print(json.dumps(fixture_diagnostics(events), separators=(",", ":")))
         return 0
     if args.command == "serve":
         from .serve import serve
