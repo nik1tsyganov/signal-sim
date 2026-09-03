@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Signal Sim</title>
+    <style>
+        :root {
+            --bg: #1e1e2e;
+            --surface: #313244;
+            --text: #cdd6f4;
+            --accent: #f9e2af;
+            --error: #f38ba8;
+            --border: #45475a;
+            --banner-bg: #f9e2af;
+            --banner-text: #11111b;
+        }
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+            margin: 0;
+            padding: 0;
+            line-height: 1.5;
+        }
+        .banner {
+            background-color: var(--banner-bg);
+            color: var(--banner-text);
+            text-align: center;
+            font-weight: bold;
+            padding: 0.5rem;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+        }
+        main {
+            max-width: 1200px;
+            margin: 2rem auto;
+            padding: 0 1rem;
+        }
+        h1 {
+            margin-top: 0;
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 0.5rem;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        th, td {
+            padding: 0.75rem 1rem;
+            text-align: left;
+            border-bottom: 1px solid var(--border);
+        }
+        th {
+            background-color: var(--border);
+            font-weight: 600;
+        }
+        tr:last-child td {
+            border-bottom: none;
+        }
+        .error {
+            color: var(--error);
+            background: var(--surface);
+            padding: 1rem;
+            border: 1px solid var(--error);
+            border-radius: 4px;
+        }
+        .empty {
+            padding: 2rem;
+            text-align: center;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            font-style: italic;
+            color: #a6adc8;
+        }
+        .badge {
+            display: inline-block;
+            background: var(--border);
+            padding: 0.1rem 0.5rem;
+            border-radius: 12px;
+            font-size: 0.85em;
+            margin-right: 0.5rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="banner">PAPER ONLY</div>
+    <main>
+        <h1>Signal Sim</h1>
+        <div id="content">
+            <p>Loading ranks...</p>
+        </div>
+    </main>
+    <script>
+        async function loadRanks() {
+            const contentDiv = document.getElementById('content');
+            try {
+                const response = await fetch('/api/rank');
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                const data = await response.json();
+                
+                if (!Array.isArray(data) || data.length === 0) {
+                    contentDiv.innerHTML = '<div class="empty">No candidates</div>';
+                    return;
+                }
+
+                let html = `
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Symbol</th>
+                                <th>Score</th>
+                                <th>Sources / Reasons</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                `;
+
+                for (const row of data) {
+                    const symbol = escapeHtml(row.ticker || 'Unknown');
+                    const score = escapeHtml(String(row.score ?? 0));
+                    
+                    let sources = [];
+                    if (row.news_breakout) {
+                        sources.push(`<span class="badge">News Breakout: ${row.news_breakout}</span>`);
+                    }
+                    if (row.insider_confirm) {
+                        sources.push(`<span class="badge">Insider Confirm: ${row.insider_confirm}</span>`);
+                    }
+                    
+                    const sourcesHtml = sources.length > 0 ? sources.join('') : '-';
+
+                    html += `
+                        <tr>
+                            <td><strong>${symbol}</strong></td>
+                            <td>${score}</td>
+                            <td>${sourcesHtml}</td>
+                        </tr>
+                    `;
+                }
+
+                html += `
+                        </tbody>
+                    </table>
+                `;
+                contentDiv.innerHTML = html;
+
+            } catch (err) {
+                contentDiv.innerHTML = `<div class="error">Failed to load ranks: ${escapeHtml(err.message)}</div>`;
+            }
+        }
+
+        function escapeHtml(unsafe) {
+            return String(unsafe)
+                 .replace(/&/g, "&amp;")
+                 .replace(/</g, "&lt;")
+                 .replace(/>/g, "&gt;")
+                 .replace(/"/g, "&quot;")
+                 .replace(/'/g, "&#039;");
+        }
+
+        document.addEventListener('DOMContentLoaded', loadRanks);
+    </script>
+</body>
+</html>

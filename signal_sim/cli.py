@@ -70,6 +70,8 @@ def _parser() -> argparse.ArgumentParser:
     commands = parser.add_subparsers(dest="command", required=True)
     rank = commands.add_parser("rank", help="rank paper-trade candidates")
     rank.add_argument("--fixtures", action="store_true", help="load local fixture events")
+    serve = commands.add_parser("serve", help="serve the local paper-only desk")
+    serve.add_argument("--port", type=int, default=8765, help="local desk port")
     return parser
 
 
@@ -82,6 +84,11 @@ def main(argv: list[str] | None = None) -> int:
             store.add_many(events)
             candidates = rank_candidates(store.all())
         print(json.dumps(candidates, separators=(",", ":")))
+        return 0
+    if args.command == "serve":
+        from .serve import serve
+
+        serve(args.port)
         return 0
     return 2
 
