@@ -139,6 +139,9 @@ class ReplayRoundTripTests(unittest.TestCase):
             fills = connection.execute("SELECT COUNT(*) FROM fills").fetchone()[0]
             account = connection.execute("SELECT starting_cash, total_pnl FROM account").fetchone()
             positions = connection.execute("SELECT ticker FROM positions ORDER BY ticker").fetchall()
+            history = connection.execute(
+                "SELECT step, ending_equity, total_pnl, fill_at FROM account_history ORDER BY step"
+            ).fetchall()
         finally:
             connection.close()
         self.assertEqual(orders, [("NVDA", "filled"), ("XLE", "filled")])
@@ -147,6 +150,11 @@ class ReplayRoundTripTests(unittest.TestCase):
         self.assertEqual(account[0], book["starting_cash"])
         self.assertAlmostEqual(account[1], summary["total_pnl"])
         self.assertEqual([row[0] for row in positions], ["NVDA", "XLE"])
+        self.assertEqual(len(history), 1)
+        self.assertEqual(history[0][0], 1)
+        self.assertAlmostEqual(history[0][1], summary["ending_equity"])
+        self.assertAlmostEqual(history[0][2], summary["total_pnl"])
+        self.assertEqual(history[0][3], summary["fill_at"])
 
         audit_lines = [
             json.loads(line)
@@ -685,6 +693,27 @@ class MarkPathTests(unittest.TestCase):
         )
         self.assertNotIn("sharpe", json.dumps(summary).lower())
         self.assertLessEqual(summary["worst_drawdown"], 0.0)
+        connection = sqlite3.connect(ledger)
+        try:
+            history = connection.execute(
+                "SELECT step, ending_equity, total_pnl, fill_at FROM account_history ORDER BY step"
+            ).fetchall()
+            snapshot = connection.execute(
+                "SELECT ending_equity, total_pnl FROM account"
+            ).fetchall()
+            held = connection.execute("SELECT ticker FROM positions ORDER BY ticker").fetchall()
+        finally:
+            connection.close()
+        self.assertEqual([row[0] for row in history], [1, 2, 3])
+        self.assertEqual(len(snapshot), 1)
+        self.assertAlmostEqual(snapshot[0][0], summary["ending_equity"])
+        self.assertAlmostEqual(snapshot[0][1], summary["total_pnl"])
+        for row, equity, step in zip(history, summary["equity_curve"], summary["steps"], strict=True):
+            self.assertAlmostEqual(row[1], equity)
+            self.assertAlmostEqual(row[1], step["ending_equity"])
+            self.assertAlmostEqual(row[2], step["total_pnl"])
+            self.assertEqual(row[3], step["fill_at"])
+        self.assertEqual([row[0] for row in held], ["MSFT", "SPY"])
 
 
 if __name__ == "__main__":

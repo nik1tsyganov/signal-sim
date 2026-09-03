@@ -38,6 +38,15 @@ CREATE TABLE IF NOT EXISTS account (
     decision_at TEXT NOT NULL,
     exit_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS account_history (
+    step INTEGER NOT NULL,
+    starting_cash REAL NOT NULL,
+    ending_equity REAL NOT NULL,
+    total_pnl REAL NOT NULL,
+    decision_at TEXT NOT NULL,
+    fill_at TEXT NOT NULL,
+    exit_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS positions (
     ticker TEXT PRIMARY KEY,
     side TEXT NOT NULL,
@@ -316,6 +325,23 @@ def _write_account(ledger_path: str, summary: dict[str, Any]) -> None:
     connection = sqlite3.connect(ledger_path)
     try:
         connection.executescript(_PNL_SCHEMA)
+        step = int(
+            connection.execute("SELECT COALESCE(MAX(step), 0) FROM account_history").fetchone()[0]
+        ) + 1
+        connection.execute(
+            "INSERT INTO account_history "
+            "(step, starting_cash, ending_equity, total_pnl, decision_at, fill_at, exit_at)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (
+                step,
+                summary["starting_cash"],
+                summary["ending_equity"],
+                summary["total_pnl"],
+                summary["decision_at"],
+                summary["fill_at"],
+                summary["exit_at"],
+            ),
+        )
         connection.execute("DELETE FROM account")
         connection.execute("DELETE FROM positions")
         connection.execute(

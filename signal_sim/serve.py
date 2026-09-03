@@ -18,7 +18,16 @@ _LOOPBACK = ".".join(str(part) for part in (127, 0, 0, 1))
 _PACKAGE_ROOT = Path(__file__).resolve().parent
 _FIXTURES_PATH = _PACKAGE_ROOT.parent / "fixtures"
 INDEX_PATH = _PACKAGE_ROOT / "web" / "index.html"
-_FALLBACK = b"PAPER ONLY\nOpen /api/rank to view ranked fixture events.\n"
+_FALLBACK = (
+    b"PAPER ONLY\n"
+    b"GET /api/rank ranked fixture events at decision_at\n"
+    b"GET /api/diagnose Hawkes and clusters; not a ranking input\n"
+    b"GET /api/marks who can fill vs no_mark\n"
+    b"POST /api/replay default NVDA/XLE book\n"
+    b"POST /api/liquid eight-name sector book\n"
+    b"POST /api/path three-step path\n"
+    b"GET on replay/liquid/path returns 405 and does not place orders\n"
+)
 
 
 def _ranked_fixtures() -> list[dict[str, int | str]]:

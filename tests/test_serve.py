@@ -214,6 +214,12 @@ class ServeTests(unittest.TestCase):
 
         self.assertIn(b"PAPER ONLY", body)
         self.assertIn(b"/api/rank", body)
+        self.assertIn(b"/api/diagnose", body)
+        self.assertIn(b"/api/marks", body)
+        self.assertIn(b"/api/replay", body)
+        self.assertIn(b"/api/liquid", body)
+        self.assertIn(b"/api/path", body)
+        self.assertIn(b"405", body)
         self.assertEqual(content_type, "text/plain")
 
     def test_server_refuses_when_paper_only_is_not_true(self):
