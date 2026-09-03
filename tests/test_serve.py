@@ -8,7 +8,8 @@ from contextlib import redirect_stdout
 from functools import partial
 from pathlib import Path
 from unittest.mock import patch
-from urllib.request import urlopen
+from urllib.error import HTTPError
+from urllib.request import Request, urlopen
 
 from signal_sim import cli, safety, serve
 
@@ -55,6 +56,39 @@ class ServeTests(unittest.TestCase):
         self.assertEqual(content_type, "application/json")
         self.assertIsInstance(payload, list)
         self.assertIn("NVDA", {row["ticker"] for row in payload})
+
+    def test_get_api_replay_does_not_place_orders(self):
+        with patch.object(serve.safety, "PAPER_ONLY", True), patch.object(
+            serve.safety, "kill_switch_ok", return_value=True
+        ):
+            with serve._make_server(0) as server:
+                thread = threading.Thread(target=server.handle_request)
+                thread.start()
+                host, port = server.server_address
+                with self.assertRaises(HTTPError) as error:
+                    urlopen(f"http://{host}:{port}/api/replay", timeout=2)
+                thread.join(timeout=2)
+        self.assertEqual(error.exception.code, 405)
+        self.assertIn(b"GET does not place orders", error.exception.read())
+
+    def test_post_api_replay_runs_paper_round_trip(self):
+        with patch.object(serve.safety, "PAPER_ONLY", True), patch.object(
+            serve.safety, "kill_switch_ok", return_value=True
+        ):
+            with serve._make_server(0) as server:
+                thread = threading.Thread(target=server.handle_request)
+                thread.start()
+                host, port = server.server_address
+                request = Request(f"http://{host}:{port}/api/replay", data=b"", method="POST")
+                with urlopen(request, timeout=5) as response:
+                    body = response.read()
+                    content_type = response.headers.get_content_type()
+                thread.join(timeout=5)
+        payload = json.loads(body)
+        self.assertEqual(content_type, "application/json")
+        self.assertEqual(payload["mode"], "local-paper-replay")
+        self.assertEqual({row["ticker"] for row in payload["orders"]}, {"NVDA", "XLE"})
+        self.assertIn("total_pnl", payload)
 
     def test_root_serves_browser_file(self):
         body, content_type = self.request("/")

@@ -103,6 +103,11 @@ class Event:
             raise EventValidationError(f"missing event fields: {', '.join(sorted(missing))}")
         return cls(**normalized)
 
+    @property
+    def first_seen_at(self) -> datetime:
+        """Docs alias for observed_at. Never use occurred_at for ordering."""
+        return self.observed_at
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "id": self.id,

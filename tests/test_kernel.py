@@ -63,6 +63,14 @@ class EventValidationTests(unittest.TestCase):
 
         self.assertEqual(parsed.source, "edgar")
 
+    def test_first_seen_at_is_observed_at_not_occurred_at(self):
+        parsed = event(
+            occurred_at="2026-07-15T00:00:00Z",
+            observed_at="2026-08-11T14:02:00Z",
+        )
+        self.assertEqual(parsed.first_seen_at, parsed.observed_at)
+        self.assertNotEqual(parsed.first_seen_at, parsed.occurred_at)
+
     def test_rejects_congress_trade_observed_before_filing(self):
         with self.assertRaises(EventValidationError):
             event(
