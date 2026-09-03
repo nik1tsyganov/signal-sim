@@ -34,6 +34,10 @@ class MarkBookTests(unittest.TestCase):
         self.assertLessEqual(book["size_frac"], MAX_GROSS_FRAC)
         self.assertTrue({"NVDA", "XLE", "DIS", "SPY", "XLK"}.issubset(set(book["marks"])))
         self.assertGreaterEqual(len(book["marks"]), 15)
+        self.assertFalse(book["marks"]["NVDA"].get("unused"))
+        self.assertFalse(book["marks"]["XLE"].get("unused"))
+        self.assertTrue(book["marks"]["AAPL"].get("unused"))
+        self.assertEqual(book["marks"]["AAPL"]["entry_px"], 100.0)
         self.assertGreaterEqual(book["cost_bps"], 0)
         self.assertGreater(book["decision_delay_hours"], 0)
         self.assertLess(book["decision_at"], book["fill_at"])
@@ -295,6 +299,20 @@ class ReplayRoundTripTests(unittest.TestCase):
             universe=universe,
         )
         self.assertEqual({row["ticker"] for row in summary["orders"]}, {"NVDA", "XLE"})
+
+    def test_unused_placeholder_mark_is_refused_not_filled(self):
+        book = load_mark_book()
+        book = dict(book)
+        summary = run_fixture_replay(
+            fixtures=FIXTURES,
+            ledger_path=self.ledger,
+            audit_path=self.audit,
+            kill_root=self.tmp,
+            mark_book=book,
+            candidates=[{"ticker": "AAPL", "score": 1, "news_breakout": 1, "insider_confirm": 0}],
+        )
+        self.assertEqual(summary["orders"], [])
+        self.assertEqual(summary["refusals"], [{"ticker": "AAPL", "reason": "unused_fixture_placeholder"}])
 
     def test_cost_bps_reduces_ending_equity_by_declared_fees(self):
         book = load_mark_book()

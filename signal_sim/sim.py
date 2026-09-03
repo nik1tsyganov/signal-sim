@@ -108,6 +108,7 @@ def _parse_mark_book(raw: dict[str, Any], marks_path: Path) -> dict[str, Any]:
         parsed[ticker] = {
             "entry_px": _positive(row.get("entry_px"), f"marks.{ticker}.entry_px"),
             "exit_px": _positive(row.get("exit_px"), f"marks.{ticker}.exit_px"),
+            "unused": bool(row.get("unused", False)),
         }
     return {
         "source": raw.get("source", "fixture"),
@@ -388,6 +389,9 @@ def run_fixture_replay(
         mark = book["marks"].get(ticker)
         if mark is None:
             refuse(ticker, "missing_fixture_mark")
+            continue
+        if mark.get("unused"):
+            refuse(ticker, "unused_fixture_placeholder")
             continue
         mark_px = mark["entry_px"]
         have_shares = float(held.get(ticker, {}).get("shares", 0.0))

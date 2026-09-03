@@ -1,6 +1,6 @@
 {
   "source": "fixture",
-  "note": "Two-step research mark path for the local paper ledger. Not a vendor feed, not live prices, not execution quality evidence.",
+  "note": "Two-step research mark path for the local paper ledger. Not a vendor feed, not live prices. NVDA/XLE move; other rows are unused fixture placeholders (flat 100.0/110.0), not a market.",
   "starting_cash": 100000.0,
   "size_frac": 0.1,
   "max_drawdown": 0.2,
@@ -13,20 +13,20 @@
       "exit_at": "2026-09-03T14:00:00Z",
       "marks": {
         "NVDA": {"entry_px": 178.5, "exit_px": 179.2},
-        "AAPL": {"entry_px": 100.0, "exit_px": 100.0},
-        "MSFT": {"entry_px": 100.0, "exit_px": 100.0},
-        "META": {"entry_px": 100.0, "exit_px": 100.0},
-        "GOOGL": {"entry_px": 100.0, "exit_px": 100.0},
-        "AMZN": {"entry_px": 100.0, "exit_px": 100.0},
+        "AAPL": {"entry_px": 100.0, "exit_px": 100.0, "unused": true},
+        "MSFT": {"entry_px": 100.0, "exit_px": 100.0, "unused": true},
+        "META": {"entry_px": 100.0, "exit_px": 100.0, "unused": true},
+        "GOOGL": {"entry_px": 100.0, "exit_px": 100.0, "unused": true},
+        "AMZN": {"entry_px": 100.0, "exit_px": 100.0, "unused": true},
         "XLE": {"entry_px": 90.0, "exit_px": 89.2},
-        "XOM": {"entry_px": 100.0, "exit_px": 100.0},
-        "CVX": {"entry_px": 100.0, "exit_px": 100.0},
-        "DIS": {"entry_px": 110.0, "exit_px": 110.0},
-        "NFLX": {"entry_px": 100.0, "exit_px": 100.0},
-        "CMCSA": {"entry_px": 100.0, "exit_px": 100.0},
-        "SPY": {"entry_px": 100.0, "exit_px": 100.0},
-        "QQQ": {"entry_px": 100.0, "exit_px": 100.0},
-        "XLK": {"entry_px": 100.0, "exit_px": 100.0}
+        "XOM": {"entry_px": 100.0, "exit_px": 100.0, "unused": true},
+        "CVX": {"entry_px": 100.0, "exit_px": 100.0, "unused": true},
+        "DIS": {"entry_px": 110.0, "exit_px": 110.0, "unused": true},
+        "NFLX": {"entry_px": 100.0, "exit_px": 100.0, "unused": true},
+        "CMCSA": {"entry_px": 100.0, "exit_px": 100.0, "unused": true},
+        "SPY": {"entry_px": 100.0, "exit_px": 100.0, "unused": true},
+        "QQQ": {"entry_px": 100.0, "exit_px": 100.0, "unused": true},
+        "XLK": {"entry_px": 100.0, "exit_px": 100.0, "unused": true}
       }
     },
     {
@@ -34,20 +34,20 @@
       "exit_at": "2026-09-03T21:00:00Z",
       "marks": {
         "NVDA": {"entry_px": 179.2, "exit_px": 180.0},
-        "AAPL": {"entry_px": 100.0, "exit_px": 100.0},
-        "MSFT": {"entry_px": 100.0, "exit_px": 100.0},
-        "META": {"entry_px": 100.0, "exit_px": 100.0},
-        "GOOGL": {"entry_px": 100.0, "exit_px": 100.0},
-        "AMZN": {"entry_px": 100.0, "exit_px": 100.0},
+        "AAPL": {"entry_px": 100.0, "exit_px": 100.0, "unused": true},
+        "MSFT": {"entry_px": 100.0, "exit_px": 100.0, "unused": true},
+        "META": {"entry_px": 100.0, "exit_px": 100.0, "unused": true},
+        "GOOGL": {"entry_px": 100.0, "exit_px": 100.0, "unused": true},
+        "AMZN": {"entry_px": 100.0, "exit_px": 100.0, "unused": true},
         "XLE": {"entry_px": 89.2, "exit_px": 88.5},
-        "XOM": {"entry_px": 100.0, "exit_px": 100.0},
-        "CVX": {"entry_px": 100.0, "exit_px": 100.0},
-        "DIS": {"entry_px": 110.0, "exit_px": 110.0},
-        "NFLX": {"entry_px": 100.0, "exit_px": 100.0},
-        "CMCSA": {"entry_px": 100.0, "exit_px": 100.0},
-        "SPY": {"entry_px": 100.0, "exit_px": 100.0},
-        "QQQ": {"entry_px": 100.0, "exit_px": 100.0},
-        "XLK": {"entry_px": 100.0, "exit_px": 100.0}
+        "XOM": {"entry_px": 100.0, "exit_px": 100.0, "unused": true},
+        "CVX": {"entry_px": 100.0, "exit_px": 100.0, "unused": true},
+        "DIS": {"entry_px": 110.0, "exit_px": 110.0, "unused": true},
+        "NFLX": {"entry_px": 100.0, "exit_px": 100.0, "unused": true},
+        "CMCSA": {"entry_px": 100.0, "exit_px": 100.0, "unused": true},
+        "SPY": {"entry_px": 100.0, "exit_px": 100.0, "unused": true},
+        "QQQ": {"entry_px": 100.0, "exit_px": 100.0, "unused": true},
+        "XLK": {"entry_px": 100.0, "exit_px": 100.0, "unused": true}
       }
     }
   ]
