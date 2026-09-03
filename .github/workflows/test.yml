@@ -14,6 +14,8 @@ jobs:
           python-version: "3.12"
       - name: Run unittest
         run: python -m unittest discover -s tests -v
+      - name: Rank fixture events
+        run: python -m signal_sim rank --fixtures
       - name: Run fixture paper replay
         run: python -m signal_sim replay --fixtures
       - name: Run fixture two-step mark path
