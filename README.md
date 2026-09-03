@@ -78,6 +78,6 @@ python -m signal_sim serve
 python3 -m signal_sim serve
 ```
 
-Then open http://127.0.0.1:8765/ in a browser. The desk is paper-only: it binds only to 127.0.0.1, ranks the same local fixture events as `rank --fixtures`, and connects to no live broker. It refuses to start unless the paper-only flag is on and no `KILL` file sits in the repository root.
+Then open http://127.0.0.1:8765/ in a browser. The desk is paper-only: it binds only to 127.0.0.1, ranks the same local fixture events as `rank --fixtures`, and connects to no live broker. `GET /api/rank` is read-only. `POST /api/replay` runs the paper ledger loop; `GET /api/replay` returns 405 and does not place orders. It refuses to start unless the paper-only flag is on and no `KILL` file sits in the repository root.
 
 See [intel sources](docs/intel-sources.md), [paper trading and quant research](docs/paper-trading-and-quant.md), and [alternative data and safety](docs/alt-data-and-safety.md) for the source and safety rules.
