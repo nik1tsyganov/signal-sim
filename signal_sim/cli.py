@@ -7,6 +7,7 @@ import importlib
 import importlib.util
 import inspect
 import json
+import sys
 from pathlib import Path
 from typing import Any, Callable
 
@@ -70,9 +71,17 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="signal_sim")
     commands = parser.add_subparsers(dest="command", required=True)
     rank = commands.add_parser("rank", help="rank paper-trade candidates")
-    rank.add_argument("--fixtures", action="store_true", help="load local fixture events")
+    rank.add_argument(
+        "--fixtures",
+        action="store_true",
+        help="load local fixture events (required; the only supported input)",
+    )
     intensity = commands.add_parser("intensity", help="calculate fixture event intensity")
-    intensity.add_argument("--fixtures", action="store_true", help="load local fixture events")
+    intensity.add_argument(
+        "--fixtures",
+        action="store_true",
+        help="load local fixture events (required; the only supported input)",
+    )
     serve = commands.add_parser("serve", help="serve the local paper-only desk")
     serve.add_argument("--port", type=int, default=8765, help="local desk port")
     return parser
@@ -80,6 +89,12 @@ def _parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
+    if args.command in {"rank", "intensity"} and not args.fixtures:
+        print(
+            f"{args.command} requires --fixtures; only local fixture events are supported",
+            file=sys.stderr,
+        )
+        return 2
     if args.command == "rank":
         fixtures = Path(__file__).resolve().parent.parent / "fixtures"
         events = load_fixture_events(fixtures)

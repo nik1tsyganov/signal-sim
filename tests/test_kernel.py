@@ -2,7 +2,7 @@ import io
 import json
 import sqlite3
 import unittest
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -123,6 +123,26 @@ class PaperOnlyCliTests(unittest.TestCase):
         self.assertTrue(all(set(item) == {"ticker", "score", "news_breakout", "insider_confirm"} for item in payload))
         nvda = next(item for item in payload if item["ticker"] == "NVDA")
         self.assertGreaterEqual(nvda["insider_confirm"], 1)
+
+    def test_rank_without_fixtures_flag_is_refused(self):
+        output = io.StringIO()
+        error = io.StringIO()
+        with redirect_stdout(output), redirect_stderr(error):
+            exit_code = cli.main(["rank"])
+
+        self.assertEqual(exit_code, 2)
+        self.assertEqual(output.getvalue(), "")
+        self.assertIn("requires --fixtures", error.getvalue())
+
+    def test_intensity_without_fixtures_flag_is_refused(self):
+        output = io.StringIO()
+        error = io.StringIO()
+        with redirect_stdout(output), redirect_stderr(error):
+            exit_code = cli.main(["intensity"])
+
+        self.assertEqual(exit_code, 2)
+        self.assertEqual(output.getvalue(), "")
+        self.assertIn("requires --fixtures", error.getvalue())
 
 
 if __name__ == "__main__":
