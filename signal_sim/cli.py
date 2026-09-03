@@ -104,6 +104,15 @@ def _parser() -> argparse.ArgumentParser:
         action="store_true",
         help="load local fixture events (required; the only supported input)",
     )
+    marks = commands.add_parser(
+        "marks",
+        help="list fixture-mark fillable names and no_mark skips",
+    )
+    marks.add_argument(
+        "--fixtures",
+        action="store_true",
+        help="load local fixture mark books (required; the only supported input)",
+    )
     serve = commands.add_parser("serve", help="serve the local paper-only desk")
     serve.add_argument("--port", type=int, default=8765, help="local desk port")
     replay = commands.add_parser(
@@ -133,7 +142,7 @@ def _parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
-    if args.command in {"rank", "intensity", "diagnose", "replay"} and not args.fixtures:
+    if args.command in {"rank", "intensity", "diagnose", "marks", "replay"} and not args.fixtures:
         print(
             f"{args.command} requires --fixtures; only local fixture events are supported",
             file=sys.stderr,
@@ -159,6 +168,11 @@ def main(argv: list[str] | None = None) -> int:
         fixtures = Path(__file__).resolve().parent.parent / "fixtures"
         events = load_fixture_events(fixtures)
         print(json.dumps(fixture_diagnostics(events), separators=(",", ":")))
+        return 0
+    if args.command == "marks":
+        from .sim import fixture_mark_map
+
+        print(json.dumps(fixture_mark_map(), separators=(",", ":")))
         return 0
     if args.command == "serve":
         from .serve import serve

@@ -20,13 +20,14 @@ from .cli import load_fixture_events
 from .clusters import online_clusters
 from .events import Event
 from .hawkes import log_likelihood
-from .indicators import UNIVERSE, rank_candidates
+from .indicators import SECTORS, UNIVERSE, rank_candidates
 from .paper import OrderRefused, submit_paper_order
 from .sizer import MAX_GROSS_FRAC, size_targets
 from .store import EventStore
 
 
 DEFAULT_MARKS = Path(__file__).resolve().parent.parent / "fixtures" / "marks" / "universe.json"
+DEFAULT_LIQUID = Path(__file__).resolve().parent.parent / "fixtures" / "marks" / "liquid.json"
 DEFAULT_PATH = Path(__file__).resolve().parent.parent / "fixtures" / "marks" / "path.json"
 FILL_RULE = "decision-time fixture mark; size_frac of starting_cash"
 _PNL_SCHEMA = """
@@ -168,6 +169,30 @@ def load_mark_book(path: Path | None = None) -> dict[str, Any]:
     with marks_path.open(encoding="utf-8") as handle:
         raw = json.load(handle)
     return _parse_mark_book(raw, marks_path)
+
+
+def fixture_mark_map() -> dict[str, Any]:
+    """Read-only map of who can fill. Does not rank or place orders."""
+    default = {
+        ticker
+        for ticker, row in load_mark_book()["marks"].items()
+        if not row.get("unused")
+    }
+    liquid = {
+        ticker
+        for ticker, row in load_mark_book(DEFAULT_LIQUID)["marks"].items()
+        if not row.get("unused")
+    }
+    universe = set(UNIVERSE)
+    return {
+        "mode": "local-paper-marks",
+        "note": "Fixture marks only. Ranked names without a row are no_mark. Not a vendor feed.",
+        "default_fillable": sorted(default),
+        "liquid_fillable": sorted(liquid),
+        "no_mark_default": sorted(universe - default),
+        "no_mark_liquid": sorted(universe - liquid),
+        "sectors": {name: list(tickers) for name, tickers in SECTORS.items()},
+    }
 
 
 def load_mark_path(path: Path | None = None) -> list[dict[str, Any]]:

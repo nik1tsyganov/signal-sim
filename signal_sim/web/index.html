@@ -140,6 +140,17 @@
                     throw new Error(`HTTP ${response.status}: ${response.statusText}`);
                 }
                 const data = await response.json();
+                let marks = { default_fillable: [], liquid_fillable: [] };
+                try {
+                    const markResponse = await fetch('/api/marks');
+                    if (markResponse.ok) {
+                        marks = await markResponse.json();
+                    }
+                } catch (_err) {
+                    marks = { default_fillable: [], liquid_fillable: [] };
+                }
+                const defaultFill = new Set(marks.default_fillable || []);
+                const liquidFill = new Set(marks.liquid_fillable || []);
                 
                 if (!Array.isArray(data) || data.length === 0) {
                     contentDiv.innerHTML = '<div class="empty">No candidates</div>';
@@ -152,6 +163,7 @@
                             <tr>
                                 <th>Symbol</th>
                                 <th>Score</th>
+                                <th>Marks</th>
                                 <th>Sources / Reasons</th>
                             </tr>
                         </thead>
@@ -174,11 +186,18 @@
                     }
                     
                     const sourcesHtml = sources.length > 0 ? sources.join('') : '-';
+                    let markLabel = 'no_mark';
+                    if (defaultFill.has(row.ticker)) {
+                        markLabel = 'default fill';
+                    } else if (liquidFill.has(row.ticker)) {
+                        markLabel = 'liquid only';
+                    }
 
                     html += `
                         <tr>
                             <td><strong>${symbol}</strong></td>
                             <td>${score}</td>
+                            <td>${escapeHtml(markLabel)}</td>
                             <td>${sourcesHtml}</td>
                         </tr>
                     `;

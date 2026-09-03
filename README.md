@@ -26,7 +26,7 @@ python3 -m unittest discover -s tests -v
 
 ## Operate (paper only)
 
-`rank`, `intensity`, `diagnose`, and `replay` require `--fixtures`. Omitting that flag exits with status 2. Those commands read checked-in files under `fixtures/`. `rank --fixtures` and `GET /api/rank` cut at the default mark-book `decision_at`, the same window replay uses. Prints first seen after that decision do not change the rank. There is no live broker, no vendor bars, and no Quiver live path.
+`rank`, `intensity`, `diagnose`, `marks`, and `replay` require `--fixtures`. Omitting that flag exits with status 2. Those commands read checked-in files under `fixtures/`. `rank --fixtures` and `GET /api/rank` cut at the default mark-book `decision_at`, the same window replay uses. Prints first seen after that decision do not change the rank. There is no live broker, no vendor bars, and no Quiver live path.
 
 Every name in `fixtures/universe.json` either has a real fixture mark or cannot fill. Default replay fills only rows in `fixtures/marks/universe.json` (NVDA, XLE). Other ranked names are refused with `no_mark`. That skip is honest: the allocator does not invent a 100.0 fill. `fixtures/marks/liquid.json` is the sector book: tagged `fixture_mark` rows for NVDA/MSFT (tech), XLE/XOM (energy), DIS/NFLX (media), and SPY/QQQ (ETF). Remaining universe names stay `no_mark`. These are research fixtures, not Yahoo/Stooq/vendor bars. Prints are admitted on `observed_at` / `first_seen_at` only; `occurred_at` and congress trade dates do not fill.
 
@@ -69,7 +69,7 @@ Sector mark book (same loop as `replay --fixtures --marks fixtures/marks/liquid.
 curl -sS -X POST http://127.0.0.1:8765/api/liquid
 ```
 
-`GET /api/replay`, `GET /api/path`, and `GET /api/liquid` return 405 and do not place orders. The browser page at that loopback URL loads `GET /api/rank` and `GET /api/diagnose`, and has buttons for `POST /api/replay` (default two-name book), `POST /api/liquid` (sector book), and `POST /api/path`. Bind is loopback only. Paper only.
+`GET /api/replay`, `GET /api/path`, and `GET /api/liquid` return 405 and do not place orders. The browser page at that loopback URL loads `GET /api/rank`, `GET /api/marks`, and `GET /api/diagnose`, and has buttons for `POST /api/replay` (default two-name book), `POST /api/liquid` (sector book), and `POST /api/path`. The rank table labels default-fill vs liquid-only vs `no_mark` before anyone posts. Bind is loopback only. Paper only.
 
 ```powershell
 python -m signal_sim replay --fixtures
@@ -82,7 +82,10 @@ python -m signal_sim serve
 python3 -m signal_sim rank --fixtures
 python3 -m signal_sim intensity --fixtures
 python3 -m signal_sim diagnose --fixtures
+python3 -m signal_sim marks --fixtures
 ```
+
+`marks` lists who can fill on the default book vs `liquid.json`, and who stays `no_mark`. It does not rank or place orders.
 
 `diagnose` prints Hawkes intensity at the latest fixture `observed_at` plus online cluster diagnostics. It is not a ranking input and not a return. Do not change `rank_candidates` to chase fixture-mark PnL.
 

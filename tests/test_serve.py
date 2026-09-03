@@ -71,6 +71,23 @@ class ServeTests(unittest.TestCase):
         self.assertEqual(error.exception.code, 405)
         self.assertIn(b"GET does not place orders", error.exception.read())
 
+    def test_api_marks_matches_marks_fixtures(self):
+        expected = io.StringIO()
+        with redirect_stdout(expected):
+            cli.main(["marks", "--fixtures"])
+
+        body, content_type = self.request("/api/marks")
+
+        self.assertEqual(json.loads(body), json.loads(expected.getvalue()))
+        self.assertEqual(content_type, "application/json")
+        payload = json.loads(body)
+        self.assertEqual(payload["mode"], "local-paper-marks")
+        self.assertEqual(set(payload["default_fillable"]), {"NVDA", "XLE"})
+        self.assertIn("MSFT", payload["liquid_fillable"])
+        self.assertIn("AAPL", payload["no_mark_default"])
+        self.assertIn("AAPL", payload["no_mark_liquid"])
+        self.assertNotIn("sharpe", json.dumps(payload).lower())
+
     def test_api_diagnose_matches_diagnose_fixtures(self):
         expected = io.StringIO()
         with redirect_stdout(expected):
@@ -185,6 +202,7 @@ class ServeTests(unittest.TestCase):
         self.assertIn(b"/api/liquid", body)
         self.assertIn(b"/api/path", body)
         self.assertIn(b"/api/diagnose", body)
+        self.assertIn(b"/api/marks", body)
         self.assertIn(b"no_mark", body)
         self.assertNotIn(b"sharpe", body.lower())
 

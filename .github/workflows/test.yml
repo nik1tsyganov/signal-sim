@@ -20,6 +20,8 @@ jobs:
         run: python -m signal_sim intensity --fixtures
       - name: Hawkes and cluster diagnostics
         run: python -m signal_sim diagnose --fixtures
+      - name: Fixture mark map
+        run: python -m signal_sim marks --fixtures
       - name: Run fixture paper replay
         run: python -m signal_sim replay --fixtures
       - name: Run fixture three-step mark path

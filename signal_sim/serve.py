@@ -44,6 +44,12 @@ class _DeskHandler(BaseHTTPRequestHandler):
             body = json.dumps(fixture_diagnostics(events), separators=(",", ":")).encode("utf-8")
             self._send(body, "application/json")
             return
+        if path == "/api/marks":
+            from .sim import fixture_mark_map
+
+            body = json.dumps(fixture_mark_map(), separators=(",", ":")).encode("utf-8")
+            self._send(body, "application/json")
+            return
         if path == "/api/replay":
             body = json.dumps(
                 {"error": "POST /api/replay to run the paper replay; GET does not place orders"}

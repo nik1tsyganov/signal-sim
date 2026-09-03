@@ -193,6 +193,16 @@ class PaperOnlyCliTests(unittest.TestCase):
         self.assertEqual(output.getvalue(), "")
         self.assertIn("requires --fixtures", error.getvalue())
 
+    def test_marks_without_fixtures_flag_is_refused(self):
+        output = io.StringIO()
+        error = io.StringIO()
+        with redirect_stdout(output), redirect_stderr(error):
+            exit_code = cli.main(["marks"])
+
+        self.assertEqual(exit_code, 2)
+        self.assertEqual(output.getvalue(), "")
+        self.assertIn("requires --fixtures", error.getvalue())
+
     def test_diagnose_without_fixtures_flag_is_refused(self):
         output = io.StringIO()
         error = io.StringIO()
