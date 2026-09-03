@@ -3,8 +3,13 @@ import unittest
 from datetime import datetime
 from unittest import mock
 
+from pathlib import Path
+
 from signal_sim.events import Event
-from signal_sim.sources.altdata import QuiverSource, live
+from signal_sim.sources.altdata import QuiverSource, live, map_recorded
+
+
+REPO = Path(__file__).resolve().parent.parent
 
 
 class _Response:
@@ -218,6 +223,28 @@ class QuiverExpandedLiveTests(unittest.TestCase):
         self.assertEqual(news[0].ticker, "NVDA")
         self.assertEqual(news[0].source, "quiver")
         self.assertEqual(news[0].headline, "NVIDIA launches a new product")
+
+    def test_recorded_congress_payload_maps_without_http(self):
+        with mock.patch("signal_sim.sources.altdata.urllib.request.urlopen") as mock_urlopen:
+            events = map_recorded(
+                "congresstrading",
+                REPO / "fixtures" / "recorded" / "quiver" / "congresstrading.json",
+                now=datetime.fromisoformat("2026-09-02T10:15:00+00:00"),
+            )
+        mock_urlopen.assert_not_called()
+        self.assertEqual(len(events), 1)
+        event = events[0]
+        self.assertEqual(event["ticker"], "NVDA")
+        self.assertEqual(event["kind"], "congress_trade")
+        self.assertEqual(event["transaction"], "purchase")
+        self.assertGreaterEqual(
+            datetime.fromisoformat(event["observed_at"]),
+            datetime.fromisoformat(event["filed_at"]),
+        )
+        self.assertLess(
+            datetime.fromisoformat(event["occurred_at"]),
+            datetime.fromisoformat(event["filed_at"]),
+        )
 
     def test_class_live_remains_congress_choke(self):
         with mock.patch("signal_sim.sources.altdata.live", return_value=[]) as mock_live:

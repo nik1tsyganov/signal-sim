@@ -7,6 +7,8 @@
   "size_frac": 0.1,
   "max_drawdown": 0.2,
   "max_gross_frac": 1.0,
+  "cost_bps": 0,
+  "decision_delay_hours": 1.0,
   "marks": {
     "NVDA": {"entry_px": 178.5, "exit_px": 180.0},
     "AAPL": {"entry_px": 100.0, "exit_px": 100.0},

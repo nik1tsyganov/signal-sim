@@ -114,6 +114,13 @@ class SubmitPaperOrderTests(PaperOrderPathBase):
         self.assertEqual(orders[0]["idempotency_key"], "prop-0001")
         self.assertEqual(fills[0]["order_id"], result["order_id"])
         self.assertEqual(fills[0]["price"], 178.5)
+        self.assertEqual(fills[0]["cost"], 0.0)
+
+    def test_fill_persists_declared_fee(self):
+        result = self._submit(cost=2.5)
+        fills = self._rows("fills")
+        self.assertEqual(fills[0]["cost"], 2.5)
+        self.assertEqual(result["cost"], 2.5)
 
     def test_audit_line_written_with_required_fields(self):
         self._submit()

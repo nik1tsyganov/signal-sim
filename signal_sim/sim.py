@@ -12,11 +12,12 @@ from __future__ import annotations
 import json
 import math
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 from .cli import load_fixture_events
+from .clusters import online_clusters
 from .events import Event
 from .hawkes import log_likelihood
 from .indicators import UNIVERSE, rank_candidates
@@ -55,6 +56,15 @@ def _aware(value: str, field: str) -> datetime:
     return parsed
 
 
+def _non_negative(value: Any, field: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(f"{field} must be a non-negative finite number")
+    number = float(value)
+    if not math.isfinite(number) or number < 0:
+        raise ValueError(f"{field} must be a non-negative finite number")
+    return number
+
+
 def _positive(value: Any, field: str) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise ValueError(f"{field} must be a positive finite number")
@@ -81,6 +91,11 @@ def _parse_mark_book(raw: dict[str, Any], marks_path: Path) -> dict[str, Any]:
     max_gross_frac = _positive(max_gross_frac, "max_gross_frac")
     if size_frac > max_gross_frac:
         raise ValueError("size_frac must be at most max_gross_frac")
+    cost_bps = _non_negative(raw.get("cost_bps", 0), "cost_bps")
+    decision_delay_hours = _positive(raw.get("decision_delay_hours", 1.0), "decision_delay_hours")
+    fill_at = decision_at + timedelta(hours=decision_delay_hours)
+    if fill_at >= exit_at:
+        raise ValueError("fill_at must be before exit_at")
     marks = raw.get("marks")
     if not isinstance(marks, dict) or not marks:
         raise ValueError("marks must be a non-empty object")
@@ -103,6 +118,9 @@ def _parse_mark_book(raw: dict[str, Any], marks_path: Path) -> dict[str, Any]:
         "size_frac": size_frac,
         "max_drawdown": max_drawdown,
         "max_gross_frac": max_gross_frac,
+        "cost_bps": cost_bps,
+        "decision_delay_hours": decision_delay_hours,
+        "fill_at": fill_at,
         "marks": parsed,
         "path": str(marks_path),
     }
@@ -169,12 +187,20 @@ def _inventory(ledger_path: str, starting_cash: float) -> tuple[dict[str, dict[s
     try:
         try:
             rows = connection.execute(
-                "SELECT o.ticker, o.side, o.size_frac, o.event_ids, f.price "
+                "SELECT o.ticker, o.side, o.size_frac, o.event_ids, f.price, "
+                "COALESCE(f.cost, 0) "
                 "FROM orders o JOIN fills f ON f.order_id = o.order_id "
                 "WHERE o.status = 'filled' ORDER BY o.created_at, o.order_id"
             ).fetchall()
         except sqlite3.OperationalError:
-            rows = []
+            try:
+                rows = connection.execute(
+                    "SELECT o.ticker, o.side, o.size_frac, o.event_ids, f.price, 0 "
+                    "FROM orders o JOIN fills f ON f.order_id = o.order_id "
+                    "WHERE o.status = 'filled' ORDER BY o.created_at, o.order_id"
+                ).fetchall()
+            except sqlite3.OperationalError:
+                rows = []
         try:
             account = connection.execute("SELECT total_pnl FROM account").fetchone()
         except sqlite3.OperationalError:
@@ -183,7 +209,7 @@ def _inventory(ledger_path: str, starting_cash: float) -> tuple[dict[str, dict[s
         connection.close()
     held: dict[str, dict[str, Any]] = {}
     cash = starting_cash
-    for ticker, side, size_frac, event_ids_raw, price in rows:
+    for ticker, side, size_frac, event_ids_raw, price, fee in rows:
         shares = _shares(starting_cash, float(size_frac), float(price))
         ids = json.loads(event_ids_raw) if isinstance(event_ids_raw, str) else []
         current = held.get(
@@ -191,14 +217,14 @@ def _inventory(ledger_path: str, starting_cash: float) -> tuple[dict[str, dict[s
             {"shares": 0.0, "size_frac": 0.0, "fill_px": float(price), "event_ids": ids, "side": "buy"},
         )
         if side == "buy":
-            cash -= shares * float(price)
+            cash -= shares * float(price) + float(fee)
             new_shares = current["shares"] + shares
             if new_shares > 0:
                 current["fill_px"] = (
                     current["shares"] * current["fill_px"] + shares * float(price)
                 ) / new_shares
         else:
-            cash += shares * float(price)
+            cash += shares * float(price) - float(fee)
             new_shares = current["shares"] - shares
         current["shares"] = new_shares
         current["event_ids"] = ids or current["event_ids"]
@@ -269,6 +295,7 @@ def _place(
     kill_root: str | None,
     decision_key: str,
     action: str,
+    cost: float,
 ) -> dict[str, Any]:
     return submit_paper_order(
         proposal_from_candidate(
@@ -283,6 +310,7 @@ def _place(
         mark_px=mark_px,
         audit_path=audit_path,
         kill_root=kill_root,
+        cost=cost,
     )
 
 
@@ -314,7 +342,12 @@ def run_fixture_replay(
     starting_cash = float(book["starting_cash"])
     max_drawdown = float(book.get("max_drawdown", 0.2))
     max_gross_frac = float(book.get("max_gross_frac", MAX_GROSS_FRAC))
+    cost_bps = float(book.get("cost_bps", 0))
+    fill_at = book.get("fill_at")
+    if fill_at is None:
+        fill_at = book["decision_at"] + timedelta(hours=float(book.get("decision_delay_hours", 1.0)))
     decision_key = book["decision_at"].isoformat().replace("+00:00", "Z")
+    fill_key = fill_at.isoformat().replace("+00:00", "Z") if hasattr(fill_at, "isoformat") else str(fill_at)
     horizon_hours = (book["exit_at"] - book["decision_at"]).total_seconds() / 3600.0
     targets, skipped = size_targets(
         candidates,
@@ -345,10 +378,11 @@ def run_fixture_replay(
             trade_frac = position["shares"] * sell_px / starting_cash
             if trade_frac <= 1e-12:
                 continue
+            fee = starting_cash * trade_frac * cost_bps / 10000.0
             actions.append(
                 (ticker, "sell", trade_frac, sell_px, position.get("event_ids"), "close")
             )
-            reserved_cash += position["shares"] * sell_px
+            reserved_cash += position["shares"] * sell_px - fee
     for row in targets:
         ticker = str(row["ticker"])
         mark = book["marks"].get(ticker)
@@ -370,11 +404,12 @@ def run_fixture_replay(
             refuse(ticker, "drawdown_halt")
             continue
         if delta_shares > 0:
-            cost = trade_frac * starting_cash
-            if cost - reserved_cash > 1e-9:
+            notional = trade_frac * starting_cash
+            fee = notional * cost_bps / 10000.0
+            if notional + fee - reserved_cash > 1e-9:
                 refuse(ticker, "cash_constraint")
                 continue
-            reserved_cash -= cost
+            reserved_cash -= notional + fee
         side = "buy" if delta_shares > 0 else "sell"
         event_ids = None if delta_shares > 0 else held.get(ticker, {}).get("event_ids")
         action = "open" if have_shares <= 1e-12 else "adjust"
@@ -394,15 +429,17 @@ def run_fixture_replay(
                 kill_root=kill_root,
                 decision_key=decision_key,
                 action=action,
+                cost=starting_cash * frac * cost_bps / 10000.0,
             )
         except OrderRefused as error:
             refuse(ticker, str(error))
             continue
         notional = starting_cash * frac
+        fee = float(filled.get("cost", 0))
         if side == "buy":
-            cash -= notional
+            cash -= notional + fee
         else:
-            cash += notional
+            cash += notional - fee
         orders.append(filled)
 
     held, cash, _last = _inventory(ledger_path, starting_cash)
@@ -442,17 +479,22 @@ def run_fixture_replay(
     unrealized_pnl = math.fsum(row["pnl"] for row in positions)
     realized_pnl = total_pnl - unrealized_pnl
     gross_frac = math.fsum(row["size_frac"] for row in positions)
+    fees = math.fsum(float(order.get("cost", 0)) for order in orders)
+    clusters = online_clusters(events, book["decision_at"])
     summary = {
         "mode": "local-paper-replay",
         "mark_source": book.get("source", "fixture"),
         "mark_note": book.get("note", ""),
         "fill_rule": FILL_RULE,
         "decision_at": decision_key,
+        "fill_at": fill_key,
         "exit_at": book["exit_at"].isoformat().replace("+00:00", "Z"),
         "horizon_hours": horizon_hours,
         "starting_cash": starting_cash,
         "cash": cash,
         "size_frac": size_frac,
+        "cost_bps": cost_bps,
+        "decision_delay_hours": float(book.get("decision_delay_hours", 1.0)),
         "max_drawdown": max_drawdown,
         "drawdown_halt": halted,
         "gross_frac": gross_frac,
@@ -465,6 +507,7 @@ def run_fixture_replay(
                 "side": order["side"],
                 "size_frac": order["size_frac"],
                 "fill_px": order["fill_px"],
+                "cost": float(order.get("cost", 0)),
                 "status": order["status"],
             }
             for order in orders
@@ -493,6 +536,10 @@ def run_fixture_replay(
             "ending_equity": ending_equity,
             "hawkes_log_likelihood": hawkes_ll,
             "hawkes_n_arrivals": hawkes_n_arrivals,
+            "cost_bps": cost_bps,
+            "fees": fees,
+            "n_clusters": len(clusters),
+            "max_cluster_size": max((row["size"] for row in clusters), default=0),
         },
         "ledger_path": str(ledger_path),
     }

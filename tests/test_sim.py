@@ -34,6 +34,10 @@ class MarkBookTests(unittest.TestCase):
         self.assertLessEqual(book["size_frac"], MAX_GROSS_FRAC)
         self.assertTrue({"NVDA", "XLE", "DIS", "SPY", "XLK"}.issubset(set(book["marks"])))
         self.assertGreaterEqual(len(book["marks"]), 15)
+        self.assertGreaterEqual(book["cost_bps"], 0)
+        self.assertGreater(book["decision_delay_hours"], 0)
+        self.assertLess(book["decision_at"], book["fill_at"])
+        self.assertLess(book["fill_at"], book["exit_at"])
 
 
 class ReplayRoundTripTests(unittest.TestCase):
@@ -95,6 +99,9 @@ class ReplayRoundTripTests(unittest.TestCase):
         self.assertAlmostEqual(summary["stats"]["max_name_frac"], book["size_frac"])
         self.assertEqual(summary["stats"]["hawkes_n_arrivals"], 1)
         self.assertEqual(summary["fill_rule"], "decision-time fixture mark; size_frac of starting_cash")
+        self.assertLess(summary["decision_at"], summary["fill_at"])
+        self.assertEqual(summary["stats"]["cost_bps"], 0.0)
+        self.assertGreaterEqual(summary["stats"]["n_clusters"], 1)
 
         connection = sqlite3.connect(self.ledger)
         try:
@@ -288,6 +295,28 @@ class ReplayRoundTripTests(unittest.TestCase):
             universe=universe,
         )
         self.assertEqual({row["ticker"] for row in summary["orders"]}, {"NVDA", "XLE"})
+
+    def test_cost_bps_reduces_ending_equity_by_declared_fees(self):
+        book = load_mark_book()
+        book = dict(book)
+        book["cost_bps"] = 10.0
+        zero = run_fixture_replay(
+            fixtures=FIXTURES,
+            ledger_path=os.path.join(self.tmp, "zero.sqlite"),
+            audit_path=os.path.join(self.tmp, "zero.audit"),
+            kill_root=self.tmp,
+        )
+        taxed = run_fixture_replay(
+            fixtures=FIXTURES,
+            ledger_path=self.ledger,
+            audit_path=self.audit,
+            kill_root=self.tmp,
+            mark_book=book,
+        )
+        expected_fees = 2 * book["starting_cash"] * book["size_frac"] * 10.0 / 10000.0
+        self.assertAlmostEqual(taxed["stats"]["fees"], expected_fees)
+        self.assertAlmostEqual(taxed["ending_equity"], zero["ending_equity"] - expected_fees)
+        self.assertLess(taxed["cash"], zero["cash"])
 
 
 class InventoryCostTests(unittest.TestCase):

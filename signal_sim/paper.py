@@ -41,7 +41,8 @@ CREATE TABLE IF NOT EXISTS fills (
     fill_id TEXT PRIMARY KEY,
     order_id TEXT NOT NULL REFERENCES orders(order_id),
     price REAL NOT NULL,
-    filled_at TEXT NOT NULL
+    filled_at TEXT NOT NULL,
+    cost REAL NOT NULL DEFAULT 0
 );
 """
 
@@ -165,7 +166,7 @@ def _validation_failure(proposal, mark_px):
     return None
 
 
-def submit_paper_order(proposal, *, ledger_path, mark_px, audit_path=None, kill_root=None):
+def submit_paper_order(proposal, *, ledger_path, mark_px, audit_path=None, kill_root=None, cost=0):
     """The only function that can create an order row.
 
     Rails, in order: R1 paper-only constant, R3 fail-closed kill-switch,
@@ -201,6 +202,13 @@ def submit_paper_order(proposal, *, ledger_path, mark_px, audit_path=None, kill_
     failure = _validation_failure(proposal, mark_px)
     if failure is not None:
         refuse(f"R9: {failure}")
+    if (
+        isinstance(cost, bool)
+        or not isinstance(cost, (int, float))
+        or not math.isfinite(cost)
+        or cost < 0
+    ):
+        refuse("R9: cost must be a non-negative finite number")
 
     order_id = hashlib.sha256(proposal["idempotency_key"].encode("utf-8")).hexdigest()[:32]
     fill_id = hashlib.sha256(f"{proposal['idempotency_key']}:fill".encode("utf-8")).hexdigest()[:32]
@@ -226,9 +234,9 @@ def submit_paper_order(proposal, *, ledger_path, mark_px, audit_path=None, kill_
         except sqlite3.IntegrityError:
             refuse("R9: duplicate idempotency_key - proposal already submitted")
         con.execute(
-            "INSERT INTO fills (fill_id, order_id, price, filled_at)"
-            " VALUES (?, ?, ?, ?)",
-            (fill_id, order_id, float(mark_px), decision_at),
+            "INSERT INTO fills (fill_id, order_id, price, filled_at, cost)"
+            " VALUES (?, ?, ?, ?, ?)",
+            (fill_id, order_id, float(mark_px), decision_at, float(cost)),
         )
         record["verdict"] = "approved"
         record["outcome"] = "filled"
@@ -246,6 +254,7 @@ def submit_paper_order(proposal, *, ledger_path, mark_px, audit_path=None, kill_
         "side": proposal["side"],
         "size_frac": float(proposal["size_frac"]),
         "fill_px": float(mark_px),
+        "cost": float(cost),
         "idempotency_key": proposal["idempotency_key"],
         "decision_at": decision_at,
         "ledger_path": str(ledger_path),

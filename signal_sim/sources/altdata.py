@@ -383,6 +383,18 @@ _FETCHERS = {
 }
 
 
+def map_recorded(dataset, path, now=None):
+    """Map a checked-in REST-shaped payload. No HTTP. Live stay stubbed without a key."""
+    mapper = _FETCHERS.get(dataset)
+    if mapper is None:
+        raise ValueError(f"unknown Quiver dataset: {dataset!r}")
+    with open(path, encoding="utf-8") as handle:
+        payload = json.load(handle)
+    if now is None:
+        now = datetime.now(timezone.utc)
+    return mapper(payload, now)
+
+
 def live(datasets=None):
     """Fetch and map selected Quiver live datasets.
 
