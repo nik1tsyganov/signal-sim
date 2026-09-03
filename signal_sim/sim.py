@@ -26,6 +26,8 @@ from .store import EventStore
 
 
 DEFAULT_MARKS = Path(__file__).resolve().parent.parent / "fixtures" / "marks" / "universe.json"
+DEFAULT_PATH = Path(__file__).resolve().parent.parent / "fixtures" / "marks" / "path.json"
+FILL_RULE = "decision-time fixture mark; size_frac of starting_cash"
 _PNL_SCHEMA = """
 CREATE TABLE IF NOT EXISTS account (
     starting_cash REAL NOT NULL,
@@ -62,10 +64,7 @@ def _positive(value: Any, field: str) -> float:
     return number
 
 
-def load_mark_book(path: Path | None = None) -> dict[str, Any]:
-    marks_path = DEFAULT_MARKS if path is None else path
-    with marks_path.open(encoding="utf-8") as handle:
-        raw = json.load(handle)
+def _parse_mark_book(raw: dict[str, Any], marks_path: Path) -> dict[str, Any]:
     if not isinstance(raw, dict):
         raise ValueError("mark book must be an object")
     decision_at = _aware(raw.get("decision_at", ""), "decision_at")
@@ -107,6 +106,38 @@ def load_mark_book(path: Path | None = None) -> dict[str, Any]:
         "marks": parsed,
         "path": str(marks_path),
     }
+
+
+def load_mark_book(path: Path | None = None) -> dict[str, Any]:
+    marks_path = DEFAULT_MARKS if path is None else path
+    with marks_path.open(encoding="utf-8") as handle:
+        raw = json.load(handle)
+    return _parse_mark_book(raw, marks_path)
+
+
+def load_mark_path(path: Path | None = None) -> list[dict[str, Any]]:
+    path_file = DEFAULT_PATH if path is None else path
+    with path_file.open(encoding="utf-8") as handle:
+        raw = json.load(handle)
+    if not isinstance(raw, dict):
+        raise ValueError("mark path must be an object")
+    steps = raw.get("steps")
+    if not isinstance(steps, list) or len(steps) < 2:
+        raise ValueError("mark path steps must be a list of at least two steps")
+    shared = {key: value for key, value in raw.items() if key != "steps"}
+    books: list[dict[str, Any]] = []
+    previous_exit = None
+    for index, step in enumerate(steps):
+        if not isinstance(step, dict):
+            raise ValueError(f"steps[{index}] must be an object")
+        merged = dict(shared)
+        merged.update(step)
+        book = _parse_mark_book(merged, path_file)
+        if previous_exit is not None and book["decision_at"] < previous_exit:
+            raise ValueError("path step decision_at must not precede the previous exit_at")
+        previous_exit = book["exit_at"]
+        books.append(book)
+    return books
 
 
 def _assert_decision_after_events(events: list[Event], decision_at: datetime) -> None:
@@ -166,17 +197,16 @@ def _inventory(ledger_path: str, starting_cash: float) -> tuple[dict[str, dict[s
                 current["fill_px"] = (
                     current["shares"] * current["fill_px"] + shares * float(price)
                 ) / new_shares
-            current["size_frac"] = current["size_frac"] + float(size_frac)
         else:
             cash += shares * float(price)
             new_shares = current["shares"] - shares
-            current["size_frac"] = current["size_frac"] - float(size_frac)
         current["shares"] = new_shares
         current["event_ids"] = ids or current["event_ids"]
         current["side"] = "buy"
         if new_shares <= 1e-12:
             held.pop(ticker, None)
         else:
+            current["size_frac"] = new_shares * current["fill_px"] / starting_cash
             held[ticker] = current
     last_pnl = None if account is None else float(account[0])
     return held, cash, last_pnl
@@ -289,6 +319,9 @@ def run_fixture_replay(
         max_gross_frac=max_gross_frac,
     )
     held, cash, last_pnl = _inventory(ledger_path, starting_cash)
+    for ticker in held:
+        if ticker not in book["marks"]:
+            raise ValueError(f"held ticker missing fixture mark: {ticker!r}")
     halted = last_pnl is not None and last_pnl <= -max_drawdown * starting_cash
     orders: list[dict[str, Any]] = []
     refusals: list[dict[str, Any]] = [{"ticker": row["ticker"], "reason": row["reason"]} for row in skipped]
@@ -303,34 +336,45 @@ def run_fixture_replay(
         if ticker not in wanted:
             mark = book["marks"].get(ticker)
             if mark is None:
-                refuse(ticker, "missing_fixture_mark")
+                raise ValueError(f"held ticker missing fixture mark: {ticker!r}")
+            sell_px = mark["entry_px"]
+            trade_frac = position["shares"] * sell_px / starting_cash
+            if trade_frac <= 1e-12:
                 continue
             actions.append(
-                (ticker, "sell", position["size_frac"], mark["entry_px"], position.get("event_ids"), "close")
+                (ticker, "sell", trade_frac, sell_px, position.get("event_ids"), "close")
             )
-            reserved_cash += starting_cash * float(position["size_frac"])
+            reserved_cash += position["shares"] * sell_px
     for row in targets:
         ticker = str(row["ticker"])
         mark = book["marks"].get(ticker)
         if mark is None:
             refuse(ticker, "missing_fixture_mark")
             continue
-        have = held.get(ticker, {}).get("size_frac", 0.0)
-        delta = float(row["target_frac"]) - float(have)
-        if abs(delta) <= 1e-12:
+        mark_px = mark["entry_px"]
+        have_shares = float(held.get(ticker, {}).get("shares", 0.0))
+        target_shares = starting_cash * float(row["target_frac"]) / mark_px
+        delta_shares = target_shares - have_shares
+        if abs(delta_shares) <= 1e-12:
             continue
-        if halted and delta > 0:
+        if delta_shares < 0:
+            delta_shares = max(delta_shares, -have_shares)
+        trade_frac = abs(delta_shares) * mark_px / starting_cash
+        if trade_frac <= 1e-12:
+            continue
+        if halted and delta_shares > 0:
             refuse(ticker, "drawdown_halt")
             continue
-        if delta > 0:
-            cost = starting_cash * delta
+        if delta_shares > 0:
+            cost = trade_frac * starting_cash
             if cost - reserved_cash > 1e-9:
                 refuse(ticker, "cash_constraint")
                 continue
             reserved_cash -= cost
-        side = "buy" if delta > 0 else "sell"
-        event_ids = None if delta > 0 else held.get(ticker, {}).get("event_ids")
-        actions.append((ticker, side, abs(delta), mark["entry_px"], event_ids, "open" if have == 0 else "adjust"))
+        side = "buy" if delta_shares > 0 else "sell"
+        event_ids = None if delta_shares > 0 else held.get(ticker, {}).get("event_ids")
+        action = "open" if have_shares <= 1e-12 else "adjust"
+        actions.append((ticker, side, trade_frac, mark_px, event_ids, action))
 
     for ticker, side, frac, mark_px, event_ids, action in actions:
         try:
@@ -362,8 +406,7 @@ def run_fixture_replay(
     for ticker, position in sorted(held.items()):
         mark = book["marks"].get(ticker)
         if mark is None:
-            refuse(ticker, "missing_fixture_mark")
-            continue
+            raise ValueError(f"held ticker missing fixture mark: {ticker!r}")
         pnl = _buy_pnl(position["shares"], position["fill_px"], mark["exit_px"])
         positions.append(
             {
@@ -379,10 +422,24 @@ def run_fixture_replay(
 
     total_pnl = math.fsum(row["pnl"] for row in positions)
     hawkes_ll = log_likelihood(events, start=book["decision_at"], end=book["exit_at"])
+    hawkes_n_arrivals = sum(
+        1
+        for event in events
+        if event.ticker in UNIVERSE and book["decision_at"] <= event.observed_at <= book["exit_at"]
+    )
+    n_winners = sum(1 for row in positions if row["pnl"] > 0)
+    n_losers = sum(1 for row in positions if row["pnl"] < 0)
+    n_flat = sum(1 for row in positions if row["pnl"] == 0)
+    hit_rate = (n_winners / len(positions)) if positions else None
+    turnover = math.fsum(order["size_frac"] for order in orders)
+    max_name_frac = max((row["size_frac"] for row in positions), default=0.0)
+    ending_equity = starting_cash + total_pnl
+    gross_frac = math.fsum(row["size_frac"] for row in positions)
     summary = {
         "mode": "local-paper-replay",
         "mark_source": book.get("source", "fixture"),
         "mark_note": book.get("note", ""),
+        "fill_rule": FILL_RULE,
         "decision_at": decision_key,
         "exit_at": book["exit_at"].isoformat().replace("+00:00", "Z"),
         "horizon_hours": horizon_hours,
@@ -391,7 +448,7 @@ def run_fixture_replay(
         "size_frac": size_frac,
         "max_drawdown": max_drawdown,
         "drawdown_halt": halted,
-        "gross_frac": math.fsum(row["size_frac"] for row in positions),
+        "gross_frac": gross_frac,
         "targets": targets,
         "candidates": candidates,
         "orders": [
@@ -408,21 +465,86 @@ def run_fixture_replay(
         "refusals": refusals,
         "positions": positions,
         "total_pnl": total_pnl,
-        "ending_equity": starting_cash + total_pnl,
+        "ending_equity": ending_equity,
         "hawkes_log_likelihood": hawkes_ll,
         "stats": {
             "n_candidates": len(candidates),
             "n_orders": len(orders),
             "n_refusals": len(refusals),
             "n_positions": len(positions),
-            "gross_frac": math.fsum(row["size_frac"] for row in positions),
+            "n_winners": n_winners,
+            "n_losers": n_losers,
+            "n_flat": n_flat,
+            "hit_rate": hit_rate,
+            "turnover": turnover,
+            "max_name_frac": max_name_frac,
+            "gross_frac": gross_frac,
             "total_pnl": total_pnl,
-            "ending_equity": starting_cash + total_pnl,
+            "ending_equity": ending_equity,
             "hawkes_log_likelihood": hawkes_ll,
+            "hawkes_n_arrivals": hawkes_n_arrivals,
         },
         "ledger_path": str(ledger_path),
     }
     _write_account(ledger_path, summary)
     with open(str(ledger_path) + ".run.jsonl", "a", encoding="utf-8") as handle:
         handle.write(json.dumps(summary, sort_keys=True) + "\n")
+    return summary
+
+
+def run_fixture_path(
+    *,
+    fixtures: Path,
+    ledger_path: str,
+    audit_path: str | None = None,
+    kill_root: str | None = None,
+    mark_path: Path | None = None,
+    universe: tuple[str, ...] | None = None,
+) -> dict[str, Any]:
+    """Replay successive fixture mark books on one ledger. Not vendor bars."""
+    books = load_mark_path(mark_path)
+    steps = [
+        run_fixture_replay(
+            fixtures=fixtures,
+            ledger_path=ledger_path,
+            audit_path=audit_path,
+            kill_root=kill_root,
+            mark_book=book,
+            universe=universe,
+        )
+        for book in books
+    ]
+    starting_cash = float(books[0]["starting_cash"])
+    equity_curve = [float(step["ending_equity"]) for step in steps]
+    peak = starting_cash
+    worst_drawdown = 0.0
+    for equity in equity_curve:
+        peak = max(peak, equity)
+        worst_drawdown = min(worst_drawdown, equity - peak)
+    total_pnl = equity_curve[-1] - starting_cash
+    summary = {
+        "mode": "local-paper-path",
+        "mark_source": books[0].get("source", "fixture"),
+        "mark_note": books[0].get("note", ""),
+        "fill_rule": FILL_RULE,
+        "starting_cash": starting_cash,
+        "steps": steps,
+        "equity_curve": equity_curve,
+        "ending_equity": equity_curve[-1],
+        "total_pnl": total_pnl,
+        "worst_drawdown": worst_drawdown,
+        "worst_drawdown_frac": worst_drawdown / starting_cash,
+        "ledger_path": str(ledger_path),
+        "stats": {
+            "n_steps": len(steps),
+            "n_orders": sum(len(step["orders"]) for step in steps),
+            "ending_equity": equity_curve[-1],
+            "total_pnl": total_pnl,
+            "worst_drawdown": worst_drawdown,
+            "worst_drawdown_frac": worst_drawdown / starting_cash,
+            "hit_rate": steps[-1]["stats"].get("hit_rate"),
+        },
+    }
+    with open(str(ledger_path) + ".run.jsonl", "a", encoding="utf-8") as handle:
+        handle.write(json.dumps({key: value for key, value in summary.items() if key != "steps"}, sort_keys=True) + "\n")
     return summary

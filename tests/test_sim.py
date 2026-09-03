@@ -13,7 +13,7 @@ from pathlib import Path
 
 from signal_sim import cli
 from signal_sim.indicators import load_universe
-from signal_sim.sim import MAX_GROSS_FRAC, _inventory, load_mark_book, run_fixture_replay
+from signal_sim.sim import MAX_GROSS_FRAC, _inventory, load_mark_book, load_mark_path, run_fixture_path, run_fixture_replay
 from signal_sim.sizer import size_targets
 from signal_sim.paper import submit_paper_order
 
@@ -84,6 +84,13 @@ class ReplayRoundTripTests(unittest.TestCase):
         self.assertTrue(math.isfinite(summary["hawkes_log_likelihood"]))
         self.assertEqual(summary["stats"]["n_orders"], 2)
         self.assertEqual(summary["stats"]["n_positions"], 2)
+        self.assertEqual(summary["stats"]["n_winners"], 1)
+        self.assertEqual(summary["stats"]["n_losers"], 1)
+        self.assertAlmostEqual(summary["stats"]["hit_rate"], 0.5)
+        self.assertAlmostEqual(summary["stats"]["turnover"], 0.2)
+        self.assertAlmostEqual(summary["stats"]["max_name_frac"], book["size_frac"])
+        self.assertEqual(summary["stats"]["hawkes_n_arrivals"], 1)
+        self.assertEqual(summary["fill_rule"], "decision-time fixture mark; size_frac of starting_cash")
 
         connection = sqlite3.connect(self.ledger)
         try:
@@ -120,6 +127,27 @@ class ReplayRoundTripTests(unittest.TestCase):
         )
         self.assertEqual([row["ticker"] for row in summary["orders"]], ["NVDA"])
         self.assertEqual(summary["refusals"], [{"ticker": "XLE", "reason": "missing_fixture_mark"}])
+
+    def test_held_name_without_mark_fails_closed(self):
+        run_fixture_replay(
+            fixtures=FIXTURES,
+            ledger_path=self.ledger,
+            audit_path=self.audit,
+            kill_root=self.tmp,
+        )
+        book = load_mark_book()
+        book = dict(book)
+        book["marks"] = dict(book["marks"])
+        del book["marks"]["NVDA"]
+        with self.assertRaisesRegex(ValueError, "held ticker missing fixture mark: 'NVDA'"):
+            run_fixture_replay(
+                fixtures=FIXTURES,
+                ledger_path=self.ledger,
+                audit_path=self.audit,
+                kill_root=self.tmp,
+                mark_book=book,
+                candidates=[{"ticker": "XLE", "score": 1, "news_breakout": 1, "insider_confirm": 0}],
+            )
 
     def test_gross_frac_cap_skips_later_candidates(self):
         book = load_mark_book()
@@ -282,7 +310,49 @@ class InventoryCostTests(unittest.TestCase):
         held, cash, _pnl = _inventory(ledger, starting)
         self.assertAlmostEqual(held["NVDA"]["shares"], 1.0 + 0.5)
         self.assertAlmostEqual(held["NVDA"]["fill_px"], (100.0 * 1.0 + 200.0 * 0.5) / 1.5)
+        self.assertAlmostEqual(held["NVDA"]["size_frac"], 0.2)
         self.assertAlmostEqual(cash, 800.0)
+
+    def test_vwap_close_sells_held_shares_not_summed_size_frac(self):
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        ledger = os.path.join(tmp, "ledger.sqlite")
+        audit = os.path.join(tmp, "audit.jsonl")
+        starting = 1000.0
+        for key, px, frac in (("a", 100.0, 0.1), ("b", 200.0, 0.1)):
+            submit_paper_order(
+                {
+                    "ticker": "NVDA",
+                    "side": "buy",
+                    "size_frac": frac,
+                    "event_ids": [f"e-{key}"],
+                    "idempotency_key": key,
+                },
+                ledger_path=ledger,
+                audit_path=audit,
+                mark_px=px,
+                kill_root=tmp,
+            )
+        book = load_mark_book()
+        book = dict(book)
+        book["starting_cash"] = starting
+        book["marks"] = dict(book["marks"])
+        book["marks"]["NVDA"] = {"entry_px": 150.0, "exit_px": 150.0}
+        closed = run_fixture_replay(
+            fixtures=FIXTURES,
+            ledger_path=ledger,
+            audit_path=audit,
+            kill_root=tmp,
+            mark_book=book,
+            candidates=[],
+        )
+        self.assertEqual([row["ticker"] for row in closed["orders"]], ["NVDA"])
+        self.assertEqual(closed["orders"][0]["side"], "sell")
+        self.assertAlmostEqual(closed["orders"][0]["size_frac"], 1.5 * 150.0 / starting)
+        self.assertEqual(closed["positions"], [])
+        held, cash, _pnl = _inventory(ledger, starting)
+        self.assertEqual(held, {})
+        self.assertAlmostEqual(cash, starting + 1.5 * (150.0 - (100.0 * 1.0 + 200.0 * 0.5) / 1.5))
 
 
 class SizerTests(unittest.TestCase):
@@ -332,9 +402,65 @@ class ReplayCliTests(unittest.TestCase):
         self.assertEqual(payload["mode"], "local-paper-replay")
         self.assertIn("total_pnl", payload)
         self.assertEqual({row["ticker"] for row in payload["orders"]}, {"NVDA", "XLE"})
+        self.assertEqual(payload["stats"]["n_winners"], 1)
+        self.assertEqual(payload["stats"]["n_losers"], 1)
+        self.assertAlmostEqual(payload["stats"]["hit_rate"], 0.5)
+        self.assertAlmostEqual(payload["stats"]["turnover"], 0.2)
+        self.assertEqual(payload["stats"]["hawkes_n_arrivals"], 1)
+        self.assertEqual(payload["fill_rule"], "decision-time fixture mark; size_frac of starting_cash")
         rendered = json.dumps(payload).lower()
         for host in ("api." + "alpaca.markets", "local" + "host"):
             self.assertNotIn(host, rendered)
+
+    def test_replay_path_prints_equity_curve(self):
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        ledger = os.path.join(tmp, "path-ledger.sqlite")
+        output = io.StringIO()
+        with redirect_stdout(output):
+            exit_code = cli.main(["replay", "--fixtures", "--path", "--ledger", ledger])
+        self.assertEqual(exit_code, 0)
+        payload = json.loads(output.getvalue())
+        self.assertEqual(payload["mode"], "local-paper-path")
+        self.assertEqual(len(payload["steps"]), 2)
+        self.assertEqual(len(payload["equity_curve"]), 2)
+        self.assertTrue(math.isfinite(payload["worst_drawdown"]))
+        self.assertTrue(math.isfinite(payload["total_pnl"]))
+
+
+class MarkPathTests(unittest.TestCase):
+    def test_checked_in_path_is_two_forward_steps(self):
+        books = load_mark_path()
+        self.assertEqual(len(books), 2)
+        self.assertLess(books[0]["decision_at"], books[0]["exit_at"])
+        self.assertLessEqual(books[0]["exit_at"], books[1]["decision_at"])
+        self.assertLess(books[1]["decision_at"], books[1]["exit_at"])
+        self.assertTrue({"NVDA", "XLE"}.issubset(set(books[0]["marks"])))
+        self.assertTrue({"NVDA", "XLE"}.issubset(set(books[1]["marks"])))
+
+    def test_path_replay_tracks_equity_and_does_not_invent_sharpe(self):
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        ledger = os.path.join(tmp, "ledger.sqlite")
+        audit = os.path.join(tmp, "audit.jsonl")
+        summary = run_fixture_path(
+            fixtures=FIXTURES,
+            ledger_path=ledger,
+            audit_path=audit,
+            kill_root=tmp,
+        )
+        self.assertEqual(summary["mode"], "local-paper-path")
+        self.assertEqual(len(summary["steps"]), 2)
+        self.assertEqual(summary["steps"][0]["orders"][0]["ticker"], "NVDA")
+        self.assertIn("XLE", {row["ticker"] for row in summary["steps"][0]["orders"]})
+        self.assertEqual(len(summary["equity_curve"]), 2)
+        self.assertAlmostEqual(
+            summary["ending_equity"],
+            summary["starting_cash"] + summary["total_pnl"],
+        )
+        self.assertAlmostEqual(summary["ending_equity"], summary["equity_curve"][-1])
+        self.assertNotIn("sharpe", json.dumps(summary).lower())
+        self.assertLessEqual(summary["worst_drawdown"], 0.0)
 
 
 if __name__ == "__main__":

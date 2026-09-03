@@ -132,15 +132,18 @@ def _validation_failure(proposal, mark_px):
         return "proposal must be a mapping"
     if proposal.get("ticker") not in UNIVERSE:
         return f"ticker not in universe {UNIVERSE}"
-    if proposal.get("side") not in SIDES:
+    side = proposal.get("side")
+    if side not in SIDES:
         return "side must be 'buy' or 'sell'"
     size_frac = proposal.get("size_frac")
     if (
         isinstance(size_frac, bool)
         or not isinstance(size_frac, (int, float))
         or not math.isfinite(size_frac)
-        or not 0 < size_frac <= 1
+        or size_frac <= 0
     ):
+        return "size_frac must be a number in (0, 1]" if side == "buy" else "size_frac must be a positive finite number"
+    if side == "buy" and size_frac > 1:
         return "size_frac must be a number in (0, 1]"
     event_ids = proposal.get("event_ids")
     if (

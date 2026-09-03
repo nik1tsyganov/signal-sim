@@ -97,6 +97,11 @@ def _parser() -> argparse.ArgumentParser:
         "--ledger",
         help="sqlite ledger path (default: a temporary file)",
     )
+    replay.add_argument(
+        "--path",
+        action="store_true",
+        help="replay the checked-in two-step fixture mark path (not vendor bars)",
+    )
     return parser
 
 
@@ -142,7 +147,19 @@ def main(argv: list[str] | None = None) -> int:
         ledger = args.ledger
         if not ledger:
             ledger = tempfile.NamedTemporaryFile(prefix="paper-replay-", suffix=".sqlite", delete=False).name
-        summary = run_fixture_replay(fixtures=fixtures, ledger_path=ledger)
+        if args.path:
+            from .sim import run_fixture_path
+
+            summary = run_fixture_path(fixtures=fixtures, ledger_path=ledger)
+        else:
+            summary = run_fixture_replay(fixtures=fixtures, ledger_path=ledger)
+        stats = summary.get("stats", {})
+        print(
+            f"{summary.get('mode', 'replay')}: total_pnl={summary.get('total_pnl')} "
+            f"ending_equity={summary.get('ending_equity')} "
+            f"n_orders={stats.get('n_orders')} hit_rate={stats.get('hit_rate')}",
+            file=sys.stderr,
+        )
         print(json.dumps(summary, separators=(",", ":")))
         return 0
     return 2

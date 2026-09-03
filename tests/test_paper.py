@@ -205,6 +205,12 @@ class ValidatorTests(PaperOrderPathBase):
             with self.subTest(size_frac=size_frac):
                 self._assert_refused(good_proposal(size_frac=size_frac))
 
+    def test_sell_size_frac_above_one_is_accepted_to_flatten(self):
+        result = self._submit(good_proposal(side="sell", size_frac=1.5, idempotency_key="sell-flat"))
+        self.assertEqual(result["status"], "filled")
+        self.assertEqual(result["size_frac"], 1.5)
+        self.assertEqual(result["side"], "sell")
+
     def test_missing_event_ids_is_refused_and_never_logged_filled(self):
         proposal = good_proposal()
         del proposal["event_ids"]

@@ -64,7 +64,13 @@ Optional durable ledger:
 python3 -m signal_sim replay --fixtures --ledger paper-replay.sqlite
 ```
 
-`replay` uses `rank_candidates` as-is. A sizer turns each positive-score name into a signed long target of `size_frac` with a horizon equal to the fixture `decision_at`→`exit_at` window. The local ledger opens, adds, reduces, or closes to that book, subject to cash and a prior-run drawdown halt. Fills use `fixtures/marks/universe.json` `entry_px` and mark to `exit_px`. The frozen ticker list is `fixtures/universe.json` (more than three names). Tests may pass a smaller basket. This is not a vendor price feed and not a live broker.
+`replay` uses `rank_candidates` as-is. A sizer turns each positive-score name into a signed long target of `size_frac` with a horizon equal to the fixture `decision_at`→`exit_at` window. The local ledger opens, adds, reduces, or closes to that book, subject to cash and a prior-run drawdown halt. Rebalance is share-accurate at the decision mark: a close sells held shares, not the sum of prior `size_frac` tickets. Fills use `fixtures/marks/universe.json` `entry_px` and mark to `exit_px`. `--path` walks `fixtures/marks/path.json` (two fixture steps, still not vendor bars) and reports an equity curve plus worst drawdown from those steps. The JSON `stats` object is from the run (hit rate, turnover, winner/loser counts, Hawkes arrivals in the decision→exit window). It is not a Sharpe or a market backtest. The frozen ticker list is `fixtures/universe.json` (more than three names). Tests may pass a smaller basket. This is not a vendor price feed and not a live broker.
+
+Two-step fixture path:
+
+```bash
+python3 -m signal_sim replay --fixtures --path
+```
 
 ### Desk
 
