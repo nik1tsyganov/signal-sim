@@ -12,7 +12,9 @@ from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 
 from signal_sim import cli
+from signal_sim.indicators import load_universe
 from signal_sim.sim import MAX_GROSS_FRAC, load_mark_book, run_fixture_replay
+from signal_sim.sizer import size_targets
 
 
 REPO = Path(__file__).resolve().parent.parent
@@ -156,8 +158,8 @@ class ReplayRoundTripTests(unittest.TestCase):
                 mark_book=book,
             )
 
-    def test_duplicate_replay_on_same_ledger_is_refused(self):
-        run_fixture_replay(
+    def test_second_replay_at_target_places_no_new_orders(self):
+        first = run_fixture_replay(
             fixtures=FIXTURES,
             ledger_path=self.ledger,
             audit_path=self.audit,
@@ -169,8 +171,111 @@ class ReplayRoundTripTests(unittest.TestCase):
             audit_path=self.audit,
             kill_root=self.tmp,
         )
+        self.assertEqual([row["ticker"] for row in first["orders"]], ["NVDA", "XLE"])
         self.assertEqual(second["orders"], [])
-        self.assertTrue(all("duplicate" in row["reason"] for row in second["refusals"]))
+        self.assertEqual({row["ticker"] for row in second["positions"]}, {"NVDA", "XLE"})
+
+    def test_name_leaving_rank_is_closed(self):
+        run_fixture_replay(
+            fixtures=FIXTURES,
+            ledger_path=self.ledger,
+            audit_path=self.audit,
+            kill_root=self.tmp,
+        )
+        closed = run_fixture_replay(
+            fixtures=FIXTURES,
+            ledger_path=self.ledger,
+            audit_path=self.audit,
+            kill_root=self.tmp,
+            candidates=[{"ticker": "NVDA", "score": 2, "news_breakout": 1, "insider_confirm": 1}],
+        )
+        self.assertEqual([row["ticker"] for row in closed["orders"]], ["XLE"])
+        self.assertEqual(closed["orders"][0]["side"], "sell")
+        self.assertEqual([row["ticker"] for row in closed["positions"]], ["NVDA"])
+
+    def test_cash_constraint_skips_unaffordable_open(self):
+        book = load_mark_book()
+        book = dict(book)
+        book["starting_cash"] = 1000.0
+        book["size_frac"] = 0.6
+        book["max_gross_frac"] = 2.0
+        summary = run_fixture_replay(
+            fixtures=FIXTURES,
+            ledger_path=self.ledger,
+            audit_path=self.audit,
+            kill_root=self.tmp,
+            mark_book=book,
+        )
+        self.assertEqual([row["ticker"] for row in summary["orders"]], ["NVDA"])
+        self.assertEqual(summary["refusals"], [{"ticker": "XLE", "reason": "cash_constraint"}])
+
+    def test_drawdown_halt_blocks_new_buys(self):
+        book = load_mark_book()
+        book = dict(book)
+        book["max_drawdown"] = 0.01
+        book["marks"] = dict(book["marks"])
+        book["marks"]["NVDA"] = {"entry_px": 100.0, "exit_px": 50.0}
+        first = run_fixture_replay(
+            fixtures=FIXTURES,
+            ledger_path=self.ledger,
+            audit_path=self.audit,
+            kill_root=self.tmp,
+            mark_book=book,
+            candidates=[{"ticker": "NVDA", "score": 1, "news_breakout": 1, "insider_confirm": 0}],
+        )
+        self.assertLess(first["total_pnl"], -0.01 * book["starting_cash"])
+        second = run_fixture_replay(
+            fixtures=FIXTURES,
+            ledger_path=self.ledger,
+            audit_path=self.audit,
+            kill_root=self.tmp,
+            mark_book=book,
+            candidates=[
+                {"ticker": "NVDA", "score": 1, "news_breakout": 1, "insider_confirm": 0},
+                {"ticker": "XLE", "score": 1, "news_breakout": 1, "insider_confirm": 0},
+            ],
+        )
+        self.assertTrue(second["drawdown_halt"])
+        self.assertEqual(second["orders"], [])
+        self.assertIn({"ticker": "XLE", "reason": "drawdown_halt"}, second["refusals"])
+
+    def test_replay_accepts_a_larger_frozen_universe(self):
+        universe = load_universe()
+        self.assertGreater(len(universe), 3)
+        self.assertTrue({"NVDA", "XLE", "DIS", "SPY", "XOM"}.issubset(set(universe)))
+        summary = run_fixture_replay(
+            fixtures=FIXTURES,
+            ledger_path=self.ledger,
+            audit_path=self.audit,
+            kill_root=self.tmp,
+            universe=universe,
+        )
+        self.assertEqual({row["ticker"] for row in summary["orders"]}, {"NVDA", "XLE"})
+
+
+class SizerTests(unittest.TestCase):
+    def test_emits_signed_long_targets_and_horizon(self):
+        targets, skipped = size_targets(
+            [
+                {"ticker": "NVDA", "score": 2},
+                {"ticker": "XLE", "score": 1},
+                {"ticker": "SPY", "score": 1},
+            ],
+            size_frac=0.1,
+            horizon_hours=34.75,
+        )
+        self.assertEqual(skipped, [])
+        self.assertEqual([row["ticker"] for row in targets], ["NVDA", "XLE", "SPY"])
+        self.assertTrue(all(row["target_frac"] == 0.1 for row in targets))
+        self.assertTrue(all(row["side"] == "buy" for row in targets))
+        self.assertTrue(all(row["horizon_hours"] == 34.75 for row in targets))
+
+    def test_gross_cap_skips_without_a_three_name_ceiling(self):
+        names = [{"ticker": name, "score": 1} for name in ("NVDA", "XLE", "DIS", "SPY", "QQQ")]
+        targets, skipped = size_targets(names, size_frac=0.3, horizon_hours=24.0, max_gross_frac=1.0)
+        self.assertEqual(len(targets), 3)
+        self.assertEqual(len(skipped), 2)
+        self.assertEqual([row["reason"] for row in skipped], ["gross_frac_cap", "gross_frac_cap"])
 
 
 class ReplayCliTests(unittest.TestCase):

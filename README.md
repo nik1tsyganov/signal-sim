@@ -64,7 +64,7 @@ Optional durable ledger:
 python3 -m signal_sim replay --fixtures --ledger paper-replay.sqlite
 ```
 
-`replay` uses `rank_candidates` as-is, buys each positive-score name at `fixtures/marks/universe.json` `entry_px`, and marks the position to `exit_px`. It does not add a new ranking rule.
+`replay` uses `rank_candidates` as-is. A sizer turns each positive-score name into a signed long target of `size_frac` with a horizon equal to the fixture `decision_at`→`exit_at` window. The local ledger opens, adds, reduces, or closes to that book, subject to cash and a prior-run drawdown halt. Fills use `fixtures/marks/universe.json` `entry_px` and mark to `exit_px`. The frozen ticker list is `fixtures/universe.json` (more than three names). Tests may pass a smaller basket. This is not a vendor price feed and not a live broker.
 
 ### Desk
 

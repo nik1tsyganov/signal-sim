@@ -106,7 +106,7 @@ class QuiverExpandedLiveTests(unittest.TestCase):
                         "Range": "$1,001 - $15,000",
                         "ReportDate": "2026-08-10T00:00:00Z",
                         "Representative": "Outside",
-                        "Ticker": "AAPL",
+                        "Ticker": "TSLA",
                         "Transaction": "Purchase",
                         "TransactionDate": "2026-08-01T00:00:00Z",
                     },
@@ -138,7 +138,7 @@ class QuiverExpandedLiveTests(unittest.TestCase):
                     "AcquiredDisposedCode": "A",
                 },
                 {
-                    "Ticker": "AAPL",
+                    "Ticker": "TSLA",
                     "Date": "2026-09-01",
                     "Name": "Outside Director",
                     "AcquiredDisposedCode": "D",
@@ -159,7 +159,7 @@ class QuiverExpandedLiveTests(unittest.TestCase):
                     "Description": "Fuel supply award",
                 },
                 {
-                    "Ticker": "MSFT",
+                    "Ticker": "TSLA",
                     "Date": "2026-08-20",
                     "AwardDate": "2026-08-21",
                 },

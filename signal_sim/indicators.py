@@ -2,12 +2,33 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime
+from pathlib import Path
 
 from .events import Event
 
 
-UNIVERSE = ("NVDA", "XLE", "DIS")
+_UNIVERSE_PATH = Path(__file__).resolve().parent.parent / "fixtures" / "universe.json"
+
+
+def load_universe(path: Path | None = None) -> tuple[str, ...]:
+    """Load the frozen ticker list. Tests may pass a smaller fixture file."""
+    raw = json.loads((path or _UNIVERSE_PATH).read_text(encoding="utf-8"))
+    tickers = raw.get("tickers")
+    if not isinstance(tickers, list) or not tickers:
+        raise ValueError("universe tickers must be a non-empty list")
+    names: list[str] = []
+    for ticker in tickers:
+        if not isinstance(ticker, str) or not ticker or not ticker.isascii() or not ticker.isupper():
+            raise ValueError(f"invalid universe ticker: {ticker!r}")
+        if ticker in names:
+            raise ValueError(f"duplicate universe ticker: {ticker!r}")
+        names.append(ticker)
+    return tuple(names)
+
+
+UNIVERSE = load_universe()
 NEWS_KINDS = {"news", "intel_brief"}
 CONFIRM_KINDS = {"insider", "congress_trade"}
 GOV_CONFIRM_KINDS = {"gov_contract"}
@@ -35,10 +56,11 @@ def rank_candidates(
     events: list[Event],
     window_start: datetime | None = None,
     window_end: datetime | None = None,
+    universe: tuple[str, ...] | None = None,
 ) -> list[dict[str, int | str]]:
     """Rank positive-score paper-trade candidates using observed time only."""
     rows = []
-    for ticker in UNIVERSE:
+    for ticker in UNIVERSE if universe is None else universe:
         news_breakout = sum(
             event.kind in NEWS_KINDS
             and event.ticker == ticker

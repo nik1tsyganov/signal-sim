@@ -121,7 +121,8 @@ class HawkesCliTests(unittest.TestCase):
 
         payload = json.loads(output.getvalue())
         self.assertEqual(exit_code, 0)
-        self.assertEqual(set(payload), {"NVDA", "XLE", "DIS"})
+        self.assertTrue({"NVDA", "XLE", "DIS"}.issubset(set(payload)))
+        self.assertGreaterEqual(len(payload), 3)
         self.assertTrue(all(math.isfinite(value) for value in payload.values()))
         self.assertGreater(payload["NVDA"], payload["XLE"])
         self.assertEqual(payload["XLE"], payload["DIS"])
