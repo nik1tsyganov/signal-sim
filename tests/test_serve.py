@@ -204,6 +204,7 @@ class ServeTests(unittest.TestCase):
         self.assertIn(b"/api/diagnose", body)
         self.assertIn(b"/api/marks", body)
         self.assertIn(b"no_mark", body)
+        self.assertIn(b"data.steps", body)
         self.assertNotIn(b"sharpe", body.lower())
 
     def test_root_falls_back_to_paper_only_message(self):

@@ -224,16 +224,23 @@
         }
 
         function renderPaperSummary(data) {
-            const last = data.steps && data.steps.length ? data.steps[data.steps.length - 1] : data;
-            const orders = (data.orders || last.orders || []).map((row) => row.ticker);
-            const refusals = data.refusals || last.refusals || [];
-            const held = (last.positions || []).map((row) => row.ticker);
+            if (data.steps && data.steps.length) {
+                return {
+                    mode: data.mode,
+                    n_steps: data.steps.length,
+                    steps: data.steps.map((step) => ({
+                        fill_at: step.fill_at,
+                        orders: (step.orders || []).map((row) => [row.ticker, row.side]),
+                        refusals: step.refusals || [],
+                        held: (step.positions || []).map((row) => row.ticker),
+                    })),
+                };
+            }
             return {
                 mode: data.mode,
-                orders,
-                refusals,
-                held,
-                n_steps: (data.steps || []).length || undefined,
+                orders: (data.orders || []).map((row) => row.ticker),
+                refusals: data.refusals || [],
+                held: (data.positions || []).map((row) => row.ticker),
             };
         }
 
