@@ -162,7 +162,7 @@ def main(argv: list[str] | None = None) -> int:
         clusters = online_clusters(events, when)
         payload = {
             "mode": "local-paper-diagnose",
-            "note": "Diagnostics only. Not a ranking input, not a return, not a Sharpe.",
+            "note": "Diagnostics only. Not a ranking input and not a return.",
             "when": when.isoformat().replace("+00:00", "Z"),
             "intensity": intensities,
             "online_clusters": clusters,

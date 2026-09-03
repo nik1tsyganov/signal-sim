@@ -176,6 +176,10 @@ class ReplayRoundTripTests(unittest.TestCase):
             audit_path=self.audit,
             kill_root=self.tmp,
             mark_book=book,
+            candidates=[
+                {"ticker": "NVDA", "score": 2, "news_breakout": 1, "insider_confirm": 1},
+                {"ticker": "XLE", "score": 1, "news_breakout": 1, "insider_confirm": 0},
+            ],
         )
         self.assertEqual([row["ticker"] for row in summary["orders"]], ["NVDA"])
         self.assertTrue(all(row["reason"] == "gross_frac_cap" for row in summary["refusals"]))
@@ -189,6 +193,10 @@ class ReplayRoundTripTests(unittest.TestCase):
             ledger_path=self.ledger,
             audit_path=self.audit,
             kill_root=self.tmp,
+            candidates=[
+                {"ticker": "NVDA", "score": 1, "news_breakout": 1, "insider_confirm": 0},
+                {"ticker": "XLE", "score": 1, "news_breakout": 1, "insider_confirm": 0},
+            ],
         )
         self.assertEqual(summary["orders"], [])
         self.assertEqual(summary["positions"], [])
@@ -256,6 +264,10 @@ class ReplayRoundTripTests(unittest.TestCase):
             audit_path=self.audit,
             kill_root=self.tmp,
             mark_book=book,
+            candidates=[
+                {"ticker": "NVDA", "score": 1, "news_breakout": 1, "insider_confirm": 0},
+                {"ticker": "XLE", "score": 1, "news_breakout": 1, "insider_confirm": 0},
+            ],
         )
         self.assertEqual([row["ticker"] for row in summary["orders"]], ["NVDA"])
         self.assertTrue(all(row["reason"] == "cash_constraint" for row in summary["refusals"]))
