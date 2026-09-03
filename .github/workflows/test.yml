@@ -18,7 +18,9 @@ jobs:
         run: python -m signal_sim rank --fixtures
       - name: Hawkes intensity at latest fixture observed_at
         run: python -m signal_sim intensity --fixtures
+      - name: Hawkes and cluster diagnostics
+        run: python -m signal_sim diagnose --fixtures
       - name: Run fixture paper replay
         run: python -m signal_sim replay --fixtures
-      - name: Run fixture two-step mark path
+      - name: Run fixture three-step mark path
         run: python -m signal_sim replay --fixtures --path

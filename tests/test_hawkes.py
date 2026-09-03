@@ -129,5 +129,39 @@ class HawkesCliTests(unittest.TestCase):
         load.assert_called_once()
 
 
+class DiagnoseCliTests(unittest.TestCase):
+    def test_diagnose_fixtures_prints_intensity_and_clusters(self):
+        output = io.StringIO()
+        with redirect_stdout(output):
+            exit_code = cli.main(["diagnose", "--fixtures"])
+        payload = json.loads(output.getvalue())
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(payload["mode"], "local-paper-diagnose")
+        self.assertIn("not a ranking input", payload["note"].lower())
+        self.assertTrue({"NVDA", "XLE", "DIS", "SPY"}.issubset(set(payload["intensity"])))
+        self.assertTrue(all(math.isfinite(value) for value in payload["intensity"].values()))
+        self.assertGreaterEqual(len(payload["online_clusters"]), 1)
+        self.assertTrue(math.isfinite(payload["hawkes_log_likelihood"]))
+        self.assertGreaterEqual(payload["stats"]["n_clusters"], 1)
+        self.assertNotIn("candidates", payload)
+        self.assertNotIn("sharpe", json.dumps(payload).lower())
+
+    def test_diagnose_does_not_change_rank_output(self):
+        before = io.StringIO()
+        with redirect_stdout(before):
+            self.assertEqual(cli.main(["rank", "--fixtures"]), 0)
+        diagnose = io.StringIO()
+        with redirect_stdout(diagnose):
+            self.assertEqual(cli.main(["diagnose", "--fixtures"]), 0)
+        after = io.StringIO()
+        with redirect_stdout(after):
+            self.assertEqual(cli.main(["rank", "--fixtures"]), 0)
+        self.assertEqual(json.loads(before.getvalue()), json.loads(after.getvalue()))
+        self.assertNotEqual(
+            json.loads(diagnose.getvalue()).get("mode"),
+            "local-paper-replay",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

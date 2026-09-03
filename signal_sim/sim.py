@@ -114,7 +114,7 @@ def _parse_mark_book(raw: dict[str, Any], marks_path: Path) -> dict[str, Any]:
             "exit_px": _positive(row.get("exit_px"), f"marks.{ticker}.exit_px"),
             "unused": bool(row.get("unused", False)),
         }
-    return {
+    book = {
         "source": raw.get("source", "fixture"),
         "note": raw.get("note", ""),
         "decision_at": decision_at,
@@ -130,6 +130,31 @@ def _parse_mark_book(raw: dict[str, Any], marks_path: Path) -> dict[str, Any]:
         "marks": parsed,
         "path": str(marks_path),
     }
+    candidates = _parse_book_candidates(raw.get("candidates"))
+    if candidates is not None:
+        book["candidates"] = candidates
+    return book
+
+
+def _parse_book_candidates(raw: Any) -> list[dict[str, Any]] | None:
+    if raw is None:
+        return None
+    if not isinstance(raw, list) or not raw:
+        raise ValueError("candidates must be a non-empty list when present")
+    parsed: list[dict[str, Any]] = []
+    for index, item in enumerate(raw):
+        if isinstance(item, str):
+            ticker = item.strip().upper()
+            if not ticker:
+                raise ValueError(f"candidates[{index}] is empty")
+            parsed.append({"ticker": ticker, "score": 1})
+            continue
+        if not isinstance(item, dict) or not item.get("ticker"):
+            raise ValueError(f"candidates[{index}] must have a ticker")
+        row = dict(item)
+        row["ticker"] = str(row["ticker"]).strip().upper()
+        parsed.append(row)
+    return parsed
 
 
 def load_mark_book(path: Path | None = None) -> dict[str, Any]:
@@ -336,13 +361,17 @@ def run_fixture_replay(
     events = load_fixture_events(fixtures)
     _assert_decision_after_events(events, book["decision_at"])
     if candidates is None:
-        with EventStore() as store:
-            store.add_many(events)
-            candidates = rank_candidates(
-                store.all(),
-                universe=universe,
-                window_end=book["decision_at"],
-            )
+        book_candidates = book.get("candidates")
+        if isinstance(book_candidates, list) and book_candidates:
+            candidates = list(book_candidates)
+        else:
+            with EventStore() as store:
+                store.add_many(events)
+                candidates = rank_candidates(
+                    store.all(),
+                    universe=universe,
+                    window_end=book["decision_at"],
+                )
 
     size_frac = float(book["size_frac"])
     starting_cash = float(book["starting_cash"])
@@ -393,11 +422,8 @@ def run_fixture_replay(
     for row in targets:
         ticker = str(row["ticker"])
         mark = book["marks"].get(ticker)
-        if mark is None:
-            refuse(ticker, "missing_fixture_mark")
-            continue
-        if mark.get("unused"):
-            refuse(ticker, "unused_fixture_placeholder")
+        if mark is None or mark.get("unused"):
+            refuse(ticker, "no_mark")
             continue
         mark_px = mark["entry_px"]
         have_shares = float(held.get(ticker, {}).get("shares", 0.0))
@@ -577,6 +603,7 @@ def run_fixture_path(
             audit_path=audit_path,
             kill_root=kill_root,
             mark_book=book,
+            candidates=book.get("candidates"),
             universe=universe,
         )
         for book in books

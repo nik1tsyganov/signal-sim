@@ -11,8 +11,9 @@ import sys
 from pathlib import Path
 from typing import Any, Callable
 
+from .clusters import online_clusters
 from .events import Event
-from .hawkes import intensity_at
+from .hawkes import intensity_at, log_likelihood
 from .indicators import UNIVERSE, rank_candidates
 from .store import EventStore
 
@@ -82,6 +83,15 @@ def _parser() -> argparse.ArgumentParser:
         action="store_true",
         help="load local fixture events (required; the only supported input)",
     )
+    diagnose = commands.add_parser(
+        "diagnose",
+        help="Hawkes intensity and online cluster diagnostics (not a rank input)",
+    )
+    diagnose.add_argument(
+        "--fixtures",
+        action="store_true",
+        help="load local fixture events (required; the only supported input)",
+    )
     serve = commands.add_parser("serve", help="serve the local paper-only desk")
     serve.add_argument("--port", type=int, default=8765, help="local desk port")
     replay = commands.add_parser(
@@ -100,14 +110,18 @@ def _parser() -> argparse.ArgumentParser:
     replay.add_argument(
         "--path",
         action="store_true",
-        help="replay the checked-in two-step fixture mark path (not vendor bars)",
+        help="replay the checked-in three-step fixture mark path (not vendor bars)",
+    )
+    replay.add_argument(
+        "--marks",
+        help="fixture mark book JSON (default: fixtures/marks/universe.json)",
     )
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
-    if args.command in {"rank", "intensity", "replay"} and not args.fixtures:
+    if args.command in {"rank", "intensity", "diagnose", "replay"} and not args.fixtures:
         print(
             f"{args.command} requires --fixtures; only local fixture events are supported",
             file=sys.stderr,
@@ -134,6 +148,33 @@ def main(argv: list[str] | None = None) -> int:
         }
         print(json.dumps(intensities, separators=(",", ":")))
         return 0
+    if args.command == "diagnose":
+        fixtures = Path(__file__).resolve().parent.parent / "fixtures"
+        events = load_fixture_events(fixtures)
+        when = max(event.observed_at for event in events)
+        intensities = {
+            ticker: intensity_at(
+                (event for event in events if event.ticker == ticker),
+                when,
+            )
+            for ticker in UNIVERSE
+        }
+        clusters = online_clusters(events, when)
+        payload = {
+            "mode": "local-paper-diagnose",
+            "note": "Diagnostics only. Not a ranking input, not a return, not a Sharpe.",
+            "when": when.isoformat().replace("+00:00", "Z"),
+            "intensity": intensities,
+            "online_clusters": clusters,
+            "hawkes_log_likelihood": log_likelihood(events),
+            "stats": {
+                "n_events": len(events),
+                "n_clusters": len(clusters),
+                "max_cluster_size": max((row["size"] for row in clusters), default=0),
+            },
+        }
+        print(json.dumps(payload, separators=(",", ":")))
+        return 0
     if args.command == "serve":
         from .serve import serve
 
@@ -152,7 +193,12 @@ def main(argv: list[str] | None = None) -> int:
 
             summary = run_fixture_path(fixtures=fixtures, ledger_path=ledger)
         else:
-            summary = run_fixture_replay(fixtures=fixtures, ledger_path=ledger)
+            mark_book_path = Path(args.marks) if args.marks else None
+            summary = run_fixture_replay(
+                fixtures=fixtures,
+                ledger_path=ledger,
+                mark_book_path=mark_book_path,
+            )
         stats = summary.get("stats", {})
         print(
             f"{summary.get('mode', 'replay')}: total_pnl={summary.get('total_pnl')} "
