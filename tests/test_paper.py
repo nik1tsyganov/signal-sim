@@ -122,6 +122,20 @@ class SubmitPaperOrderTests(PaperOrderPathBase):
         self.assertEqual(fills[0]["cost"], 2.5)
         self.assertEqual(result["cost"], 2.5)
 
+    def test_explicit_filled_at_stamps_the_ledger_clock(self):
+        result = self._submit(filled_at="2026-09-02T11:15:00Z")
+        fills = self._rows("fills")
+        orders = self._rows("orders")
+        self.assertEqual(result["filled_at"], "2026-09-02T11:15:00Z")
+        self.assertEqual(fills[0]["filled_at"], "2026-09-02T11:15:00Z")
+        self.assertEqual(orders[0]["created_at"], "2026-09-02T11:15:00Z")
+
+    def test_naive_filled_at_is_refused(self):
+        with self.assertRaises(OrderRefused) as error:
+            self._submit(filled_at=datetime(2026, 9, 2, 11, 15))
+        self.assertIn("timezone-aware", str(error.exception))
+        self.assertEqual(self._rows("orders"), [])
+
     def test_audit_line_written_with_required_fields(self):
         self._submit()
         lines = self._audit_lines()

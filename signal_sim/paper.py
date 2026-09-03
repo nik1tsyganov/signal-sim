@@ -166,7 +166,21 @@ def _validation_failure(proposal, mark_px):
     return None
 
 
-def submit_paper_order(proposal, *, ledger_path, mark_px, audit_path=None, kill_root=None, cost=0):
+def _stamp(value, field):
+    if isinstance(value, datetime):
+        parsed = value
+    elif isinstance(value, str) and value:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    else:
+        raise ValueError(f"{field} must be a timezone-aware timestamp")
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        raise ValueError(f"{field} must be a timezone-aware timestamp")
+    return parsed.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def submit_paper_order(
+    proposal, *, ledger_path, mark_px, audit_path=None, kill_root=None, cost=0, filled_at=None
+):
     """The only function that can create an order row.
 
     Rails, in order: R1 paper-only constant, R3 fail-closed kill-switch,
@@ -174,12 +188,15 @@ def submit_paper_order(proposal, *, ledger_path, mark_px, audit_path=None, kill_
     deterministic paper fill at the caller-supplied mark_px. Every attempt -
     filled or refused - appends one R8 audit line; the success line lands
     before the fill commits. Refusals raise OrderRefused.
+
+    ``filled_at`` is the ledger clock for the fill. Replay passes the fixture
+    fill_at. The default is process time. This is not occurred_at or a trade date.
     """
-    decision_at = datetime.now(timezone.utc).isoformat()
+    processed_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     if audit_path is None:
         audit_path = str(ledger_path) + ".audit.jsonl"
     record = _audit_snapshot(proposal)
-    record["decision_at"] = decision_at
+    record["decision_at"] = processed_at
 
     def refuse(reason):
         record["verdict"] = f"refused: {reason}"
@@ -209,6 +226,10 @@ def submit_paper_order(proposal, *, ledger_path, mark_px, audit_path=None, kill_
         or cost < 0
     ):
         refuse("R9: cost must be a non-negative finite number")
+    try:
+        ledger_stamp = processed_at if filled_at is None else _stamp(filled_at, "filled_at")
+    except ValueError as error:
+        refuse(f"R9: {error}")
 
     order_id = hashlib.sha256(proposal["idempotency_key"].encode("utf-8")).hexdigest()[:32]
     fill_id = hashlib.sha256(f"{proposal['idempotency_key']}:fill".encode("utf-8")).hexdigest()[:32]
@@ -228,7 +249,7 @@ def submit_paper_order(proposal, *, ledger_path, mark_px, audit_path=None, kill_
                     float(proposal["size_frac"]),
                     json.dumps(proposal["event_ids"]),
                     "filled",
-                    decision_at,
+                    ledger_stamp,
                 ),
             )
         except sqlite3.IntegrityError:
@@ -236,7 +257,7 @@ def submit_paper_order(proposal, *, ledger_path, mark_px, audit_path=None, kill_
         con.execute(
             "INSERT INTO fills (fill_id, order_id, price, filled_at, cost)"
             " VALUES (?, ?, ?, ?, ?)",
-            (fill_id, order_id, float(mark_px), decision_at, float(cost)),
+            (fill_id, order_id, float(mark_px), ledger_stamp, float(cost)),
         )
         record["verdict"] = "approved"
         record["outcome"] = "filled"
@@ -256,7 +277,8 @@ def submit_paper_order(proposal, *, ledger_path, mark_px, audit_path=None, kill_
         "fill_px": float(mark_px),
         "cost": float(cost),
         "idempotency_key": proposal["idempotency_key"],
-        "decision_at": decision_at,
+        "decision_at": processed_at,
+        "filled_at": ledger_stamp,
         "ledger_path": str(ledger_path),
         "audit_path": str(audit_path),
     }

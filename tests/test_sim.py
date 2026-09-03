@@ -128,18 +128,21 @@ class ReplayRoundTripTests(unittest.TestCase):
         self.assertEqual(summary["stats"]["hawkes_n_arrivals"], 1)
         self.assertEqual(summary["fill_rule"], "decision-time fixture mark; size_frac of starting_cash")
         self.assertLess(summary["decision_at"], summary["fill_at"])
+        self.assertTrue(all(row["filled_at"] == summary["fill_at"] for row in summary["orders"]))
         self.assertEqual(summary["stats"]["cost_bps"], 0.0)
         self.assertGreaterEqual(summary["stats"]["n_clusters"], 1)
 
         connection = sqlite3.connect(self.ledger)
         try:
             orders = connection.execute("SELECT ticker, status FROM orders ORDER BY ticker").fetchall()
+            fill_times = connection.execute("SELECT filled_at FROM fills").fetchall()
             fills = connection.execute("SELECT COUNT(*) FROM fills").fetchone()[0]
             account = connection.execute("SELECT starting_cash, total_pnl FROM account").fetchone()
             positions = connection.execute("SELECT ticker FROM positions ORDER BY ticker").fetchall()
         finally:
             connection.close()
         self.assertEqual(orders, [("NVDA", "filled"), ("XLE", "filled")])
+        self.assertEqual({row[0] for row in fill_times}, {summary["fill_at"]})
         self.assertEqual(fills, 2)
         self.assertEqual(account[0], book["starting_cash"])
         self.assertAlmostEqual(account[1], summary["total_pnl"])
@@ -470,7 +473,10 @@ class InventoryCostTests(unittest.TestCase):
         ledger = os.path.join(tmp, "ledger.sqlite")
         audit = os.path.join(tmp, "audit.jsonl")
         starting = 1000.0
-        for key, px, frac in (("a", 100.0, 0.1), ("b", 200.0, 0.1)):
+        for key, px, frac, when in (
+            ("a", 100.0, 0.1, "2026-09-02T10:00:00Z"),
+            ("b", 200.0, 0.1, "2026-09-02T10:30:00Z"),
+        ):
             submit_paper_order(
                 {
                     "ticker": "NVDA",
@@ -483,6 +489,7 @@ class InventoryCostTests(unittest.TestCase):
                 audit_path=audit,
                 mark_px=px,
                 kill_root=tmp,
+                filled_at=when,
             )
         book = load_mark_book()
         book = dict(book)
@@ -660,6 +667,11 @@ class MarkPathTests(unittest.TestCase):
         self.assertIn("SPY", third_tickers)
         self.assertEqual({row["ticker"] for row in summary["steps"][2]["positions"]}, {"MSFT", "SPY"})
         self.assertIn({"ticker": "AAPL", "reason": "no_mark"}, summary["steps"][2]["refusals"])
+        self.assertLess(summary["steps"][0]["fill_at"], summary["steps"][1]["fill_at"])
+        self.assertLess(summary["steps"][1]["fill_at"], summary["steps"][2]["fill_at"])
+        self.assertTrue(
+            all(row["filled_at"] == summary["steps"][0]["fill_at"] for row in summary["steps"][0]["orders"])
+        )
         self.assertEqual(len(summary["equity_curve"]), 3)
         self.assertAlmostEqual(
             summary["ending_equity"],

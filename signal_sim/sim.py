@@ -337,6 +337,7 @@ def _place(
     decision_key: str,
     action: str,
     cost: float,
+    filled_at,
 ) -> dict[str, Any]:
     return submit_paper_order(
         proposal_from_candidate(
@@ -352,6 +353,7 @@ def _place(
         audit_path=audit_path,
         kill_root=kill_root,
         cost=cost,
+        filled_at=filled_at,
     )
 
 
@@ -475,6 +477,7 @@ def run_fixture_replay(
                 kill_root=kill_root,
                 decision_key=decision_key,
                 action=action,
+                filled_at=fill_at,
                 cost=starting_cash * frac * cost_bps / 10000.0,
             )
         except OrderRefused as error:
@@ -554,6 +557,7 @@ def run_fixture_replay(
                 "side": order["side"],
                 "size_frac": order["size_frac"],
                 "fill_px": order["fill_px"],
+                "filled_at": order.get("filled_at"),
                 "cost": float(order.get("cost", 0)),
                 "status": order["status"],
             }
