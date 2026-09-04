@@ -942,6 +942,74 @@ class RebalanceCliTests(unittest.TestCase):
         self.assertNotIn("paper-secret", dumped)
         self.assertNotIn("PA123HIDE", dumped)
 
+    def test_live_submit_paper_mocked_post_when_flag_one(self):
+        calls = []
+
+        def env(name):
+            if name == "SIGNAL_SIM_ALPACA_PAPER_SUBMIT":
+                return "1"
+            if name in {"QUIVER_API_KEY", "WORLD_MONITOR_KEY"}:
+                return "intel-key"
+            return _env(name)
+
+        def urlopen(request, timeout=None):
+            calls.append((request.full_url, request.get_method()))
+            url = request.full_url
+            if url.endswith("/v2/account"):
+                return _json_response(_empty_account())
+            if url.endswith("/v2/positions"):
+                return _json_response([])
+            if url.endswith("/v2/clock"):
+                return _json_response(_clock())
+            if "/v2/stocks/trades/latest" in url or "/v2/stocks/snapshots" in url:
+                return _json_response({})
+            if "orders:by_client_order_id" in url:
+                raise urllib.error.HTTPError(url, 404, "not found", hdrs=None, fp=io.BytesIO(b""))
+            if request.get_method() == "POST" and url.endswith("/v2/orders"):
+                body = json.loads(request.data.decode("utf-8"))
+                return _json_response(
+                    {
+                        "id": "ord-" + body["symbol"],
+                        "client_order_id": body["client_order_id"],
+                        "status": "accepted",
+                        "symbol": body["symbol"],
+                        "qty": body.get("qty"),
+                        "side": body["side"],
+                    }
+                )
+            raise AssertionError(url)
+
+        printed = io.StringIO()
+        error = io.StringIO()
+        with mock.patch("signal_sim.paper.read_env", side_effect=env), mock.patch(
+            "signal_sim.runtime_env.read_env", side_effect=env
+        ), mock.patch("signal_sim.live_feeds.read_env", side_effect=env), mock.patch(
+            "signal_sim.sources.altdata.live",
+            return_value=[{"ticker": "NVDA", "person": "Rep. Hidden"}],
+        ), mock.patch(
+            "signal_sim.sources.worldmonitor.live", return_value=[_live_event("XLE", "wm-xle")]
+        ), mock.patch(
+            "signal_sim.alpaca_paper.urllib.request.urlopen", side_effect=urlopen
+        ), redirect_stdout(printed), redirect_stderr(error):
+            code = cli.main(
+                ["rebalance", "--fixtures", "--live", "--submit-paper", "--limit", "20"]
+            )
+        self.assertEqual(code, 0)
+        payload = json.loads(printed.getvalue())
+        self.assertTrue(payload["ok"])
+        self.assertTrue(payload["submitted"])
+        self.assertFalse(payload["local_applied"])
+        self.assertEqual(payload["order_post"], "paper")
+        self.assertEqual(payload["submit_limit"], 20)
+        self.assertGreaterEqual(payload["n_paper_submitted"], 1)
+        self.assertIn("live_intel", payload)
+        dumped = printed.getvalue() + error.getvalue()
+        self.assertNotIn("SECRET HEADLINE", dumped)
+        self.assertNotIn("Rep. Hidden", dumped)
+        self.assertNotIn("paper-secret", dumped)
+        self.assertTrue(any(method == "POST" and url.endswith("/v2/orders") for url, method in calls))
+        self.assertTrue(all(PAPER_BROKER_HOST in url or PAPER_DATA_HOST in url for url, _method in calls))
+
     def test_apply_local_submit_flag_still_does_not_post(self):
         tmp = tempfile.mkdtemp()
         ledger = str(Path(tmp) / "apply-flag.sqlite")

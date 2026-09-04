@@ -22,6 +22,11 @@ from .paper import (
     paper_submit_enabled,
     require_paper_submit,
 )
+from .performance import (
+    default_snapshot_path,
+    paper_performance_snapshot,
+    write_paper_performance,
+)
 from .rebalance import apply_local_rebalance, proposed_rebalance, submit_paper_rebalance
 from .runtime_env import paper_submit_flag, runtime_env_status
 from .sim import resolve_mark_book_path
@@ -229,7 +234,7 @@ def _parser() -> argparse.ArgumentParser:
         "--limit",
         type=int,
         default=1,
-        help="max paper tickets to POST with --submit-paper (default 1; smallest notional first)",
+        help="max paper tickets to POST with --submit-paper (default 1; smallest notional first; no all-flag, use a high number)",
     )
     paper_submit = commands.add_parser(
         "paper-submit",
@@ -270,6 +275,20 @@ def _parser() -> argparse.ArgumentParser:
         "--write",
         action="store_true",
         help="refused; inspect is read-only and does not write the ledger",
+    )
+    paper_performance = commands.add_parser(
+        "paper-performance",
+        aliases=["paper-snapshot"],
+        help="read-only Alpaca paper equity/cash/positions/orders/fills snapshot",
+    )
+    paper_performance.add_argument(
+        "--write",
+        action="store_true",
+        help="write dated JSON under docs/performance/ (paper snapshot, not alpha)",
+    )
+    paper_performance.add_argument(
+        "--out",
+        help="snapshot path (implies write; default docs/performance/YYYY-MM-DD.json)",
     )
     commands.add_parser(
         "runtime-env",
@@ -703,6 +722,57 @@ def main(argv: list[str] | None = None) -> int:
                 f"n_fills={report.get('n_fills')} (read-only)",
                 file=sys.stderr,
             )
+        print(json.dumps(report, separators=(",", ":")))
+        return 0 if report.get("ok") is True else 1
+    if args.command in {"paper-performance", "paper-snapshot"}:
+        missing = missing_paper_keys()
+        if missing:
+            print(
+                "paper-performance missing env: " + ", ".join(missing),
+                file=sys.stderr,
+            )
+            return 2
+        if paper_submit_enabled():
+            print(
+                "SIGNAL_SIM_ALPACA_PAPER_SUBMIT=1 is unused for paper-performance; "
+                "this path is read-only and does not POST.",
+                file=sys.stderr,
+            )
+        write = bool(getattr(args, "write", False) or getattr(args, "out", None))
+        try:
+            client = paper_broker_client(paper_host())
+            report = paper_performance_snapshot(client)
+            if write:
+                out = Path(args.out) if args.out else default_snapshot_path()
+                written = write_paper_performance(report, out)
+                report = dict(report)
+                report["snapshot_path"] = str(written)
+                report["write_note"] = (
+                    "Dated paper snapshot JSON. Paper account figures only. Not alpha."
+                )
+        except LiveEndpointError as error:
+            print(str(error), file=sys.stderr)
+            return 2
+        except NotImplementedError as error:
+            print(str(error), file=sys.stderr)
+            return 2
+        except RuntimeError as error:
+            print(str(error), file=sys.stderr)
+            return 2
+        except ValueError as error:
+            print(str(error), file=sys.stderr)
+            return 2
+        report = dict(report)
+        report["submit_flag"] = paper_submit_flag()
+        report["runtime_env"] = runtime_env_status()
+        summary = report.get("summary") or {}
+        print(
+            f"paper-performance: equity={summary.get('equity')} "
+            f"cash={summary.get('cash')} n_positions={summary.get('n_positions')} "
+            f"n_open_orders={summary.get('n_open_orders')} "
+            f"n_fills={summary.get('n_fills')} (paper, not alpha)",
+            file=sys.stderr,
+        )
         print(json.dumps(report, separators=(",", ":")))
         return 0 if report.get("ok") is True else 1
     if args.command == "runtime-env":
