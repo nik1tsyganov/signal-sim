@@ -77,6 +77,30 @@ _FILL_FIELDS = (
     "cum_qty",
 )
 _PAPER_TRADING_PREFIX = "paper-api."
+_DEAD_CLIENT_STATUSES = frozenset({"canceled", "expired", "rejected"})
+_CLIENT_ORDER_ID_MAX = 48
+
+
+def next_paper_client_order_id(key: str) -> str:
+    """Mint a retry key after a canceled/expired/rejected client id.
+
+    Alpaca client_order_id is unique even after cancel, so a dead key cannot
+    be reused. Append ``:rN`` while staying at or under 48 characters.
+    """
+    text = str(key or "").strip()
+    if not text:
+        raise ValueError("client_order_id must be a non-empty string")
+    stem = text
+    attempt = 2
+    if ":r" in text:
+        head, tail = text.rsplit(":r", 1)
+        if tail.isdigit() and int(tail) >= 2:
+            stem = head
+            attempt = int(tail) + 1
+    candidate = f"{stem}:r{attempt}"
+    if len(candidate) > _CLIENT_ORDER_ID_MAX:
+        raise ValueError("client_order_id retry exceeds 48 characters")
+    return candidate
 
 
 def paper_data_host() -> str:
@@ -518,14 +542,22 @@ class AlpacaPaperClient:
         built = self.order_payload(proposal)
         if built.get("ok") is not True:
             raise ValueError(built.get("reason") or "paper order payload refused")
-        payload = built["payload"]
-        existing = self.order_by_client_id(payload["client_order_id"])
-        if existing and existing.get("id"):
-            return {
-                **existing,
-                "submitted": True,
-                "duplicate": True,
-            }
+        payload = dict(built["payload"])
+        key = str(payload["client_order_id"])
+        for _ in range(8):
+            existing = self.order_by_client_id(key)
+            if existing and existing.get("id"):
+                status = str(existing.get("status") or "").lower()
+                if status not in _DEAD_CLIENT_STATUSES:
+                    return {
+                        **existing,
+                        "submitted": True,
+                        "duplicate": True,
+                    }
+                key = next_paper_client_order_id(key)
+                payload["client_order_id"] = key
+                continue
+            break
         raw = self._request_json(
             f"{self._base_url}/v2/orders",
             "/v2/orders",

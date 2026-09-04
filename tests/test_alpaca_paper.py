@@ -9,7 +9,7 @@ from contextlib import redirect_stderr, redirect_stdout
 from unittest import mock
 
 from signal_sim import cli
-from signal_sim.alpaca_paper import AlpacaPaperClient
+from signal_sim.alpaca_paper import AlpacaPaperClient, next_paper_client_order_id
 from signal_sim.paper import (
     LiveEndpointError,
     OrderRefused,
@@ -532,6 +532,76 @@ class AlpacaPaperSubmitGateTests(unittest.TestCase):
         self.assertIn("fractional orders not supported", text)
         self.assertNotIn("hide", text)
         self.assertNotIn("paper-secret", text)
+
+    def test_next_client_order_id_appends_retry_suffix(self):
+        self.assertEqual(
+            next_paper_client_order_id("rb:20260904:SPY:buy:open"),
+            "rb:20260904:SPY:buy:open:r2",
+        )
+        self.assertEqual(
+            next_paper_client_order_id("rb:20260904:SPY:buy:open:r2"),
+            "rb:20260904:SPY:buy:open:r3",
+        )
+        self.assertLessEqual(len(next_paper_client_order_id("rb:20260904:CMCSA:buy:open")), 48)
+
+    def test_canceled_client_order_id_posts_retry_key(self):
+        calls = []
+
+        def env(name):
+            return _env(name, {"SIGNAL_SIM_ALPACA_PAPER_SUBMIT": "1"})
+
+        def urlopen(request, timeout=None):
+            calls.append((request.full_url, request.get_method(), getattr(request, "data", None)))
+            if "orders:by_client_order_id" in request.full_url:
+                if "rb%3A20260904%3ASPY%3Abuy%3Aopen%3Ar2" in request.full_url or "r2" in request.full_url:
+                    raise urllib.error.HTTPError(
+                        request.full_url, 404, "not found", hdrs=None, fp=io.BytesIO(b"")
+                    )
+                return _json_response(
+                    {
+                        "id": "ord-canceled",
+                        "client_order_id": "rb:20260904:SPY:buy:open",
+                        "status": "canceled",
+                        "symbol": "SPY",
+                        "qty": "249.75944",
+                        "side": "buy",
+                    }
+                )
+            if request.get_method() == "POST" and request.full_url.endswith("/v2/orders"):
+                body = json.loads(request.data.decode("utf-8"))
+                self.assertEqual(body["client_order_id"], "rb:20260904:SPY:buy:open:r2")
+                return _json_response(
+                    {
+                        "id": "ord-retry",
+                        "client_order_id": body["client_order_id"],
+                        "status": "accepted",
+                        "symbol": "SPY",
+                        "qty": body.get("qty"),
+                        "side": "buy",
+                    }
+                )
+            raise AssertionError(request.full_url)
+
+        with mock.patch("signal_sim.paper.read_env", side_effect=env), mock.patch(
+            "signal_sim.runtime_env.read_env", side_effect=env
+        ), mock.patch(
+            "signal_sim.alpaca_paper.urllib.request.urlopen", side_effect=urlopen
+        ):
+            client = paper_broker_client(PAPER_BROKER_HOST)
+            result = client.post_paper_order(
+                {
+                    "symbol": "SPY",
+                    "qty": "13",
+                    "side": "buy",
+                    "type": "market",
+                    "time_in_force": "day",
+                    "client_order_id": "rb:20260904:SPY:buy:open",
+                },
+                explicit=True,
+            )
+        self.assertEqual(result["id"], "ord-retry")
+        self.assertFalse(result["duplicate"])
+        self.assertTrue(any(method == "POST" for _url, method, _data in calls))
 
     def test_duplicate_client_order_id_does_not_post_again(self):
         calls = []

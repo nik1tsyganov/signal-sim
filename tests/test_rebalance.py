@@ -8,6 +8,7 @@ import tempfile
 import unittest
 import urllib.error
 from contextlib import redirect_stderr, redirect_stdout
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest import mock
 
@@ -22,7 +23,9 @@ from signal_sim.rebalance import (
     allocation_base,
     apply_local_rebalance,
     local_apply_failure,
+    paper_client_order_id,
     paper_held,
+    paper_session_stamp,
     plan_rebalance_tickets,
     proposed_rebalance,
     resolve_sizing_marks,
@@ -158,6 +161,43 @@ def _sized_drift_targets(mark_book=None):
     return book, targets, skipped
 
 
+class RebalanceClientOrderIdTests(unittest.TestCase):
+    def test_session_stamp_prefers_research_date(self):
+        self.assertEqual(
+            paper_session_stamp(research_date="2026-09-04", when=datetime(2020, 1, 1, tzinfo=timezone.utc)),
+            "20260904",
+        )
+        self.assertEqual(
+            paper_session_stamp(when=datetime(2026, 9, 8, 15, 0, tzinfo=timezone.utc)),
+            "20260908",
+        )
+
+    def test_client_order_id_is_date_scoped_and_short(self):
+        key = paper_client_order_id("CMCSA", "buy", "open", session="20260904")
+        self.assertEqual(key, "rb:20260904:CMCSA:buy:open")
+        self.assertLessEqual(len(key), 48)
+        retry = paper_client_order_id("CMCSA", "sell", "close", session="20260904", attempt=2)
+        self.assertEqual(retry, "rb:20260904:CMCSA:sell:close:r2")
+        self.assertLessEqual(len(retry), 48)
+
+    def test_planned_ticket_uses_session_not_frozen_decision_at(self):
+        book = load_mark_book()
+        tickets, skipped = plan_rebalance_tickets(
+            targets=[],
+            marks=book["marks"],
+            held={"SPY": {"shares": 10.0, "side": "long"}},
+            cash=100000.0,
+            allocation=100000.0,
+            cost_bps=0.0,
+            signal=SIGNAL_DRIFT,
+            decision_at="2026-09-02T10:15:00Z",
+            session="20260904",
+        )
+        self.assertEqual(skipped, [])
+        self.assertEqual(tickets[0]["payload"]["client_order_id"], "rb:20260904:SPY:sell:close")
+        self.assertNotIn("2026-09-02T10:15:00Z", tickets[0]["payload"]["client_order_id"])
+
+
 class RebalancePlannerTests(unittest.TestCase):
     def test_empty_paper_opens_fillable_drift_targets(self):
         book, expected, _size_skips = _sized_drift_targets()
@@ -176,6 +216,7 @@ class RebalancePlannerTests(unittest.TestCase):
         self.assertEqual(report["apply_gate"], APPLY_GATE)
         self.assertIn("not alpha", report["note"].lower())
         self.assertEqual(report["decision_at"], "2026-09-02T10:15:00Z")
+        self.assertEqual(report["session"], paper_session_stamp())
         self.assertTrue(report["printed_at"].endswith("Z"))
         self.assertEqual(report["clock"]["timestamp"], "2026-09-04T12:00:00Z")
         self.assertNotIn("account_number", report["account"])
@@ -199,6 +240,16 @@ class RebalancePlannerTests(unittest.TestCase):
             )
             self.assertIn("cluster-drift-stub", ticket["rationale"])
             self.assertEqual(ticket["payload"]["type"], "market")
+            self.assertEqual(
+                ticket["payload"]["client_order_id"],
+                paper_client_order_id(
+                    row["ticker"],
+                    "buy",
+                    "open",
+                    session=report["session"],
+                ),
+            )
+            self.assertLessEqual(len(ticket["payload"]["client_order_id"]), 48)
         skip_reasons = {row["ticker"]: row["reason"] for row in report["skipped"]}
         for ticker in NO_MARK_PRINTED:
             self.assertEqual(skip_reasons[ticker], "no_mark")
