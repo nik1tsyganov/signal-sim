@@ -24,6 +24,8 @@ _FALLBACK = (
     b"GET /api/rank ranked fixture events at decision_at\n"
     b"GET /api/diagnose Hawkes and clusters; not a ranking input\n"
     b"GET /api/drift cluster-drift target book; not a ranking input\n"
+    b"GET /api/intensity declared Hawkes intensity at decision_at\n"
+    b"GET /api/params frozen operate constants from fixtures/params.json\n"
     b"GET /api/marks who can fill vs no_mark\n"
     b"GET /api/walkforward expanding folds and comparisons; does not place desk orders\n"
     b"GET /api/shadow frozen shadow-paper report; does not write artifacts or place desk orders\n"
@@ -55,6 +57,18 @@ class _DeskHandler(BaseHTTPRequestHandler):
         if path == "/api/diagnose":
             events = load_fixture_events(_FIXTURES_PATH)
             body = json.dumps(fixture_diagnostics(events), separators=(",", ":")).encode("utf-8")
+            self._send(body, "application/json")
+            return
+        if path == "/api/intensity":
+            from .hawkes import fixture_intensity
+
+            body = json.dumps(fixture_intensity(_FIXTURES_PATH), separators=(",", ":")).encode("utf-8")
+            self._send(body, "application/json")
+            return
+        if path == "/api/params":
+            from .params import operate_stamp
+
+            body = json.dumps(operate_stamp(), separators=(",", ":")).encode("utf-8")
             self._send(body, "application/json")
             return
         if path == "/api/drift":

@@ -55,6 +55,41 @@ def _relevant(events: Iterable[Event]) -> list[tuple[datetime, float]]:
     )
 
 
+def fixture_intensity(fixtures=None):
+    """Declared Hawkes intensity cut at the mark-book decision_at.
+
+    Same window as diagnose / rank / replay. Not a fit. Not a ranking input.
+    """
+    from pathlib import Path
+
+    from .fixture_load import load_fixture_events
+    from .params import operate_stamp
+    from .sim import load_mark_book
+
+    root = Path(fixtures) if fixtures is not None else Path(__file__).resolve().parent.parent / "fixtures"
+    events = load_fixture_events(root)
+    decision_at = load_mark_book()["decision_at"]
+    window = [event for event in events if event.observed_at <= decision_at]
+    stamp = operate_stamp()
+    return {
+        "mode": "local-paper-intensity",
+        "note": (
+            "Declared Hawkes intensity cut at mark-book decision_at, the same "
+            "window replay uses. Prints first seen after that decision are excluded. "
+            "Not a fit. Not a ranking input."
+        ),
+        "cut": "decision_at",
+        "decision_at": decision_at.isoformat().replace("+00:00", "Z"),
+        "params": stamp["params"],
+        "params_sha256": stamp["params_sha256"],
+        "intensity": intensity_map(window, decision_at),
+        "stats": {
+            "n_events": len(window),
+            "n_events_after_decision": len(events) - len(window),
+        },
+    }
+
+
 def intensity_map(
     events: Iterable[Event],
     when: datetime,

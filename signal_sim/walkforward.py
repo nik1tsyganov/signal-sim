@@ -193,11 +193,16 @@ def run_fixture_walkforward(
                 "comparisons": comparisons,
             }
         )
+    from .params import operate_stamp
+
+    stamp = operate_stamp()
     return {
         "mode": "local-paper-walkforward",
         "note": NOTE,
         "comparison_note": COMPARISON_NOTE,
         "placebo_seed": PLACEBO_SEED,
+        "params": stamp["params"],
+        "params_sha256": stamp["params_sha256"],
         "n_folds": len(folds),
         "folds": folds,
     }

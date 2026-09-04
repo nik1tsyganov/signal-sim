@@ -33,8 +33,9 @@ All of these require `--fixtures`. Omitting that flag exits with status 2. Every
 - `walkforward --fixtures` — two expanding folds plus comparisons
 - `shadow --fixtures` — frozen operate report of that harness (`GET /api/shadow` is the same JSON without writing artifacts)
 - `diagnose --fixtures` — Hawkes / clusters / intel / confirms (not a rank input)
+- `intensity --fixtures` — declared Hawkes intensity at the same `decision_at` cut (`GET /api/intensity` is the same JSON)
 
-`rank`, `intensity`, and `marks` also require `--fixtures`. Those commands read checked-in files under `fixtures/`. `rank --fixtures` and `GET /api/rank` cut at the default mark-book `decision_at`, the same window replay uses. Prints first seen after that decision do not change the rank. There is no live broker, no vendor bars, and no Quiver live path.
+`rank`, `intensity`, and `marks` also require `--fixtures`. Those commands read checked-in files under `fixtures/`. `rank --fixtures`, `intensity --fixtures`, `diagnose --fixtures`, and `GET /api/rank` cut at the default mark-book `decision_at`, the same window replay uses. Prints first seen after that decision do not change the rank or the intensity. Every operate JSON (diagnose, drift, intensity, walkforward, shadow, replay) carries `params` plus `params_sha256` from `fixtures/params.json`. `GET /api/params` is that stamp alone. There is no live broker, no vendor bars, and no Quiver live path.
 
 Every name in `fixtures/universe.json` either has a real fixture mark or cannot fill. Default `replay --fixtures` sizes the liquid sector book in `fixtures/marks/liquid.json`: tagged `fixture_mark` rows for NVDA/MSFT (tech), XLE/XOM (energy), DIS/NFLX (media), and SPY/QQQ (ETF). `--marks liquid` is the same book. `--marks two-name` (or `fixtures/marks/universe.json`) is the older NVDA/XLE book. Other ranked names are refused with `no_mark`. That skip is honest: the allocator does not invent a 100.0 fill. AAPL, CVX, CMCSA, and XLK have checked-in fixture news so each sector gap can enter the rank cut; they still have no fixture mark. AMZN, GOOGL, and META have no checked-in print at `decision_at` and are listed as `no_print` by `marks --fixtures` — they cannot rank until a fixture print exists. These are research fixtures, not Yahoo/Stooq/vendor bars. Prints are admitted on `observed_at` / `first_seen_at` only; `occurred_at` and congress trade dates do not fill.
 
@@ -86,7 +87,9 @@ curl -sS -X POST http://127.0.0.1:8765/api/replay
 Read-only desk diagnostics (same JSON as `diagnose --fixtures` and `drift --fixtures`):
 
 ```bash
+curl -sS http://127.0.0.1:8765/api/params
 curl -sS http://127.0.0.1:8765/api/diagnose
+curl -sS http://127.0.0.1:8765/api/intensity
 curl -sS http://127.0.0.1:8765/api/drift
 curl -sS http://127.0.0.1:8765/api/walkforward
 curl -sS http://127.0.0.1:8765/api/shadow
@@ -104,7 +107,7 @@ Sector mark book (same loop as `replay --fixtures --marks fixtures/marks/liquid.
 curl -sS -X POST http://127.0.0.1:8765/api/liquid
 ```
 
-`GET /api/replay`, `GET /api/path`, and `GET /api/liquid` return 405 and do not place orders. `GET /api/walkforward` is the same fixture harness as `walkforward --fixtures` and does not place desk orders. `GET /api/shadow` is the same frozen report as `shadow --fixtures` without writing artifacts. The browser page at that loopback URL loads `GET /api/rank`, `GET /api/marks`, `GET /api/diagnose`, `GET /api/drift`, `GET /api/walkforward`, and `GET /api/shadow`, and has buttons for `POST /api/replay` (default liquid sector book), `POST /api/liquid` (same book), and `POST /api/path`. The rank table labels default-fill vs `no_mark` before anyone posts. The Marks section lists the frozen universe, who can fill, `no_print` names that never ranked, and who is not in the rank cut. Diagnose shows Hawkes intensity and intel flags at `decision_at`. Drift targets show the cluster-drift book plus insider/congress confirms and recorded intel flags. Bind is loopback only. Paper only.
+`GET /api/replay`, `GET /api/path`, and `GET /api/liquid` return 405 and do not place orders. `GET /api/walkforward` is the same fixture harness as `walkforward --fixtures` and does not place desk orders. `GET /api/shadow` is the same frozen report as `shadow --fixtures` without writing artifacts. `GET /api/params` is the frozen operate stamp. `GET /api/intensity` matches `intensity --fixtures`. The browser page at that loopback URL loads `GET /api/rank`, `GET /api/marks`, `GET /api/params`, `GET /api/diagnose`, `GET /api/intensity`, `GET /api/drift`, `GET /api/walkforward`, and `GET /api/shadow`, and has buttons for `POST /api/replay` (default liquid sector book), `POST /api/liquid` (same book), and `POST /api/path`. The rank table labels default-fill vs `no_mark` before anyone posts. The Marks section lists the frozen universe, who can fill, `no_print` names that never ranked, and who is not in the rank cut. Diagnose shows Hawkes intensity and intel flags at `decision_at`. Intensity uses the same cut. Drift targets show the cluster-drift book plus insider/congress confirms and recorded intel flags. Bind is loopback only. Paper only.
 
 ```powershell
 python -m signal_sim replay --fixtures

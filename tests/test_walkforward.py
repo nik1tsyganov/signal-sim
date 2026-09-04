@@ -181,6 +181,8 @@ class WalkForwardComparisonTests(unittest.TestCase):
         self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
         summary = run_fixture_walkforward(fixtures=FIXTURES, ledger_dir=tmp)
         self.assertEqual(summary["placebo_seed"], PLACEBO_SEED)
+        self.assertEqual(summary["params"]["placebo_seed"], PLACEBO_SEED)
+        self.assertEqual(len(summary["params_sha256"]), 64)
         self.assertIn("not a search", summary["comparison_note"].lower())
         rendered = json.dumps(summary).lower()
         self.assertNotIn("sharpe", rendered)

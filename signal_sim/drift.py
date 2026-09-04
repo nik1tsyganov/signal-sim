@@ -179,9 +179,14 @@ def fixture_drift_book(
         row["chokepoint"] = int(feat.get("chokepoint", 0))
         row["trendradar"] = int(hotspot.get(str(row["ticker"]), {}).get("trendradar", 0))
     decision_at = book["decision_at"].isoformat().replace("+00:00", "Z")
+    from .params import operate_stamp
+
+    stamp = operate_stamp()
     payload = {
         "mode": "local-paper-drift",
         "note": NOTE,
+        "params": stamp["params"],
+        "params_sha256": stamp["params_sha256"],
         "method": "online-news-cluster-drift-stub",
         "half_life_hours": HALF_LIFE_HOURS,
         "min_relative_state": MIN_RELATIVE_STATE,

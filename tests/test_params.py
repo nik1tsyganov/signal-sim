@@ -48,6 +48,29 @@ class ParamsManifestTests(unittest.TestCase):
         self.assertNotEqual(drifted, raw["hawkes_baseline"])
         self.assertEqual(hawkes.BASELINE, raw["hawkes_baseline"])
 
+    def test_operate_reports_share_one_params_digest(self):
+        from signal_sim.diagnose import fixture_diagnostics
+        from signal_sim.drift import fixture_drift_book
+        from signal_sim.fixture_load import load_fixture_events
+        from signal_sim.hawkes import fixture_intensity
+
+        digest = params.params_sha256()
+        stamp = params.operate_stamp()
+        self.assertEqual(len(digest), 64)
+        self.assertEqual(stamp["params_sha256"], digest)
+        events = load_fixture_events(REPO / "fixtures")
+        diagnose = fixture_diagnostics(events)
+        drift = fixture_drift_book(REPO / "fixtures")
+        intensity = fixture_intensity(REPO / "fixtures")
+        self.assertEqual(diagnose["params_sha256"], digest)
+        self.assertEqual(drift["params_sha256"], digest)
+        self.assertEqual(intensity["params_sha256"], digest)
+        self.assertEqual(intensity["cut"], "decision_at")
+        self.assertGreaterEqual(intensity["stats"]["n_events_after_decision"], 1)
+        self.assertEqual(shadow.frozen_params(), diagnose["params"])
+        raw = json.loads(MANIFEST.read_text(encoding="utf-8"))
+        self.assertEqual(diagnose["params"]["half_life_hours"], raw["half_life_hours"])
+
 
 if __name__ == "__main__":
     unittest.main()

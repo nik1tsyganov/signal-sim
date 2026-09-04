@@ -23,6 +23,8 @@ from signal_sim.indicators import UNIVERSE
 from signal_sim.paper import (
     LiveEndpointError,
     OrderRefused,
+    ProvenanceMissing,
+    assert_fills_have_provenance,
     paper_broker_client,
     submit_paper_order,
 )
@@ -163,6 +165,13 @@ class SubmitPaperOrderTests(PaperOrderPathBase):
         del proposal["decision_at"]
         self._assert_refused(proposal)
         self.assertEqual(self._audit_lines()[-1]["outcome"], "refused")
+
+    def test_fills_without_audit_fail_closed(self):
+        self._submit()
+        os.remove(self.audit)
+        with self.assertRaises(ProvenanceMissing) as error:
+            assert_fills_have_provenance(self.ledger, self.audit)
+        self.assertIn("no provenance record", str(error.exception))
 
     def test_incomplete_audit_write_fails_closed(self):
         def write_incomplete(path, _record):

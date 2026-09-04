@@ -38,6 +38,9 @@ def fixture_diagnostics(
     hotspot = trendradar_features(window, decision_at)
     lags = filed_lag_features(window, decision_at)
     confirms = filed_confirm_features(window, decision_at)
+    from .params import operate_stamp
+
+    stamp = operate_stamp()
     return {
         "mode": "local-paper-diagnose",
         "note": (
@@ -45,6 +48,8 @@ def fixture_diagnostics(
             "replay uses. Prints first seen after that decision are excluded. "
             "Not a ranking input and not a return."
         ),
+        "params": stamp["params"],
+        "params_sha256": stamp["params_sha256"],
         "when": decision_at.isoformat().replace("+00:00", "Z"),
         "decision_at": decision_at.isoformat().replace("+00:00", "Z"),
         "cut": "decision_at",

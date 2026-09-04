@@ -6,6 +6,7 @@ values. Not fitted. Not searched.
 
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 from typing import Any
@@ -45,3 +46,14 @@ def frozen_operate_params() -> dict[str, Any]:
         "decision_delay_hours": DECISION_DELAY_HOURS,
         "note": NOTE,
     }
+
+
+def params_sha256(values: dict[str, Any] | None = None) -> str:
+    payload = frozen_operate_params() if values is None else values
+    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def operate_stamp() -> dict[str, Any]:
+    frozen = frozen_operate_params()
+    return {"params": frozen, "params_sha256": params_sha256(frozen)}

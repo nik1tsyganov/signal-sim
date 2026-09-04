@@ -51,6 +51,10 @@ class OrderRefused(ValueError):
     """The proposal did not clear the rails; no order row was created."""
 
 
+class ProvenanceMissing(ValueError):
+    """A ledger fill has no complete R8 audit record."""
+
+
 class LiveEndpointError(ValueError):
     """Client construction named a known live broker endpoint (R2)."""
 
@@ -170,6 +174,70 @@ def _missing_provenance(record, *, filled):
             if fill.get(key) in (None, ""):
                 return f"fill.{key}"
     return None
+
+
+def read_audit_records(audit_path):
+    """Load every JSONL provenance record. Missing file is an empty log."""
+    if not audit_path:
+        return []
+    try:
+        with open(audit_path, "r", encoding="utf-8") as handle:
+            lines = [line for line in handle.read().splitlines() if line]
+    except OSError:
+        return []
+    records = []
+    for line in lines:
+        try:
+            records.append(json.loads(line))
+        except json.JSONDecodeError as error:
+            raise ProvenanceMissing(f"R8: audit line is not JSON: {error}") from error
+    return records
+
+
+def assert_fills_have_provenance(ledger_path, audit_path=None):
+    """Fail closed if any sqlite fill lacks a complete matching R8 record."""
+    if audit_path is None:
+        audit_path = str(ledger_path) + ".audit.jsonl"
+    connection = sqlite3.connect(ledger_path)
+    try:
+        tables = {
+            name
+            for (name,) in connection.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            )
+        }
+        if "fills" not in tables:
+            fills = []
+        else:
+            fills = connection.execute(
+                "SELECT order_id, price, filled_at FROM fills"
+            ).fetchall()
+    finally:
+        connection.close()
+    if not fills:
+        return
+    records = read_audit_records(audit_path)
+    by_order = {}
+    for record in records:
+        if record.get("outcome") != "filled":
+            continue
+        missing = _missing_provenance(record, filled=True)
+        if missing is not None:
+            raise ProvenanceMissing(f"R8: provenance missing {missing}")
+        fill = record.get("fill") or {}
+        order_id = fill.get("order_id") or record.get("order_id")
+        if not order_id:
+            raise ProvenanceMissing("R8: provenance missing fill.order_id")
+        by_order[str(order_id)] = record
+    for order_id, price, filled_at in fills:
+        record = by_order.get(str(order_id))
+        if record is None:
+            raise ProvenanceMissing(f"R8: fill {order_id} has no provenance record")
+        fill = record["fill"]
+        if float(fill["fill_px"]) != float(price):
+            raise ProvenanceMissing(f"R8: fill {order_id} provenance price mismatch")
+        if fill.get("filled_at") != filled_at:
+            raise ProvenanceMissing(f"R8: fill {order_id} provenance filled_at mismatch")
 
 
 def _last_audit_line(audit_path):

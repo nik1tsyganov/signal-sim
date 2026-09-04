@@ -9,8 +9,8 @@ from pathlib import Path
 
 from .diagnose import fixture_diagnostics
 from .fixture_load import load_fixture_events
-from .hawkes import intensity_at
-from .indicators import UNIVERSE, rank_candidates
+from .hawkes import fixture_intensity
+from .indicators import rank_candidates
 from .store import EventStore
 
 
@@ -158,16 +158,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "intensity":
         fixtures = Path(__file__).resolve().parent.parent / "fixtures"
-        events = load_fixture_events(fixtures)
-        when = max(event.observed_at for event in events)
-        intensities = {
-            ticker: intensity_at(
-                (event for event in events if event.ticker == ticker),
-                when,
-            )
-            for ticker in UNIVERSE
-        }
-        print(json.dumps(intensities, separators=(",", ":")))
+        print(json.dumps(fixture_intensity(fixtures), separators=(",", ":")))
         return 0
     if args.command == "diagnose":
         fixtures = Path(__file__).resolve().parent.parent / "fixtures"

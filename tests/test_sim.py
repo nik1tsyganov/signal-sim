@@ -10,6 +10,7 @@ import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
+from unittest.mock import patch
 
 from signal_sim import cli
 from signal_sim.indicators import load_sectors, load_universe
@@ -187,6 +188,33 @@ class ReplayRoundTripTests(unittest.TestCase):
         self.assertTrue(all(line.get("decision_at") for line in audit_lines))
         self.assertTrue(all((line.get("fill") or {}).get("fill_px") for line in audit_lines))
         self.assertTrue(all(line.get("verdict") == "approved" for line in audit_lines))
+        from signal_sim.params import params_sha256
+
+        self.assertEqual(summary["params_sha256"], params_sha256())
+        self.assertEqual(summary["audit_path"], self.audit)
+        self.assertEqual(len(summary["params_sha256"]), 64)
+
+    def test_replay_fails_closed_when_audit_is_wiped_after_fills(self):
+        from signal_sim.paper import ProvenanceMissing, assert_fills_have_provenance
+
+        summary = run_fixture_replay(
+            fixtures=FIXTURES,
+            ledger_path=self.ledger,
+            audit_path=self.audit,
+            mark_book_path=TWO_NAME_MARKS,
+        )
+        self.assertGreaterEqual(summary["stats"]["n_orders"], 1)
+        Path(self.audit).write_text("", encoding="utf-8")
+        with self.assertRaises(ProvenanceMissing):
+            assert_fills_have_provenance(self.ledger, self.audit)
+        with patch("signal_sim.sim.assert_fills_have_provenance", side_effect=ProvenanceMissing("R8")):
+            with self.assertRaises(ProvenanceMissing):
+                run_fixture_replay(
+                    fixtures=FIXTURES,
+                    ledger_path=os.path.join(self.tmp, "second.sqlite"),
+                    audit_path=os.path.join(self.tmp, "second.audit"),
+                    mark_book_path=TWO_NAME_MARKS,
+                )
 
     def test_missing_mark_is_refused_not_invented(self):
         book = load_mark_book(TWO_NAME_MARKS)

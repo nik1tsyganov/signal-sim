@@ -21,8 +21,8 @@ from .clusters import online_clusters
 from .events import Event
 from .hawkes import log_likelihood
 from .indicators import SECTORS, UNIVERSE, rank_candidates
-from .paper import OrderRefused, submit_paper_order
-from .params import COST_BPS, DECISION_DELAY_HOURS
+from .paper import OrderRefused, assert_fills_have_provenance, submit_paper_order
+from .params import COST_BPS, DECISION_DELAY_HOURS, operate_stamp
 from .sizer import MAX_GROSS_FRAC, size_targets
 from .store import EventStore
 
@@ -596,6 +596,7 @@ def run_fixture_replay(
         action = "open" if have_shares <= 1e-12 else "adjust"
         actions.append((ticker, side, trade_frac, mark_px, event_ids, action))
 
+    effective_audit = audit_path if audit_path is not None else str(ledger_path) + ".audit.jsonl"
     for ticker, side, frac, mark_px, event_ids, action in actions:
         try:
             filled = _place(
@@ -606,7 +607,7 @@ def run_fixture_replay(
                 events=events,
                 event_ids=event_ids,
                 ledger_path=ledger_path,
-                audit_path=audit_path,
+                audit_path=effective_audit,
                 kill_root=kill_root,
                 decision_key=decision_key,
                 action=action,
@@ -624,6 +625,9 @@ def run_fixture_replay(
         else:
             cash += notional - fee
         orders.append(filled)
+
+    if orders:
+        assert_fills_have_provenance(ledger_path, effective_audit)
 
     held, cash, _last = _inventory(ledger_path, starting_cash)
     positions = []
@@ -665,8 +669,11 @@ def run_fixture_replay(
     gross_frac = math.fsum(row["size_frac"] for row in positions)
     fees = math.fsum(float(order.get("cost", 0)) for order in orders)
     clusters = online_clusters(events, book["decision_at"])
+    stamp = operate_stamp()
     summary = {
         "mode": "local-paper-replay",
+        "params": stamp["params"],
+        "params_sha256": stamp["params_sha256"],
         "mark_source": book.get("source", "fixture"),
         "mark_note": book.get("note", ""),
         "fill_rule": FILL_RULE,
@@ -727,6 +734,7 @@ def run_fixture_replay(
             "max_cluster_size": max((row["size"] for row in clusters), default=0),
         },
         "ledger_path": str(ledger_path),
+        "audit_path": effective_audit,
     }
     _write_account(ledger_path, summary)
     with open(str(ledger_path) + ".run.jsonl", "a", encoding="utf-8") as handle:
@@ -787,8 +795,11 @@ def run_fixture_path(
         }
         for index, step in enumerate(steps)
     ]
+    stamp = operate_stamp()
     summary = {
         "mode": "local-paper-path",
+        "params": stamp["params"],
+        "params_sha256": stamp["params_sha256"],
         "mark_source": books[0].get("source", "fixture"),
         "mark_note": books[0].get("note", ""),
         "fill_rule": FILL_RULE,
@@ -801,6 +812,7 @@ def run_fixture_path(
         "worst_drawdown": worst_drawdown,
         "worst_drawdown_frac": worst_drawdown / starting_cash,
         "ledger_path": str(ledger_path),
+        "audit_path": audit_path if audit_path is not None else str(ledger_path) + ".audit.jsonl",
         "stats": {
             "n_steps": len(steps),
             "n_orders": sum(len(step["orders"]) for step in steps),

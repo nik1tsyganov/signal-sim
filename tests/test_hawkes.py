@@ -124,19 +124,36 @@ class HawkesCliTests(unittest.TestCase):
         ]
         output = io.StringIO()
 
-        with patch.object(
-            cli, "load_fixture_events", return_value=fixture_events
+        with patch(
+            "signal_sim.fixture_load.load_fixture_events", return_value=fixture_events
         ) as load, redirect_stdout(output):
             exit_code = cli.main(["intensity", "--fixtures"])
 
         payload = json.loads(output.getvalue())
+        intensities = payload["intensity"]
         self.assertEqual(exit_code, 0)
-        self.assertTrue({"NVDA", "XLE", "DIS"}.issubset(set(payload)))
-        self.assertGreaterEqual(len(payload), 3)
-        self.assertTrue(all(math.isfinite(value) for value in payload.values()))
-        self.assertGreater(payload["NVDA"], payload["XLE"])
-        self.assertEqual(payload["XLE"], payload["DIS"])
+        self.assertEqual(payload["mode"], "local-paper-intensity")
+        self.assertEqual(payload["cut"], "decision_at")
+        self.assertEqual(payload["decision_at"], "2026-09-02T10:15:00Z")
+        self.assertEqual(payload["stats"]["n_events_after_decision"], 1)
+        self.assertEqual(len(payload["params_sha256"]), 64)
+        self.assertTrue({"NVDA", "XLE", "DIS"}.issubset(set(intensities)))
+        self.assertGreaterEqual(len(intensities), 3)
+        self.assertTrue(all(math.isfinite(value) for value in intensities.values()))
+        self.assertGreater(intensities["NVDA"], intensities["XLE"])
+        self.assertEqual(intensities["XLE"], intensities["DIS"])
         load.assert_called_once()
+
+    def test_intensity_fixtures_excludes_prints_after_decision_at(self):
+        output = io.StringIO()
+        with redirect_stdout(output):
+            exit_code = cli.main(["intensity", "--fixtures"])
+        payload = json.loads(output.getvalue())
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(payload["cut"], "decision_at")
+        self.assertEqual(payload["decision_at"], "2026-09-02T10:15:00Z")
+        self.assertGreaterEqual(payload["stats"]["n_events_after_decision"], 1)
+        self.assertNotIn("sharpe", json.dumps(payload).lower())
 
 
 class DiagnoseCliTests(unittest.TestCase):

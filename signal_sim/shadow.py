@@ -12,7 +12,7 @@ import os
 from pathlib import Path
 from typing import Any
 
-from .params import frozen_operate_params
+from .params import frozen_operate_params, operate_stamp
 from .walkforward import run_fixture_walkforward
 
 
@@ -50,10 +50,12 @@ def run_shadow_report(
     write_artifact: bool = True,
 ) -> dict[str, Any]:
     summary = run_fixture_walkforward(fixtures=fixtures, ledger_dir=ledger_dir)
+    stamp = operate_stamp()
     report = {
         "mode": "local-paper-shadow",
         "note": NOTE,
-        "params": frozen_params(),
+        "params": stamp["params"],
+        "params_sha256": stamp["params_sha256"],
         "walkforward": summary,
     }
     if write_artifact is not True:

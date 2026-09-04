@@ -100,6 +100,32 @@ class ServeTests(unittest.TestCase):
         self.assertIn("no checked-in", payload["no_print_reason"].lower())
         self.assertNotIn("sharpe", json.dumps(payload).lower())
 
+    def test_api_params_matches_manifest_stamp(self):
+        from signal_sim.params import operate_stamp
+
+        body, content_type = self.request("/api/params")
+        payload = json.loads(body)
+        self.assertEqual(content_type, "application/json")
+        self.assertEqual(payload, operate_stamp())
+        self.assertEqual(len(payload["params_sha256"]), 64)
+        self.assertIn("not fitted", payload["params"]["note"].lower())
+        self.assertNotIn("sharpe", json.dumps(payload).lower())
+
+    def test_api_intensity_matches_intensity_fixtures(self):
+        expected = io.StringIO()
+        with redirect_stdout(expected):
+            cli.main(["intensity", "--fixtures"])
+
+        body, content_type = self.request("/api/intensity")
+
+        self.assertEqual(json.loads(body), json.loads(expected.getvalue()))
+        self.assertEqual(content_type, "application/json")
+        payload = json.loads(body)
+        self.assertEqual(payload["mode"], "local-paper-intensity")
+        self.assertEqual(payload["cut"], "decision_at")
+        self.assertGreaterEqual(payload["stats"]["n_events_after_decision"], 1)
+        self.assertNotIn("sharpe", json.dumps(payload).lower())
+
     def test_api_diagnose_matches_diagnose_fixtures(self):
         expected = io.StringIO()
         with redirect_stdout(expected):
@@ -290,6 +316,10 @@ class ServeTests(unittest.TestCase):
         self.assertIn(b"/api/drift", body)
         self.assertIn(b"/api/walkforward", body)
         self.assertIn(b"/api/shadow", body)
+        self.assertIn(b"/api/params", body)
+        self.assertIn(b"/api/intensity", body)
+        self.assertIn(b"Frozen params", body)
+        self.assertIn(b"params_sha256", body)
         self.assertIn(b"Drift targets", body)
         self.assertIn(b"Walk-forward", body)
         self.assertIn(b"Shadow-paper", body)
@@ -323,6 +353,8 @@ class ServeTests(unittest.TestCase):
         self.assertIn(b"/api/drift", body)
         self.assertIn(b"/api/walkforward", body)
         self.assertIn(b"/api/shadow", body)
+        self.assertIn(b"/api/params", body)
+        self.assertIn(b"/api/intensity", body)
         self.assertIn(b"/api/replay", body)
         self.assertIn(b"/api/liquid", body)
         self.assertIn(b"/api/path", body)

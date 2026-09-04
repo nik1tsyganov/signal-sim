@@ -45,6 +45,8 @@ class ShadowReportTests(unittest.TestCase):
         self.assertEqual(payload["mode"], "local-paper-shadow")
         self.assertIn("not a search", payload["note"].lower())
         self.assertEqual(payload["params"]["placebo_seed"], PLACEBO_SEED)
+        self.assertEqual(len(payload["params_sha256"]), 64)
+        self.assertEqual(payload["params_sha256"], payload["walkforward"]["params_sha256"])
         self.assertEqual(payload["walkforward"]["n_folds"], 2)
         first = payload["walkforward"]["folds"][0]
         self.assertEqual(set(first["comparisons"]), {"no_news", "shuffled_news", "news_only"})

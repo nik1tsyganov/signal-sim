@@ -120,10 +120,20 @@
             <p>GET /api/marks. Frozen universe vs who can fill. Not a ranking input. no_print names have no checked-in print at decision_at. no_mark names ranked but have no fixture mark.</p>
             <div id="marks-result">Loading marks…</div>
         </section>
+        <section id="params">
+            <h2>Frozen params</h2>
+            <p>GET /api/params. Single source from fixtures/params.json. Same digest stamped on diagnose, drift, intensity, walkforward, shadow, and replay. Not fitted. Not searched.</p>
+            <div id="params-result">Loading params…</div>
+        </section>
         <section id="diagnose">
             <h2>Diagnose</h2>
-            <p>GET /api/diagnose. Hawkes intensity and clusters only. Not a ranking input.</p>
+            <p>GET /api/diagnose. Hawkes intensity and clusters only. Cut at decision_at. Not a ranking input.</p>
             <div id="diagnose-result">Loading diagnose…</div>
+        </section>
+        <section id="intensity">
+            <h2>Intensity</h2>
+            <p>GET /api/intensity. Declared Hawkes intensity at mark-book decision_at. Same window as diagnose. Not a fit. Not a ranking input.</p>
+            <div id="intensity-result">Loading intensity…</div>
         </section>
         <section id="drift">
             <h2>Drift targets</h2>
@@ -344,6 +354,7 @@
                 box.innerHTML = renderJson({
                     mode: data.mode,
                     note: data.note,
+                    params_sha256: data.params_sha256,
                     when: data.when,
                     decision_at: data.decision_at,
                     cut: data.cut,
@@ -375,6 +386,7 @@
                 box.innerHTML = renderJson({
                     mode: data.mode,
                     note: data.note,
+                    params_sha256: data.params_sha256,
                     decision_at: data.decision_at,
                     horizon_hours: data.horizon_hours,
                     intel: data.intel || {},
@@ -423,6 +435,7 @@
                     mode: data.mode,
                     note: data.note,
                     params: data.params || {},
+                    params_sha256: data.params_sha256,
                     n_folds: (data.walkforward || {}).n_folds,
                     folds: folds,
                 });
@@ -452,6 +465,7 @@
                 box.innerHTML = renderJson({
                     mode: data.mode,
                     note: data.note,
+                    params_sha256: data.params_sha256,
                     n_folds: data.n_folds,
                     folds: rows,
                 });
@@ -460,10 +474,51 @@
             }
         }
 
+        async function loadParams() {
+            const box = document.getElementById('params-result');
+            try {
+                const response = await fetch('/api/params');
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                const data = await response.json();
+                box.innerHTML = renderJson({
+                    params_sha256: data.params_sha256,
+                    params: data.params || {},
+                });
+            } catch (err) {
+                box.innerHTML = renderError('Params failed', err);
+            }
+        }
+
+        async function loadIntensity() {
+            const box = document.getElementById('intensity-result');
+            try {
+                const response = await fetch('/api/intensity');
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                const data = await response.json();
+                box.innerHTML = renderJson({
+                    mode: data.mode,
+                    note: data.note,
+                    cut: data.cut,
+                    decision_at: data.decision_at,
+                    params_sha256: data.params_sha256,
+                    n_events_after_decision: (data.stats || {}).n_events_after_decision,
+                    intensity: data.intensity || {},
+                });
+            } catch (err) {
+                box.innerHTML = renderError('Intensity failed', err);
+            }
+        }
+
         document.addEventListener('DOMContentLoaded', () => {
             loadRanks();
             loadMarks();
+            loadParams();
             loadDiagnose();
+            loadIntensity();
             loadDrift();
             loadWalkforward();
             loadShadow();
