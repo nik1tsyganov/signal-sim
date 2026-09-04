@@ -62,6 +62,9 @@ def size_targets(
             "intensity_scale",
             "insider_confirm",
             "congress_confirm",
+            "intel_brief",
+            "wm_intel",
+            "chokepoint",
         ):
             if key in row:
                 target[key] = row[key]

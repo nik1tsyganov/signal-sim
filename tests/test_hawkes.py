@@ -159,6 +159,8 @@ class DiagnoseCliTests(unittest.TestCase):
         self.assertGreaterEqual(len(payload["online_clusters"]), 1)
         self.assertTrue(math.isfinite(payload["hawkes_log_likelihood"]))
         self.assertGreaterEqual(payload["stats"]["n_clusters"], 1)
+        self.assertIn("intel", payload)
+        self.assertGreaterEqual(payload["stats"]["n_intel"], 1)
         self.assertNotIn("candidates", payload)
         self.assertNotIn("sharpe", json.dumps(payload).lower())
 

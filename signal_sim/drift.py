@@ -13,7 +13,7 @@ from typing import Any
 from .clusters import online_clusters
 from .events import Event
 from .fixture_load import load_fixture_events
-from .indicators import filed_confirm_features
+from .indicators import filed_confirm_features, intel_features
 from .sizer import MAX_GROSS_FRAC
 
 
@@ -80,6 +80,7 @@ def drift_targets(
     states = cluster_state(events, when)
     peak = max((abs(float(row["state"])) for row in states.values()), default=0.0)
     confirms = filed_confirm_features(events, when)
+    intel = intel_features(events, when)
     ranked: list[dict[str, Any]] = []
     for row in sorted(states.values(), key=lambda item: (-abs(float(item["state"])), str(item["ticker"]))):
         if peak <= 0:
@@ -98,11 +99,19 @@ def drift_targets(
             "state": float(row["state"]),
             "insider_confirm": 0,
             "congress_confirm": 0,
+            "intel_brief": 0,
+            "wm_intel": 0,
+            "chokepoint": 0,
         }
         row_confirms = confirms.get(str(row["ticker"]))
         if row_confirms:
             target["insider_confirm"] = row_confirms["insider_confirm"]
             target["congress_confirm"] = row_confirms["congress_confirm"]
+        row_intel = intel.get(str(row["ticker"]))
+        if row_intel:
+            target["intel_brief"] = row_intel["intel_brief"]
+            target["wm_intel"] = row_intel["wm_intel"]
+            target["chokepoint"] = row_intel["chokepoint"]
         if intensities is not None:
             from .hawkes import intensity_size_scale
 
@@ -126,6 +135,12 @@ def fixture_drift_book(
     root = fixtures if fixtures is not None else Path(__file__).resolve().parent.parent / "fixtures"
     book = mark_book if mark_book is not None else load_mark_book(mark_book_path)
     events = [event for event in load_fixture_events(root) if event.observed_at <= book["decision_at"]]
+    from .sources.worldmonitor import load_recorded
+
+    recorded = [
+        event for event in load_recorded(root) if event.observed_at <= book["decision_at"]
+    ]
+    feature_events = events + recorded
     horizon_hours = (book["exit_at"] - book["decision_at"]).total_seconds() / 3600.0
     intensities = None
     if intensity:
@@ -139,6 +154,12 @@ def fixture_drift_book(
         horizon_hours=horizon_hours,
         intensities=intensities,
     )
+    intel = intel_features(feature_events, book["decision_at"])
+    for row in targets:
+        feat = intel.get(str(row["ticker"]), {})
+        row["intel_brief"] = int(feat.get("intel_brief", 0))
+        row["wm_intel"] = int(feat.get("wm_intel", 0))
+        row["chokepoint"] = int(feat.get("chokepoint", 0))
     decision_at = book["decision_at"].isoformat().replace("+00:00", "Z")
     payload = {
         "mode": "local-paper-drift",
@@ -150,6 +171,7 @@ def fixture_drift_book(
         "horizon_hours": horizon_hours,
         "max_gross_frac": float(book.get("max_gross_frac", MAX_GROSS_FRAC)),
         "mark_path": book.get("path"),
+        "intel": intel,
         "targets": targets,
     }
     if intensity:

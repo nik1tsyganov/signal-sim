@@ -80,6 +80,31 @@ def _filed_confirmation(
     )
 
 
+def intel_features(
+    events: list[Event],
+    when: datetime,
+    universe: tuple[str, ...] | None = None,
+) -> dict[str, dict[str, int]]:
+    """World Monitor / intel_brief flags at ``when``. Uses observed_at only."""
+    features: dict[str, dict[str, int]] = {}
+    for ticker in UNIVERSE if universe is None else universe:
+        briefs = [
+            event
+            for event in events
+            if event.kind == "intel_brief"
+            and event.ticker == ticker
+            and event.observed_at <= when
+        ]
+        if not briefs:
+            continue
+        features[ticker] = {
+            "intel_brief": 1,
+            "wm_intel": int(any(event.source == "worldmonitor" for event in briefs)),
+            "chokepoint": int(any("chokepoint" in event.raw_ref for event in briefs)),
+        }
+    return features
+
+
 def filed_confirm_features(
     events: list[Event],
     when: datetime,

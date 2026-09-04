@@ -127,6 +127,26 @@ def _map_chokepoints(payload: dict, observed_now: str) -> list[Event]:
     return events
 
 
+def load_recorded(fixtures=None) -> list[Event]:
+    """Load checked-in World Monitor JSON using the file's own clock.
+
+    Never uses process ``now()``. Live HTTP is not opened.
+    """
+    root = Path(fixtures) if fixtures is not None else Path(__file__).resolve().parent.parent.parent / "fixtures"
+    intel = root / "recorded" / "worldmonitor" / "us_intel_brief.json"
+    choke = root / "recorded" / "worldmonitor" / "chokepoint_status.json"
+    if not intel.is_file():
+        return []
+    with intel.open(encoding="utf-8") as handle:
+        payload = json.load(handle)
+    clock = None
+    if isinstance(payload, dict):
+        clock = payload.get("generatedAt") or payload.get("fetchedAt")
+    if not clock:
+        raise ValueError("recorded World Monitor JSON must carry generatedAt or fetchedAt")
+    return map_recorded(intel, choke if choke.is_file() else None, now=clock)
+
+
 def map_recorded(intel_path, chokepoint_path=None, now=None) -> list[Event]:
     """Map checked-in World Monitor JSON. No HTTP."""
     if now is None:
