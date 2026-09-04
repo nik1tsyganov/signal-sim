@@ -410,9 +410,9 @@ class PaperBrokerClientTests(unittest.TestCase):
                         paper_broker_client(host, port)
 
     def test_paper_broker_host_is_a_stub_and_never_opens_a_socket(self):
-        with mock.patch("socket.create_connection") as connect, mock.patch(
-            "urllib.request.urlopen"
-        ) as urlopen:
+        with mock.patch("signal_sim.paper.read_env", return_value=None), mock.patch(
+            "socket.create_connection"
+        ) as connect, mock.patch("urllib.request.urlopen") as urlopen:
             with self.assertRaises(NotImplementedError) as error:
                 paper_broker_client(PAPER_BROKER_HOST, 443)
             self.assertIn("no verified key", str(error.exception))
@@ -422,6 +422,26 @@ class PaperBrokerClientTests(unittest.TestCase):
                 AlpacaPaperStub()
             connect.assert_not_called()
             urlopen.assert_not_called()
+
+    def test_paper_broker_host_with_keys_is_read_only_and_has_no_order_method(self):
+        def env(name):
+            values = {
+                "ALPACA_PAPER_API_KEY": "paper-key-id",
+                "ALPACA_PAPER_API_SECRET": "paper-secret",
+            }
+            return values.get(name)
+
+        with mock.patch("signal_sim.paper.read_env", side_effect=env), mock.patch(
+            "socket.create_connection"
+        ) as connect, mock.patch(
+            "signal_sim.alpaca_paper.urllib.request.urlopen"
+        ) as urlopen:
+            client = paper_broker_client(PAPER_BROKER_HOST, 443)
+        self.assertEqual(client.mode, "alpaca-paper-read")
+        for name in ("submit", "submit_order", "place_order", "submit_paper_order"):
+            self.assertFalse(hasattr(client, name), name)
+        connect.assert_not_called()
+        urlopen.assert_not_called()
 
     def test_live_host_and_ports_never_open_a_socket(self):
         with mock.patch("socket.create_connection") as connect, mock.patch(

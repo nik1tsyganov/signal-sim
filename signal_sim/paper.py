@@ -4,11 +4,13 @@ submit_paper_order() is the single choke point that can create an order row:
 R1 consults safety.PAPER_ONLY at call time, R3 runs the fail-closed
 kill-switch, R9 is the plain-code validator (schema, ticker allowlist, size
 cap, provenance event ids, idempotency), R8 appends the audit line before
-any return. R2: the broker "client" is in-process only in v0 - constructing
-one against any network endpoint raises, and known live endpoints raise the
-harder LiveEndpointError. Live-broker names appear below only in
-runtime-assembled or bare-number form so no forbidden fragment is a
-contiguous substring of this file (SafetyRailTests scans the package).
+any return. R2: the default broker "client" is in-process. Known live endpoints raise
+LiveEndpointError. The paper host may construct a read-only Alpaca paper
+client when paper keys are present; it never places orders.
+submit_paper_order() remains the only order path. Live-broker names appear
+below only in runtime-assembled or bare-number form so no forbidden
+fragment is a contiguous substring of this file (SafetyRailTests scans
+the package).
 """
 
 import hashlib
@@ -16,9 +18,13 @@ import json
 import math
 import sqlite3
 from datetime import datetime, timezone
+from urllib.parse import urlsplit
 
 from . import safety
+from .alpaca_paper import AlpacaPaperClient
 from .indicators import UNIVERSE
+from .runtime_env import paper_submit_flag
+from .secrets import read_env
 
 SIDES = ("buy", "sell")
 
@@ -70,7 +76,7 @@ class PaperBrokerClient:
 
 
 class AlpacaPaperStub:
-    """Later paper-host adapter. v0 has no keys and must not open a socket."""
+    """Missing-key paper-host constructor. Must not open a socket."""
 
     mode = "paper-stub"
 
@@ -78,18 +84,83 @@ class AlpacaPaperStub:
         raise NotImplementedError("no verified key + terms")
 
 
+def _default_paper_base_url():
+    return "https://" + _PAPER_HOST_PREFIX + _LIVE_HOST_FRAGMENT
+
+
+def _paper_host_name():
+    return _PAPER_HOST_PREFIX + _LIVE_HOST_FRAGMENT
+
+
+def paper_host():
+    """Assembled paper-host name. Safe to call; does not open a socket."""
+    return _paper_host_name()
+
+
+def _normalize_host(host):
+    text = "" if host is None else str(host).strip().lower()
+    if "://" in text:
+        return (urlsplit(text).hostname or "").lower()
+    return text
+
+
+def _is_paper_host(host_text):
+    return host_text == _paper_host_name()
+
+
+def missing_paper_keys():
+    """Env names required for the read-only paper client, or empty."""
+    missing = []
+    if not read_env("ALPACA_PAPER_API_KEY"):
+        missing.append("ALPACA_PAPER_API_KEY")
+    if not read_env("ALPACA_PAPER_API_SECRET"):
+        missing.append("ALPACA_PAPER_API_SECRET")
+    return missing
+
+
+def paper_submit_enabled():
+    """Remote paper POSTs stay off unless this later gate is explicitly 1.
+
+    Default is 0 (missing, empty, or any value other than the string 1).
+    """
+    return paper_submit_flag() == "1"
+
+
+def resolve_paper_base_url():
+    """Paper HTTPS origin. Live hosts raise LiveEndpointError."""
+    raw = read_env("ALPACA_PAPER_API_BASE_URL") or _default_paper_base_url()
+    parsed = urlsplit(raw)
+    if parsed.scheme:
+        if parsed.scheme != "https":
+            raise ValueError("paper broker URL must be https")
+        if parsed.username or parsed.password:
+            raise ValueError("paper broker URL must not embed credentials")
+        host_text = (parsed.hostname or "").lower()
+    else:
+        host_text = raw.strip().lower()
+    if _LIVE_HOST_FRAGMENT in host_text and not host_text.startswith(
+        _PAPER_HOST_PREFIX
+    ):
+        raise LiveEndpointError(f"live broker host refused: {host_text!r}")
+    if not _is_paper_host(host_text):
+        raise ValueError(f"paper broker host refused: {host_text!r}")
+    return "https://" + host_text
+
+
 def paper_broker_client(host=None, port=None):
-    """Construct the broker client. v0 egress allowlist is empty (R2).
+    """Construct the broker client.
 
     The default (no host, no port) is the in-process paper broker. The
-    paper-host name is a stub: it raises NotImplementedError for missing
-    keys and never opens a socket. Known live endpoints (a non-paper
-    broker host, or IBKR live ports on any host) raise LiveEndpointError
-    so a future misconfiguration fails at startup, not at order time.
+    paper-host name constructs a read-only Alpaca paper client when
+    ALPACA_PAPER_API_KEY and ALPACA_PAPER_API_SECRET are set; missing
+    keys raise NotImplementedError and never open a socket. Known live
+    endpoints (a non-paper broker host, or IBKR live ports on any host)
+    raise LiveEndpointError so a misconfiguration fails at startup, not
+    at order time. This client has no order-placement method.
     """
     if host is None and port is None:
         return PaperBrokerClient()
-    host_text = "" if host is None else str(host).lower()
+    host_text = _normalize_host(host)
     if _LIVE_HOST_FRAGMENT in host_text and not host_text.startswith(
         _PAPER_HOST_PREFIX
     ):
@@ -100,8 +171,15 @@ def paper_broker_client(host=None, port=None):
         port_number = None
     if port_number in _LIVE_PORTS:
         raise LiveEndpointError(f"live broker port refused: {host!r} port {port!r}")
-    if host_text.startswith(_PAPER_HOST_PREFIX) and _LIVE_HOST_FRAGMENT in host_text:
-        raise NotImplementedError("no verified key + terms")
+    if _is_paper_host(host_text):
+        missing = missing_paper_keys()
+        if missing:
+            raise NotImplementedError("no verified key + terms")
+        return AlpacaPaperClient(
+            base_url=resolve_paper_base_url(),
+            api_key=read_env("ALPACA_PAPER_API_KEY"),
+            api_secret=read_env("ALPACA_PAPER_API_SECRET"),
+        )
     raise ValueError(
         "v0 egress allowlist is empty - PaperBroker is in-process only; "
         f"got {host!r} port {port!r}"
