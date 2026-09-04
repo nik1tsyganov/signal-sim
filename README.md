@@ -57,7 +57,7 @@ python3 -m signal_sim replay --fixtures --drift --intensity
 
 `walkforward --fixtures` runs two expanding fixture-mark folds with a purge/embargo that covers each fold's label horizon plus `decision_delay_hours`. Each fold reports its own fixture-mark PnL for the declared drift stub, plus no-news, shuffled-news, and news-only comparisons on the same clocks. Those numbers are not a search target and are not combined into a fitted score.
 
-`shadow --fixtures` is the frozen operate path for that same harness. It writes `shadow-paper-walkforward.json` under `$SIGNAL_SIM_ARTIFACTS`, `/opt/cursor/artifacts`, or a repo `artifacts/` directory when one of those exists; otherwise it prints the report to stdout only. Params in the report are declared constants. Do not search them.
+`shadow --fixtures` is the frozen operate path for that same harness. It writes `shadow-paper-walkforward.json` under `$SIGNAL_SIM_ARTIFACTS`, `/opt/cursor/artifacts`, or a repo `artifacts/` directory when one of those exists; otherwise it prints the report to stdout only. Params in the report are declared constants. Do not search them. `GET /api/shadow` returns the same JSON without writing artifacts and without placing desk orders.
 
 Recorded World Monitor JSON under `fixtures/recorded/worldmonitor/` attaches as `intel_brief` / `wm_intel` / `chokepoint` flags on the drift book and diagnose. The checked-in TrendRadar hotspot fixture attaches as `trendradar` on the same `observed_at` rule. Neither flag changes rank or size. Live World Monitor still raises without a key and does not open HTTP. There is no TrendRadar live client and no GPL/AGPL vendoring.
 
@@ -81,6 +81,7 @@ Read-only desk diagnostics (same JSON as `diagnose --fixtures` and `drift --fixt
 curl -sS http://127.0.0.1:8765/api/diagnose
 curl -sS http://127.0.0.1:8765/api/drift
 curl -sS http://127.0.0.1:8765/api/walkforward
+curl -sS http://127.0.0.1:8765/api/shadow
 ```
 
 Three-step paper path (same loop as `replay --fixtures --path`):
@@ -95,7 +96,7 @@ Sector mark book (same loop as `replay --fixtures --marks fixtures/marks/liquid.
 curl -sS -X POST http://127.0.0.1:8765/api/liquid
 ```
 
-`GET /api/replay`, `GET /api/path`, and `GET /api/liquid` return 405 and do not place orders. `GET /api/walkforward` is the same fixture harness as `walkforward --fixtures` and does not place desk orders. The browser page at that loopback URL loads `GET /api/rank`, `GET /api/marks`, `GET /api/diagnose`, `GET /api/drift`, and `GET /api/walkforward`, and has buttons for `POST /api/replay` (default liquid sector book), `POST /api/liquid` (same book), and `POST /api/path`. The rank table labels default-fill vs `no_mark` before anyone posts. The Marks section lists the frozen universe, who can fill, `no_print` names that never ranked, and who is not in the rank cut. Diagnose shows Hawkes intensity and intel flags at `decision_at`. Drift targets show the cluster-drift book plus insider/congress confirms and recorded intel flags. Bind is loopback only. Paper only.
+`GET /api/replay`, `GET /api/path`, and `GET /api/liquid` return 405 and do not place orders. `GET /api/walkforward` is the same fixture harness as `walkforward --fixtures` and does not place desk orders. `GET /api/shadow` is the same frozen report as `shadow --fixtures` without writing artifacts. The browser page at that loopback URL loads `GET /api/rank`, `GET /api/marks`, `GET /api/diagnose`, `GET /api/drift`, `GET /api/walkforward`, and `GET /api/shadow`, and has buttons for `POST /api/replay` (default liquid sector book), `POST /api/liquid` (same book), and `POST /api/path`. The rank table labels default-fill vs `no_mark` before anyone posts. The Marks section lists the frozen universe, who can fill, `no_print` names that never ranked, and who is not in the rank cut. Diagnose shows Hawkes intensity and intel flags at `decision_at`. Drift targets show the cluster-drift book plus insider/congress confirms and recorded intel flags. Bind is loopback only. Paper only.
 
 ```powershell
 python -m signal_sim replay --fixtures

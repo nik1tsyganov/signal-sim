@@ -135,6 +135,11 @@
             <p>GET /api/walkforward. Expanding fixture-mark folds plus no-news / shuffled-news / news-only. Not a search. GET does not place desk orders.</p>
             <div id="walkforward-result">Loading walk-forward…</div>
         </section>
+        <section id="shadow">
+            <h2>Shadow-paper</h2>
+            <p>GET /api/shadow. Frozen operate report of walkforward --fixtures. Declared params only. GET does not write artifacts and does not place desk orders. Not a search. Not a live result.</p>
+            <div id="shadow-result">Loading shadow-paper…</div>
+        </section>
         <section id="paper">
             <h2>Paper replay</h2>
             <p>Fixture marks only. GET does not place orders. Default replay fills the liquid sector book (tech/energy/media/ETF). Unmarked ranked names are no_mark. Path walks the three-step ledger.</p>
@@ -379,6 +384,36 @@
             }
         }
 
+        async function loadShadow() {
+            const box = document.getElementById('shadow-result');
+            try {
+                const response = await fetch('/api/shadow');
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                const data = await response.json();
+                const folds = ((data.walkforward || {}).folds || []).map((fold) => ({
+                    fold: fold.fold,
+                    name: fold.name,
+                    decision_at: fold.decision_at,
+                    declared: fold.total_pnl,
+                    no_news: (fold.comparisons || {}).no_news && fold.comparisons.no_news.total_pnl,
+                    shuffled_news: (fold.comparisons || {}).shuffled_news && fold.comparisons.shuffled_news.total_pnl,
+                    news_only: (fold.comparisons || {}).news_only && fold.comparisons.news_only.total_pnl,
+                    pnl_note: fold.pnl_note,
+                }));
+                box.innerHTML = `<pre>${escapeHtml(JSON.stringify({
+                    mode: data.mode,
+                    note: data.note,
+                    params: data.params || {},
+                    n_folds: (data.walkforward || {}).n_folds,
+                    folds: folds,
+                }, null, 2))}</pre>`;
+            } catch (err) {
+                box.innerHTML = `<div class="error">Shadow-paper failed: ${escapeHtml(err.message)}</div>`;
+            }
+        }
+
         async function loadWalkforward() {
             const box = document.getElementById('walkforward-result');
             try {
@@ -414,6 +449,7 @@
             loadDiagnose();
             loadDrift();
             loadWalkforward();
+            loadShadow();
             const replay = document.getElementById('replay-btn');
             const liquid = document.getElementById('liquid-btn');
             const path = document.getElementById('path-btn');

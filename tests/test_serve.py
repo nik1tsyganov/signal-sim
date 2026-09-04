@@ -149,6 +149,29 @@ class ServeTests(unittest.TestCase):
         self.assertEqual(payload["folds"][0]["comparisons"]["no_news"]["total_pnl"], 0)
         self.assertNotIn("sharpe", json.dumps(payload).lower())
 
+    def test_api_shadow_matches_shadow_fixtures_without_writing(self):
+        expected = io.StringIO()
+        with redirect_stdout(expected):
+            cli.main(["shadow", "--fixtures"])
+        cli_payload = json.loads(expected.getvalue())
+        cli_payload.pop("report_path", None)
+
+        folder = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, folder, ignore_errors=True)
+        with patch("signal_sim.shadow.artifacts_dir", return_value=folder):
+            body, content_type = self.request("/api/shadow")
+
+        payload = json.loads(body)
+        self.assertEqual(content_type, "application/json")
+        self.assertNotIn("report_path", payload)
+        self.assertEqual(payload, cli_payload)
+        self.assertEqual(payload["mode"], "local-paper-shadow")
+        self.assertEqual(payload["walkforward"]["n_folds"], 2)
+        self.assertEqual(payload["walkforward"]["folds"][0]["comparisons"]["no_news"]["total_pnl"], 0)
+        self.assertEqual(list(folder.iterdir()), [])
+        self.assertNotIn("sharpe", json.dumps(payload).lower())
+        self.assertNotIn("best_fold", json.dumps(payload).lower())
+
     def test_get_api_path_does_not_place_orders(self):
         with patch.object(serve.safety, "PAPER_ONLY", True), patch.object(
             serve.safety, "kill_switch_ok", return_value=True
@@ -263,8 +286,10 @@ class ServeTests(unittest.TestCase):
         self.assertIn(b"/api/marks", body)
         self.assertIn(b"/api/drift", body)
         self.assertIn(b"/api/walkforward", body)
+        self.assertIn(b"/api/shadow", body)
         self.assertIn(b"Drift targets", body)
         self.assertIn(b"Walk-forward", body)
+        self.assertIn(b"Shadow-paper", body)
         self.assertIn(b"insider_confirm", body)
         self.assertIn(b"intel_brief", body)
         self.assertIn(b"trendradar", body)
@@ -289,6 +314,7 @@ class ServeTests(unittest.TestCase):
         self.assertIn(b"/api/marks", body)
         self.assertIn(b"/api/drift", body)
         self.assertIn(b"/api/walkforward", body)
+        self.assertIn(b"/api/shadow", body)
         self.assertIn(b"/api/replay", body)
         self.assertIn(b"/api/liquid", body)
         self.assertIn(b"/api/path", body)

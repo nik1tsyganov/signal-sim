@@ -57,6 +57,7 @@ def run_shadow_report(
     fixtures: Path,
     ledger_dir: str,
     out_path: Path | None = None,
+    write_artifact: bool = True,
 ) -> dict[str, Any]:
     summary = run_fixture_walkforward(fixtures=fixtures, ledger_dir=ledger_dir)
     report = {
@@ -65,6 +66,8 @@ def run_shadow_report(
         "params": frozen_params(),
         "walkforward": summary,
     }
+    if write_artifact is not True:
+        return report
     dest = out_path
     if dest is None:
         folder = artifacts_dir()

@@ -80,6 +80,26 @@ class ShadowReportTests(unittest.TestCase):
         self.assertEqual(report["report_path"], str(dest))
         self.assertTrue(dest.is_file())
 
+    def test_write_artifact_false_skips_disk(self):
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        ledger = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, ledger, ignore_errors=True)
+        folder = Path(tmp) / "artifacts"
+        folder.mkdir()
+        dest = folder / REPORT_NAME
+        with patch("signal_sim.shadow.artifacts_dir", return_value=folder):
+            report = run_shadow_report(
+                fixtures=FIXTURES,
+                ledger_dir=ledger,
+                out_path=dest,
+                write_artifact=False,
+            )
+        self.assertNotIn("report_path", report)
+        self.assertFalse(dest.exists())
+        self.assertEqual(report["mode"], "local-paper-shadow")
+        self.assertEqual(list(folder.iterdir()), [])
+
 
 if __name__ == "__main__":
     unittest.main()
