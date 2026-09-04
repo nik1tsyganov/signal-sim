@@ -27,6 +27,17 @@ from .performance import (
     paper_performance_snapshot,
     write_paper_performance,
 )
+from .baseline import (
+    default_baseline_path,
+    run_baseline_compare,
+    write_baseline_compare,
+)
+from .decision import (
+    build_go_nogo,
+    decision_submit_block,
+    default_decision_path,
+    write_go_nogo,
+)
 from .rebalance import apply_local_rebalance, proposed_rebalance, submit_paper_rebalance
 from .research import research_artifact_path, run_research
 from .runtime_env import paper_submit_flag, runtime_env_status
@@ -242,6 +253,11 @@ def _parser() -> argparse.ArgumentParser:
         default=1,
         help="max paper tickets to POST with --submit-paper (default 1; smallest notional first; no all-flag, use a high number)",
     )
+    rebalance.add_argument(
+        "--force-submit",
+        action="store_true",
+        help="owner override: POST paper even if today's go/no-go is HOLD/WAIT_OPEN/NO_GO (still paper rails)",
+    )
     paper_submit = commands.add_parser(
         "paper-submit",
         help="POST one tiny Alpaca paper order (requires flag=1, paper host, keys)",
@@ -334,6 +350,43 @@ def _parser() -> argparse.ArgumentParser:
         "runtime-env",
         help="print Runtime Secret / env presence only (never values)",
     )
+    go_nogo = commands.add_parser(
+        "go-nogo",
+        aliases=["decision-check"],
+        help="daily paper go/no-go checklist (research + snapshot; --live feed health)",
+    )
+    go_nogo.add_argument(
+        "--live",
+        action="store_true",
+        help="check live Quiver/World Monitor health (fail closed if keys missing)",
+    )
+    go_nogo.add_argument(
+        "--out",
+        help="write the JSON here (default: docs/decision/YYYY-MM-DD.json)",
+    )
+    go_nogo.add_argument(
+        "--md",
+        action="store_true",
+        help="also write a short markdown summary next to the JSON",
+    )
+    baseline = commands.add_parser(
+        "baseline-compare",
+        help="walk-forward conviction vs equal-weight top-K on frozen fixture marks (not alpha)",
+    )
+    baseline.add_argument(
+        "--fixtures",
+        action="store_true",
+        help="load the frozen baseline series (required; the only supported input)",
+    )
+    baseline.add_argument(
+        "--write",
+        action="store_true",
+        help="write dated JSON under docs/baseline/ (fixture-mark compare, not alpha)",
+    )
+    baseline.add_argument(
+        "--out",
+        help="compare path (implies write; default docs/baseline/YYYY-MM-DD.json)",
+    )
     research = commands.add_parser(
         "research",
         help="daily live research book: intel universe, rank/diagnose, proposed targets",
@@ -364,6 +417,7 @@ def main(argv: list[str] | None = None) -> int:
         "rails",
         "smoke",
         "rebalance",
+        "baseline-compare",
     } and not args.fixtures:
         print(
             f"{args.command} requires --fixtures; only local fixture events are supported",
@@ -608,6 +662,11 @@ def main(argv: list[str] | None = None) -> int:
             except (PaperSubmitRefused, LiveEndpointError, ValueError) as error:
                 print(str(error), file=sys.stderr)
                 return 2
+            if not getattr(args, "force_submit", False):
+                blocked = decision_submit_block()
+                if blocked:
+                    print(blocked, file=sys.stderr)
+                    return 2
         elif paper_submit_enabled():
             print(
                 "SIGNAL_SIM_ALPACA_PAPER_SUBMIT=1; remote paper POST still "
@@ -943,6 +1002,70 @@ def main(argv: list[str] | None = None) -> int:
             return 2
         report = dict(report)
         report["runtime_env"] = runtime_env_status()
+        print(json.dumps(report, separators=(",", ":")))
+        return 0 if report.get("ok") is True else 1
+    if args.command in {"go-nogo", "decision-check"}:
+        live = bool(getattr(args, "live", False))
+        live_feeds = None
+        missing_intel: list[str] = []
+        keys_present = None
+        if live:
+            missing_intel = missing_live_feed_keys()
+            keys_present = not missing_intel
+            if not missing_intel:
+                try:
+                    live_feeds = pull_live_feeds()
+                except LiveFeedConfigError as error:
+                    print(str(error), file=sys.stderr)
+                    return 2
+        try:
+            report = build_go_nogo(
+                live=live,
+                feeds=live_feeds,
+                live_keys_missing=missing_intel,
+                live_keys_present=keys_present,
+            )
+            out = Path(args.out) if args.out else default_decision_path()
+            written = write_go_nogo(report, out, markdown=bool(getattr(args, "md", False)))
+            report = dict(report)
+            report["decision_path"] = str(written)
+        except (LiveFeedConfigError, ValueError, NotImplementedError) as error:
+            print(str(error), file=sys.stderr)
+            return 2
+        report = dict(report)
+        report["submit_flag"] = paper_submit_flag()
+        report["runtime_env"] = runtime_env_status()
+        print(
+            f"go-nogo: verdict={report.get('verdict')} "
+            f"recommend_submit={report.get('recommend_submit')} "
+            f"equity_delta={report.get('equity_delta')} (paper, not alpha)",
+            file=sys.stderr,
+        )
+        print(json.dumps(report, separators=(",", ":")))
+        if missing_intel:
+            return 2
+        return 0 if report.get("ok") is True else 1
+    if args.command == "baseline-compare":
+        write = bool(getattr(args, "write", False) or getattr(args, "out", None))
+        fixtures = Path(__file__).resolve().parent.parent / "fixtures"
+        try:
+            report = run_baseline_compare(fixtures=fixtures)
+            if write:
+                out = Path(args.out) if args.out else default_baseline_path()
+                written = write_baseline_compare(report, out)
+                report = dict(report)
+                report["baseline_path"] = str(written)
+        except ValueError as error:
+            print(str(error), file=sys.stderr)
+            return 2
+        report = dict(report)
+        report["runtime_env"] = runtime_env_status()
+        print(
+            f"baseline-compare: conviction_pnl={report.get('equity_delta_conviction')} "
+            f"equal_pnl={report.get('equity_delta_equal')} "
+            f"(fixture-mark, not alpha, not fitted)",
+            file=sys.stderr,
+        )
         print(json.dumps(report, separators=(",", ":")))
         return 0 if report.get("ok") is True else 1
     return 2

@@ -11,9 +11,11 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
+from .baseline import default_baseline_path
+from .decision import default_decision_path
 from .params import conviction_params, operate_stamp
 from .performance import default_snapshot_path, paper_performance_snapshot
-from .research import default_research_dir, load_research_artifact, research_artifact_path
+from .research import load_research_artifact, research_artifact_path
 from .runtime_env import paper_submit_flag
 
 NOTE = (
@@ -293,6 +295,16 @@ def build_telemetry_pack(
         "order_post": "disabled",
         "ok": True,
     }
+    decision = _load_json(default_decision_path(base, cut))
+    if isinstance(decision, dict):
+        pack["decision_verdict"] = decision.get("verdict")
+        pack["recommend_submit"] = decision.get("recommend_submit")
+        pack["decision_reasons"] = list(decision.get("reasons") or [])
+    baseline = _load_json(default_baseline_path(base, cut))
+    if isinstance(baseline, dict):
+        pack["equity_delta_conviction"] = baseline.get("equity_delta_conviction")
+        pack["equity_delta_equal"] = baseline.get("equity_delta_equal")
+        pack["delta_conviction_minus_equal"] = baseline.get("delta_conviction_minus_equal")
     return pack
 
 
@@ -325,6 +337,10 @@ def telemetry_markdown(pack: dict[str, Any]) -> str:
         f"- equity={pack.get('equity')} cash={pack.get('cash')} "
         f"gross={pack.get('gross')} cash_reserve_frac={pack.get('cash_reserve_frac')}\n"
         f"- equity_delta={pack.get('equity_delta')}\n"
+        f"- decision_verdict={pack.get('decision_verdict')} "
+        f"recommend_submit={pack.get('recommend_submit')}\n"
+        f"- equity_delta_conviction={pack.get('equity_delta_conviction')} "
+        f"equity_delta_equal={pack.get('equity_delta_equal')}\n"
         f"- feeds_n={feeds}\n"
         f"- book: {names or '(empty)'}\n"
         f"- sell reasons: {fired}\n"

@@ -8,17 +8,23 @@ The research artifact is the next rebalance book. It is not a decorative JSON.
 
 ```bash
 python3 -m signal_sim research --live
+python3 -m signal_sim go-nogo
 ```
 
-Pulls Quiver (congress, insider, gov contracts, news) and World Monitor, expands the operating universe to the frozen fixture set union top-N allowlisted intel tickers, then ranks with declared **score'** (un-lumped congress vs insider; small signed `sent_term` only when there is news; not fitted) and writes a **conviction-weighted** `docs/research/YYYY-MM-DD.json`. Higher score' gets more of `max_gross_invest=0.80` (cash reserve / dry powder), capped at paper `max_name_frac=0.20`. Each target stamps `target_frac`. No person names, headlines, or URLs. See [research-conviction.md](research-conviction.md).
+`research --live` pulls Quiver (congress, insider, gov contracts, news) and World Monitor, expands the operating universe to the frozen fixture set union top-N allowlisted intel tickers, then ranks with declared **score'** (un-lumped congress vs insider; small signed `sent_term` only when there is news; not fitted) and writes a **conviction-weighted** `docs/research/YYYY-MM-DD.json`. Higher score' gets more of `max_gross_invest=0.80` (cash reserve / dry powder), capped at paper `max_name_frac=0.20`. Each target stamps `target_frac`. No person names, headlines, or URLs. See [research-conviction.md](research-conviction.md).
 
 Safe to run every weekday morning. Missing intel keys exit 2.
+
+`go-nogo` (alias `decision-check`) then reads that research book plus the latest paper-performance / telemetry snapshot and writes `docs/decision/YYYY-MM-DD.json`. Declared thresholds live in `fixtures/params.json` `go_nogo` (plus `conviction.trim_band`). Verdict is `TRADE` | `HOLD` | `WAIT_OPEN` | `NO_GO`. `recommend_submit` is true only for `TRADE` (off-target beyond the trim band, leftover sells, or cash/gross off the book). Open paper orders force `HOLD`. A closed clock is `WAIT_OPEN` (research is still OK). Missing today's book or dead feeds are `NO_GO`. `--live` also checks Quiver / World Monitor health and fail-closes if keys are missing. Optional `--md`. Not alpha.
 
 ## After the open (print the grown book first)
 
 ```bash
+python3 -m signal_sim go-nogo
 python3 -m signal_sim rebalance --fixtures --live
 ```
+
+Print-only. No POST. Only continue to `--submit-paper` when today's decision artifact says `TRADE` and `recommend_submit=true`.
 
 Loads today's research artifact when present (otherwise computes the same book). Diffs that conviction book against paper positions: **buys and sells**. Sell priority when several exits fire: **soft_stop ≥ horizon_exit ≥ score_decay ≥ trim**. Also close leftovers that drop out of the book. Tickets stamp `sell_reason`. Qty prefers an observed paper IEX last trade or snapshot `latestTrade` when one exists. Soft-stop MTM uses that decision-time mark versus paper entry — no future bars. Fixture `$36`/`$40` QQQ/SPY marks are not used to size a live or `--submit-paper` ticket when a paper mark is available. Never invents a price.
 
@@ -52,7 +58,15 @@ python3 -m signal_sim paper-cancel --open --limit 11
 python3 -m signal_sim rebalance --fixtures --live --submit-paper --limit 4
 ```
 
-Requires `SIGNAL_SIM_ALPACA_PAPER_SUBMIT=1`, the paper-api host, keys, and `--submit-paper`. Default `--limit` is 1 (smallest notional first). Raise the limit only after the print looks sane. A non-paper host is refused. Flag `0` never POSTs. Paper `client_order_id` is date-scoped (`rb:{YYYYMMDD}:…`). A same-day cancel no longer permanently burns the book.
+Requires today's go/no-go `verdict=TRADE` and `recommend_submit=true`, plus `SIGNAL_SIM_ALPACA_PAPER_SUBMIT=1`, the paper-api host, keys, and `--submit-paper`. If the decision artifact says `NO_GO` / `HOLD` / `WAIT_OPEN`, submit exits non-zero and does not POST. `--force-submit` is an owner override and still stays on paper rails (flag, paper host, keys). Default `--limit` is 1 (smallest notional first). Raise the limit only after the print looks sane. A non-paper host is refused. Flag `0` never POSTs. Paper `client_order_id` is date-scoped (`rb:{YYYYMMDD}:…`). A same-day cancel no longer permanently burns the book.
+
+## Evaluation (not a submit path)
+
+```bash
+python3 -m signal_sim baseline-compare --fixtures --write
+```
+
+Walk-forward fixture-mark MTM of the conviction `target_frac` book versus naive equal-weight top-K under the same `max_gross_invest` / `max_name_frac`. Writes `docs/baseline/YYYY-MM-DD.json`. Forward-only marks; purge/embargo between steps. Live research history is still thin (one dated day); the frozen `fixtures/baseline/series.json` smoke proves the comparator. Daily research will accumulate the live series. Labeled **not alpha / not fitted**. Not a live trading path.
 
 ## After fills
 
@@ -68,7 +82,7 @@ Morning-brief cite for “what data moved the book?” / “how did paper PnL mo
 python3 -m signal_sim telemetry --write
 ```
 
-Writes `docs/telemetry/YYYY-MM-DD.json` (optional `--md`): equity/cash/gross/`cash_reserve_frac`, research score'/`target_frac`, feed counts, score' term drivers, sell reasons, and equity Δ vs the prior day's paper snapshot. Same-day artifacts only. Read-only. Paper only. Not alpha.
+Writes `docs/telemetry/YYYY-MM-DD.json` (optional `--md`): equity/cash/gross/`cash_reserve_frac`, research score'/`target_frac`, feed counts, score' term drivers, sell reasons, and equity Δ vs the prior day's paper snapshot. Cites today's go/no-go `verdict` when `docs/decision/YYYY-MM-DD.json` exists, and `equity_delta_conviction` / `equity_delta_equal` when the baseline artifact exists. Same-day artifacts only. Read-only. Paper only. Not alpha.
 
 ## Kill switch
 
