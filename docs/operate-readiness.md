@@ -37,6 +37,7 @@ With owner keys on a local machine (never committed):
 - **Alpaca paper submit (off by default):** `python3 -m signal_sim paper-submit --symbol SPY --qty 1` or `python3 -m signal_sim rebalance --fixtures --submit-paper` (default `--limit 1`, smallest notional first) POST to the paper host only when `SIGNAL_SIM_ALPACA_PAPER_SUBMIT=1`, the resolved base URL is the paper host, keys are present, and the CLI flag is explicit. There is no `--all`; pass a `--limit` high enough to cover the print-only ticket count. `--fixtures --live --submit-paper` is supported (live intensity, then paper POST). Live hosts and any other base URL are refused. Sells and leftover closes POST as well as buys. This is paper only. It is not live-money trading. If earlier paper orders are still open, print the book and wait or cancel; do not spray another full-book submit.
 - **Alpaca paper cancel (off by default):** `python3 -m signal_sim paper-cancel --order-id <uuid>` or `paper-cancel --open --limit <n>` DELETE on the paper host under the same rails as submit. Default `--limit` is 1. No `--all`. Flag `0` never DELETEs. Cancel or wait out working orders before the next `--submit-paper`. The 2026-09-04 cancel of 11 working day orders is in [paper order cancel](paper-order-cancel.md).
 - **Paper performance snapshot:** `python3 -m signal_sim paper-performance` (alias `paper-snapshot`) GETs paper account equity/cash, positions, clock, open orders, recent orders, and fill activities. It does not POST. `--write` records a dated JSON under `docs/performance/YYYY-MM-DD.json`. This is paper tracking, not alpha.
+- **Daily telemetry pack:** `python3 -m signal_sim telemetry --write` is the morning-brief cite for paper PnL vs yesterday and which score'/feed/sell reasons moved the book. Writes `docs/telemetry/YYYY-MM-DD.json`. Read-only. Same-day artifacts only. Not alpha.
 
 Fills go through `submit_paper_order` only. A fill must be `kind=fixture_mark` and `source=fixture`. Research or vendor mark kinds refuse. Constructing a live Alpaca host or IBKR live ports raises and does not open a socket. A present or unreadable `KILL` file refuses the order. Every fill writes an R8 provenance line that cites `params_sha256`. The local ledger fill gate is unchanged: Alpaca paper reads do not become execution marks.
 
@@ -85,6 +86,7 @@ python3 -m signal_sim rebalance --fixtures --live
 python3 -m signal_sim rebalance --fixtures --apply-local --ledger paper-rebalance.sqlite
 python3 -m signal_sim ledger --ledger paper-rebalance.sqlite --fixtures
 python3 -m signal_sim paper-performance --write
+python3 -m signal_sim telemetry --write
 python3 -m signal_sim paper-submit --symbol SPY --qty 1
 python3 -m signal_sim paper-cancel --order-id <uuid>
 python3 -m signal_sim paper-cancel --open --limit 1
@@ -93,7 +95,7 @@ python3 -m signal_sim rebalance --fixtures --live --submit-paper --limit 1
 python3 -m signal_sim paper-performance --write
 ```
 
-`paper-performance --write` is the morning-brief paper-account cite. It is read-only, paper-labeled, and not alpha. Re-run it to refresh `docs/performance/YYYY-MM-DD.json`.
+`paper-performance --write` is the morning-brief paper-account cite. `telemetry --write` is the morning-brief cite that joins that snapshot to today's research book (score', reserve, feeds, sell reasons, equity Δ). Both are read-only, paper-labeled, and not alpha.
 
 Weekday command order is in [daily ops](daily-ops.md). Print `rebalance --fixtures --live` before any submit. If open paper orders from earlier in the day are still working, skip `--submit-paper`.
 

@@ -2,6 +2,14 @@
 
 What landed in the paper operate loop. This is not a live trading log. Every PnL number the loop prints is **fixture-mark PnL**, not alpha.
 
+## Unreleased — cash reserve, declared exits, cheap sentiment, telemetry
+
+- **Cash reserve:** research-live sizes with one declared lever `max_gross_invest=0.80`: `target_frac_i = min(max_name_frac, max_gross_invest * score'_i / Σ_K)`. No post-hoc shrink of every name. Locked replay `max_gross_frac` stays 1.0 (same pattern as locked `max_name_frac`). Stamped on `fixtures/params.json` `conviction` and on the research artifact (`cash_reserve_frac`). Not fitted. Not alpha.
+- **Sell policy:** tickets stamp `sell_reason`. Priority if several fire: **soft_stop ≥ horizon ≥ score_decay ≥ trim**. Horizon uses the entry decision clock. Score decay is `score'_t < min_score` or `score'_t/score'_entry < decay_floor` (0.50), recomputed with `observed_at <= decision_at`. Soft stop is decision-time MTM from a fixture or paper IEX sizing mark versus paper entry (`pnl_frac <= -0.08`). No future bars.
+- **Cheap sentiment:** small declared `w_sent=0.5`. Signed at print time, cut at `decision_at`. Applied only when `news_breakout >= 1` so it does not double-count empty names or WM flags. Vendor polarity if present; else a tiny lexicon; else skipped (not forced +1). No LLM firehose. Numeric tones only on the artifact.
+- **Telemetry:** `python3 -m signal_sim telemetry --write` is the morning-brief cite. Writes `docs/telemetry/YYYY-MM-DD.json`: date/research_at/decision_at/params, equity/cash/gross/cash_reserve_frac, book score'/frac/sell reasons, feeds_n + score' term drivers, paper deltas vs the prior day. Labeled `not_alpha` / `paper_only`. Same-day artifacts only. Read-only. No `--submit-paper` in this change.
+- **Docs:** [research-conviction.md](docs/research-conviction.md), [daily-ops.md](docs/daily-ops.md).
+
 ## Unreleased — conviction-weight paper submit
 
 - **2026-09-04 conviction submit:** after owner authorization, `research --live` overwrote today's equal-weight artifact with the score' book, print-only `rebalance --fixtures --live` showed 14 live-sized tickets (not fixture-oversized), then `rebalance --fixtures --live --submit-paper --limit 30` POSTed and filled all 14 on the paper host. Six leftover closes (NFLX/CMCSA/CVX/DIS/SPY/XOM), six intel opens (GOOGL/HD/ABT/AMAT/UNH/AMZN), NVDA add to the 0.20 cap, XLE add to 12.3% (held 10% was below target; not a trim). MSFT/AAPL inside `trim_band`. Reprint `n_tickets=0`. Equity `$99864.04`. Recorded in [paper conviction submit](docs/paper-conviction-submit.md). Snapshot: [2026-09-04.json](docs/performance/2026-09-04.json). Paper only. Not alpha.

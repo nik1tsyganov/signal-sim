@@ -30,6 +30,11 @@ from .performance import (
 from .rebalance import apply_local_rebalance, proposed_rebalance, submit_paper_rebalance
 from .research import research_artifact_path, run_research
 from .runtime_env import paper_submit_flag, runtime_env_status
+from .telemetry import (
+    build_telemetry_pack,
+    default_telemetry_path,
+    write_telemetry_pack,
+)
 from .sim import resolve_mark_book_path
 from .store import EventStore
 
@@ -306,6 +311,24 @@ def _parser() -> argparse.ArgumentParser:
     paper_performance.add_argument(
         "--out",
         help="snapshot path (implies write; default docs/performance/YYYY-MM-DD.json)",
+    )
+    telemetry = commands.add_parser(
+        "telemetry",
+        help="daily paper telemetry pack (research + paper snapshot; read-only)",
+    )
+    telemetry.add_argument(
+        "--write",
+        action="store_true",
+        help="write dated JSON under docs/telemetry/ (paper pack, not alpha)",
+    )
+    telemetry.add_argument(
+        "--out",
+        help="telemetry path (implies write; default docs/telemetry/YYYY-MM-DD.json)",
+    )
+    telemetry.add_argument(
+        "--md",
+        action="store_true",
+        help="also write a short markdown summary next to the JSON",
     )
     commands.add_parser(
         "runtime-env",
@@ -852,6 +875,47 @@ def main(argv: list[str] | None = None) -> int:
             f"cash={summary.get('cash')} n_positions={summary.get('n_positions')} "
             f"n_open_orders={summary.get('n_open_orders')} "
             f"n_fills={summary.get('n_fills')} (paper, not alpha)",
+            file=sys.stderr,
+        )
+        print(json.dumps(report, separators=(",", ":")))
+        return 0 if report.get("ok") is True else 1
+    if args.command == "telemetry":
+        if paper_submit_enabled():
+            print(
+                "SIGNAL_SIM_ALPACA_PAPER_SUBMIT=1 is unused for telemetry; "
+                "this path is read-only and does not POST.",
+                file=sys.stderr,
+            )
+        write = bool(getattr(args, "write", False) or getattr(args, "out", None))
+        client = None
+        missing = missing_paper_keys()
+        try:
+            if not missing:
+                client = paper_broker_client(paper_host())
+            report = build_telemetry_pack(client=client)
+            if write:
+                out = Path(args.out) if args.out else default_telemetry_path()
+                written = write_telemetry_pack(
+                    report,
+                    out,
+                    markdown=bool(getattr(args, "md", False)),
+                )
+                report = dict(report)
+                report["telemetry_path"] = str(written)
+        except LiveEndpointError as error:
+            print(str(error), file=sys.stderr)
+            return 2
+        except (NotImplementedError, RuntimeError, ValueError) as error:
+            print(str(error), file=sys.stderr)
+            return 2
+        report = dict(report)
+        report["submit_flag"] = paper_submit_flag()
+        report["runtime_env"] = runtime_env_status()
+        print(
+            f"telemetry: date={report.get('date')} equity={report.get('equity')} "
+            f"cash={report.get('cash')} gross={report.get('gross')} "
+            f"cash_reserve_frac={report.get('cash_reserve_frac')} "
+            f"equity_delta={report.get('equity_delta')} (paper, not alpha)",
             file=sys.stderr,
         )
         print(json.dumps(report, separators=(",", ":")))

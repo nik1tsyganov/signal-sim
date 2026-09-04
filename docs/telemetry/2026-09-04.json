@@ -1,0 +1,290 @@
+{
+  "account": {
+    "cash": "79.38",
+    "currency": "USD",
+    "equity": "99864.04",
+    "status": "ACTIVE"
+  },
+  "alpha": false,
+  "book": [
+    {
+      "news_term": 1.0986122886681096,
+      "q_term": 0.910680994787812,
+      "rec_term": 0.8917376238530736,
+      "score": 13.339477448570666,
+      "sell_reasons": [],
+      "target_frac": 0.2,
+      "ticker": "NVDA",
+      "wm_term": 0.0
+    },
+    {
+      "news_term": 2.772588722239781,
+      "q_term": 0.0,
+      "rec_term": 0.0,
+      "score": 8.079441541679836,
+      "sell_reasons": [],
+      "target_frac": 0.12293027463578436,
+      "ticker": "XLE",
+      "wm_term": 3.0
+    },
+    {
+      "news_term": 1.0986122886681096,
+      "q_term": 0.983974444213354,
+      "rec_term": 7.132675816715043e-68,
+      "score": 6.775882549141144,
+      "sell_reasons": [],
+      "target_frac": 0.10309637100147327,
+      "ticker": "MSFT",
+      "wm_term": 0.0
+    },
+    {
+      "news_term": 0.6931471805599453,
+      "q_term": 0.8894827535339782,
+      "rec_term": 4.161643460904055e-53,
+      "score": 6.188308646021893,
+      "sell_reasons": [],
+      "target_frac": 0.09415631977309945,
+      "ticker": "AAPL",
+      "wm_term": 0.0
+    },
+    {
+      "news_term": 0.0,
+      "q_term": 0.8424800309172651,
+      "rec_term": 1.794180857649548e-37,
+      "score": 5.527440092751795,
+      "sell_reasons": [],
+      "target_frac": 0.08410107618571215,
+      "ticker": "GOOGL",
+      "wm_term": 0.0
+    },
+    {
+      "news_term": 0.0,
+      "q_term": 0.7563041955164012,
+      "rec_term": 4.9318174429865696e-80,
+      "score": 5.268912586549203,
+      "sell_reasons": [],
+      "target_frac": 0.08016752989115213,
+      "ticker": "HD",
+      "wm_term": 0.0
+    },
+    {
+      "news_term": 0.0,
+      "q_term": 0.7216976134290604,
+      "rec_term": 8.704741064020481e-29,
+      "score": 5.165092840287182,
+      "sell_reasons": [],
+      "target_frac": 0.0785878922571933,
+      "ticker": "ABT",
+      "wm_term": 0.0
+    },
+    {
+      "news_term": 0.0,
+      "q_term": 0.7216976134290604,
+      "rec_term": 4.9318174429865696e-80,
+      "score": 5.165092840287182,
+      "sell_reasons": [],
+      "target_frac": 0.0785878922571933,
+      "ticker": "AMAT",
+      "wm_term": 0.0
+    },
+    {
+      "news_term": 0.0,
+      "q_term": 0.7216976134290604,
+      "rec_term": 2.692681086882585e-78,
+      "score": 5.165092840287182,
+      "sell_reasons": [],
+      "target_frac": 0.0785878922571933,
+      "ticker": "UNH",
+      "wm_term": 0.0
+    },
+    {
+      "news_term": 0.0,
+      "q_term": 0.6830107460908589,
+      "rec_term": 7.132675816715043e-68,
+      "score": 5.049032238272577,
+      "sell_reasons": [],
+      "target_frac": 0.07682200762191894,
+      "ticker": "AMZN",
+      "wm_term": 0.0
+    },
+    {
+      "score": null,
+      "sell_reasons": [
+        "drop_from_book"
+      ],
+      "target_frac": 0.0,
+      "ticker": "NFLX"
+    },
+    {
+      "score": null,
+      "sell_reasons": [
+        "drop_from_book"
+      ],
+      "target_frac": 0.0,
+      "ticker": "CMCSA"
+    },
+    {
+      "score": null,
+      "sell_reasons": [
+        "drop_from_book"
+      ],
+      "target_frac": 0.0,
+      "ticker": "CVX"
+    },
+    {
+      "score": null,
+      "sell_reasons": [
+        "drop_from_book"
+      ],
+      "target_frac": 0.0,
+      "ticker": "DIS"
+    },
+    {
+      "score": null,
+      "sell_reasons": [
+        "drop_from_book"
+      ],
+      "target_frac": 0.0,
+      "ticker": "SPY"
+    },
+    {
+      "score": null,
+      "sell_reasons": [
+        "drop_from_book"
+      ],
+      "target_frac": 0.0,
+      "ticker": "XOM"
+    }
+  ],
+  "cash": "79.38",
+  "cash_reserve_frac": 0.2,
+  "conviction": {
+    "cash_reserve_frac": 0.2,
+    "decay_floor": 0.5,
+    "formula": "score' = 0.75*log1p(news_breakout) + 3.0*congress_confirm + 3.0*insider_confirm + 2.0*gov_confirm + 3.0*log1p(quiver_count)/log1p(20) + 2.0*(intel_brief+wm_intel+chokepoint) + 2.0*exp(-lag_h/half_life_hours) + 0.5*sent_term",
+    "half_life_hours": 24.0,
+    "max_gross_invest": 0.8,
+    "max_name_frac": 0.2,
+    "min_score": 1.0,
+    "note": "Declared research-live score' weights, cash reserve, and exits. Not fitted. Not searched. Not alpha. Replay rank_candidates and locked max_gross_frac/max_name_frac stay unchanged.",
+    "quiver_count_ref": 20.0,
+    "sell_priority": "soft_stop >= horizon_exit >= score_decay >= trim",
+    "sentiment_cap_n": 20,
+    "soft_stop": 0.08,
+    "top_k": 10,
+    "trim_band": 0.02,
+    "w_congress": 3.0,
+    "w_gov": 2.0,
+    "w_insider": 3.0,
+    "w_news": 0.75,
+    "w_quiver": 3.0,
+    "w_recency": 2.0,
+    "w_sent": 0.5,
+    "w_wm": 2.0
+  },
+  "date": "2026-09-04",
+  "decision_at": "2026-09-04T14:40:00.738822Z",
+  "equity": "99864.04",
+  "equity_delta": null,
+  "feeds_n": {
+    "quiver": 247,
+    "worldmonitor": 14
+  },
+  "gross": 0.9970372558807203,
+  "live_money": false,
+  "mark_kinds": {
+    "fixture": [],
+    "paper_data": [
+      "NVDA",
+      "XLE",
+      "MSFT",
+      "AAPL",
+      "GOOGL",
+      "HD",
+      "ABT",
+      "AMAT",
+      "UNH",
+      "AMZN"
+    ],
+    "unmarked": []
+  },
+  "max_gross_invest": 0.8,
+  "mode": "paper-telemetry",
+  "n_fills": 92,
+  "n_positions": 10,
+  "not_alpha": true,
+  "note": "Print-only telemetry from checked-in 2026-09-04 research + paper snapshot. That day's conviction book was sized before max_gross_invest=0.80; next research --live uses the reserve. Sell reasons listed are the leftover closes from the authorized conviction submit (drop_from_book). Not alpha. Paper only. No submit.",
+  "ok": true,
+  "order_post": "disabled",
+  "paper_cash_frac": 0.0007948807198266763,
+  "paper_delta": {
+    "cash": null,
+    "equity": null,
+    "prior_date": null
+  },
+  "paper_only": true,
+  "params": {
+    "cost_bps": 0.0,
+    "decision_delay_hours": 1.0,
+    "half_life_hours": 24.0,
+    "hawkes_baseline": 0.1,
+    "hawkes_decay": 1.0,
+    "hawkes_excitation": 0.8,
+    "max_drawdown": 0.2,
+    "max_gross_frac": 1.0,
+    "max_name_frac": 1.0,
+    "min_relative_state": 0.5,
+    "note": "Declared operate constants. Not fitted. Not searched. Do not retune to move fixture-mark PnL.",
+    "placebo_seed": 20260902,
+    "starting_cash": 100000.0
+  },
+  "params_sha256": "f74f835690544b976e0ba67243caecdea26719001cbb33bc9ccdac5fc1a38ded",
+  "positions": {
+    "AAPL": "30.978544",
+    "ABT": "71.919463",
+    "AMAT": "17.235264",
+    "AMZN": "29.830002",
+    "GOOGL": "24.774469",
+    "HD": "25.061179",
+    "MSFT": "19.859722",
+    "NVDA": "85.447652",
+    "UNH": "19.720655",
+    "XLE": "191.322401"
+  },
+  "read_only": true,
+  "research_at": "2026-09-04T14:40:00.738822Z",
+  "score_prime_drivers": {
+    "congress_confirm": 23.0,
+    "gov_confirm": 1.0,
+    "insider_confirm": 1.0,
+    "news_term": 12.019068140831836,
+    "q_term": 15.189139338805827,
+    "rec_term": 0.8917376238530736,
+    "sent_term": 0.0,
+    "wm_term": 3.0
+  },
+  "sell_reasons": {
+    "CMCSA": [
+      "drop_from_book"
+    ],
+    "CVX": [
+      "drop_from_book"
+    ],
+    "DIS": [
+      "drop_from_book"
+    ],
+    "NFLX": [
+      "drop_from_book"
+    ],
+    "SPY": [
+      "drop_from_book"
+    ],
+    "XOM": [
+      "drop_from_book"
+    ]
+  },
+  "sentiment": null,
+  "submit_flag": "1",
+  "submitted": false,
+  "telemetry_path": "/workspace/docs/telemetry/2026-09-04.json"
+}

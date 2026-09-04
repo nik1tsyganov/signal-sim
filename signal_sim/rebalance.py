@@ -31,11 +31,21 @@ from .paper import (
     submit_paper_order,
 )
 from .params import (
+    CONVICTION_DECAY_FLOOR,
     CONVICTION_MIN_SCORE,
+    CONVICTION_SOFT_STOP,
     CONVICTION_TRIM_BAND,
     COST_BPS,
     DECISION_DELAY_HOURS,
     operate_stamp,
+)
+from .research import default_research_dir, load_entry_state, resolve_research_book
+from .sells import (
+    SellReason,
+    decision_pnl_frac,
+    parse_aware,
+    select_close_reason,
+    sell_clause,
 )
 from .sizer import size_targets
 from .sim import load_mark_book, resolve_mark_book_path
@@ -207,7 +217,19 @@ def paper_held(positions: list[Any]) -> tuple[dict[str, dict[str, Any]], list[di
         if not is_tradable_ticker(symbol):
             skipped.append({"ticker": symbol, "reason": "invalid_ticker"})
             continue
-        held[symbol] = {"shares": shares, "side": "short" if shares < 0 else "long"}
+        row: dict[str, Any] = {"shares": shares, "side": "short" if shares < 0 else "long"}
+        entry_px = _finite_number(item.get("avg_entry_price") or item.get("entry_px"))
+        if entry_px is not None and entry_px > 0:
+            row["entry_px"] = entry_px
+        opened = parse_aware(
+            item.get("entry_decision_at") or item.get("created_at") or item.get("opened_at")
+        )
+        if opened is not None:
+            row["entry_decision_at"] = opened
+        entry_score = _finite_number(item.get("entry_score"))
+        if entry_score is not None:
+            row["entry_score"] = entry_score
+        held[symbol] = row
     return held, skipped
 
 
@@ -230,16 +252,11 @@ def _rationale(
     intensity: float | None = None,
     intensity_scale: float | None = None,
     mark_kind: str | None = None,
-    sell_reason: str | None = None,
+    sell_reason: SellReason | None = None,
 ) -> str:
     held = f"paper holds {have_shares:g}"
-    if action == "close" and sell_reason == "below_min_score":
-        parts = [signal, "close", "score below min_score", held]
-    elif action == "close":
-        parts = [signal, "close leftover", "not in target book", held]
-    elif action == "adjust" and sell_reason == "overweight_band":
-        frac = 0.0 if target_frac is None else float(target_frac)
-        parts = [signal, f"trim to target_frac={frac:g}", "overweight beyond band", held]
+    if sell_reason is not None:
+        parts = [signal, *sell_clause(sell_reason, target_frac), held]
     else:
         frac = 0.0 if target_frac is None else float(target_frac)
         parts = [signal, f"{action} to target_frac={frac:g}", held]
@@ -383,17 +400,28 @@ def plan_rebalance_tickets(
     session: str | None = None,
     min_score: float | None = None,
     trim_band: float = 0.0,
+    now: datetime | None = None,
+    horizon_hours: float | None = None,
+    decay_floor: float | None = None,
+    soft_stop: float | None = None,
+    entry_scores: dict[str, float] | None = None,
+    entry_decision_at: dict[str, datetime] | None = None,
+    entry_px: dict[str, float] | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
     """Share-accurate tickets. Same delta as fixture replay; print-only.
 
-    Research-live passes a score floor and an overweight band. Default
-    ``min_score=None`` / ``trim_band=0`` keeps the fixture drift planner.
+    Research-live passes a score floor, overweight band, and declared exits.
+    Default ``min_score=None`` / ``trim_band=0`` keeps the fixture drift planner.
+    Soft-stop MTM uses the decision-time sizing mark versus paper entry_px.
     """
     tickets: list[dict[str, Any]] = []
     skipped: list[dict[str, str]] = []
     wanted = {str(row["ticker"]): row for row in targets}
     reserved_cash = float(cash)
     band = 0.0 if trim_band is None else max(0.0, float(trim_band))
+    scores = dict(entry_scores or {})
+    entries = dict(entry_decision_at or {})
+    cost_px = dict(entry_px or {})
 
     def skip(ticker: str, reason: str) -> None:
         skipped.append({"ticker": ticker, "reason": reason})
@@ -407,7 +435,7 @@ def plan_rebalance_tickets(
         have_shares: float,
         target_frac: float | None,
         qty: float,
-        sell_reason: str | None = None,
+        sell_reason: SellReason | None = None,
     ) -> None:
         key = paper_client_order_id(
             ticker,
@@ -435,6 +463,7 @@ def plan_rebalance_tickets(
                 "mark_kind": mark_kind,
                 "mark_source": mark_source,
                 "action": action,
+                "sell_reason": sell_reason,
                 "rationale": _rationale(
                     signal=signal,
                     action=action,
@@ -450,25 +479,45 @@ def plan_rebalance_tickets(
             }
         )
 
-    def should_close(ticker: str) -> tuple[bool, str | None]:
+    def close_reason(ticker: str, have_shares: float, mark_px: float | None) -> SellReason | None:
         row = wanted.get(ticker)
-        if row is None:
-            return True, None
-        score = _row_score(row)
-        if min_score is not None and score is not None and score < float(min_score):
-            return True, "below_min_score"
-        return False, None
+        position = held.get(ticker) or {}
+        opened = entries.get(ticker)
+        if opened is None:
+            opened = parse_aware(position.get("entry_decision_at"))
+        cost = cost_px.get(ticker)
+        if cost is None:
+            cost = _finite_number(position.get("entry_px"))
+        prior_score = scores.get(ticker)
+        if prior_score is None:
+            prior_score = _finite_number(position.get("entry_score"))
+        return select_close_reason(
+            in_book=row is not None,
+            score=_row_score(row) if row is not None else _row_score(position),
+            min_score=min_score,
+            decay_floor=decay_floor,
+            entry_score=prior_score,
+            now=now,
+            entry_decision_at=opened,
+            horizon_hours=horizon_hours,
+            pnl_frac=decision_pnl_frac(
+                entry_px=cost,
+                mark_px=mark_px,
+                shares=have_shares,
+            ),
+            soft_stop=soft_stop,
+        )
 
     for ticker, position in list(held.items()):
-        close, sell_reason = should_close(ticker)
-        if not close:
-            continue
         mark = marks.get(ticker)
         sell_px = _sizing_px(mark)
+        have_shares = float(position["shares"])
+        sell_reason = close_reason(ticker, have_shares, sell_px)
+        if sell_reason is None:
+            continue
         if sell_px is None:
             skip(ticker, "held_no_mark")
             continue
-        have_shares = float(position["shares"])
         trade_frac = abs(have_shares) * sell_px / allocation
         if trade_frac <= _EPS:
             continue
@@ -480,15 +529,14 @@ def plan_rebalance_tickets(
 
     for row in targets:
         ticker = str(row["ticker"])
-        close, _sell_reason = should_close(ticker)
-        if close:
-            continue
+        have_shares = float(held.get(ticker, {}).get("shares", 0.0))
         mark = marks.get(ticker)
         mark_px = _sizing_px(mark)
+        if close_reason(ticker, have_shares, mark_px) is not None:
+            continue
         if mark_px is None:
             skip(ticker, "no_mark")
             continue
-        have_shares = float(held.get(ticker, {}).get("shares", 0.0))
         target_shares = allocation * float(row["target_frac"]) / mark_px
         delta_shares = target_shares - have_shares
         if abs(delta_shares) <= _EPS:
@@ -599,8 +647,6 @@ def proposed_rebalance(
     operating = tuple(universe) if universe is not None else UNIVERSE
     use_paper_marks = bool(live) if prefer_paper_marks is None else bool(prefer_paper_marks)
     if live:
-        from .research import resolve_research_book
-
         research_report = resolve_research_book(
             fixtures=root,
             mark_book_path=resolved,
@@ -652,10 +698,46 @@ def proposed_rebalance(
     name_cap = float(book["max_name_frac"])
     sell_min_score = None
     sell_band = 0.0
+    sell_now = None
+    sell_horizon = None
+    sell_decay = None
+    sell_soft_stop = None
+    sell_entry_scores: dict[str, float] = {}
+    sell_entry_at: dict[str, datetime] = {}
+    sell_entry_px: dict[str, float] = {}
+    live_gross = float(book["max_gross_frac"])
     if live:
         name_cap = paper_name_cap(name_cap)
         sell_min_score = CONVICTION_MIN_SCORE
         sell_band = CONVICTION_TRIM_BAND
+        sell_decay = CONVICTION_DECAY_FLOOR
+        sell_soft_stop = CONVICTION_SOFT_STOP
+        sell_horizon = horizon_hours
+        if research_report is not None:
+            sell_now = parse_aware(research_report.get("research_at"))
+            stamped_invest = (research_report.get("proposed_book") or {}).get(
+                "max_gross_invest"
+            )
+            if stamped_invest is not None:
+                live_gross = float(stamped_invest)
+            before = research_report.get("date")
+            if isinstance(before, str) and before:
+                loaded = load_entry_state(
+                    default_research_dir(root.parent if root.name == "fixtures" else root),
+                    before=before,
+                    symbols=list(held),
+                )
+                for ticker, row in loaded.items():
+                    score = _finite_number(row.get("entry_score"))
+                    opened = parse_aware(row.get("entry_decision_at"))
+                    if score is not None:
+                        sell_entry_scores[ticker] = score
+                    if opened is not None:
+                        sell_entry_at[ticker] = opened
+        for ticker, position in held.items():
+            cost = _finite_number(position.get("entry_px"))
+            if cost is not None:
+                sell_entry_px[ticker] = cost
         fillable = [
             {key: value for key, value in row.items() if key != "intensity_scale"}
             for row in fillable
@@ -664,7 +746,7 @@ def proposed_rebalance(
         fillable,
         size_frac=float(book["size_frac"]),
         horizon_hours=horizon_hours,
-        max_gross_frac=float(book["max_gross_frac"]),
+        max_gross_frac=live_gross,
         max_name_frac=name_cap,
     )
     safe_account = sanitize_account(account)
@@ -690,6 +772,13 @@ def proposed_rebalance(
         session=session,
         min_score=sell_min_score,
         trim_band=sell_band,
+        now=sell_now,
+        horizon_hours=sell_horizon,
+        decay_floor=sell_decay,
+        soft_stop=sell_soft_stop,
+        entry_scores=sell_entry_scores or None,
+        entry_decision_at=sell_entry_at or None,
+        entry_px=sell_entry_px or None,
     )
     skipped = [*held_skips, *pre_skips, *size_skips, *plan_skips]
     stamp = operate_stamp()

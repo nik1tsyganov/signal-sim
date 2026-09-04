@@ -8,6 +8,7 @@ URLs, or raw payload fields. Paper only. Not alpha. Not live money.
 from __future__ import annotations
 
 import json
+import math
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -25,7 +26,13 @@ from .live_feeds import (
     strategy_events,
     summarize_feed,
 )
-from .params import conviction_params, operate_stamp
+from .params import (
+    CONVICTION_MAX_GROSS_INVEST,
+    CONVICTION_SENTIMENT_CAP_N,
+    conviction_params,
+    operate_stamp,
+)
+from .sentiment import batch_new_print_tones, mean_signed_news, sentiment_summary
 from .sim import load_mark_book, resolve_mark_book_path
 from .universe import expand_operating_universe, load_liquid_allowlist
 
@@ -66,6 +73,8 @@ TARGET_KEYS = (
     "q_term",
     "wm_term",
     "rec_term",
+    "sent_term",
+    "sentiment",
     "lag_h",
 )
 
@@ -73,6 +82,81 @@ TARGET_KEYS = (
 def default_research_dir(root: Path | None = None) -> Path:
     base = root if root is not None else Path(__file__).resolve().parent.parent
     return base / "docs" / "research"
+
+
+def _research_date_paths(folder: Path) -> list[tuple[str, Path]]:
+    rows: list[tuple[str, Path]] = []
+    if not folder.is_dir():
+        return rows
+    for path in sorted(folder.glob("*.json")):
+        name = path.name
+        if name.endswith("-paper.json") or name.endswith("-equal-weight.json"):
+            continue
+        stamp = path.stem
+        if len(stamp) == 10 and stamp[4] == "-" and stamp[7] == "-":
+            rows.append((stamp, path))
+    return rows
+
+
+def _prior_research_cut(folder: Path, *, before: str | None) -> datetime | None:
+    latest: datetime | None = None
+    for stamp, path in _research_date_paths(folder):
+        if before is not None and stamp >= before:
+            continue
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if not isinstance(raw, dict):
+            continue
+        text = raw.get("research_at") or raw.get("date")
+        if not isinstance(text, str) or not text:
+            continue
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        if parsed.tzinfo is None or parsed.utcoffset() is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        if latest is None or parsed > latest:
+            latest = parsed
+    return latest
+
+
+def load_entry_state(
+    folder: Path | None,
+    *,
+    before: str | None,
+    symbols: list[str] | tuple[str, ...] | set[str],
+) -> dict[str, dict[str, Any]]:
+    """First research-live target appearance before ``before`` (entry clock)."""
+    wanted = {str(symbol) for symbol in symbols}
+    found: dict[str, dict[str, Any]] = {}
+    if folder is None or not wanted:
+        return found
+    for stamp, path in _research_date_paths(folder):
+        if before is not None and stamp >= before:
+            continue
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if not isinstance(raw, dict):
+            continue
+        targets = (raw.get("proposed_book") or {}).get("targets") or []
+        research_at = raw.get("research_at") or raw.get("date") or stamp
+        for row in targets:
+            if not isinstance(row, dict):
+                continue
+            ticker = str(row.get("ticker") or "")
+            if ticker not in wanted or ticker in found:
+                continue
+            score = row.get("score")
+            found[ticker] = {
+                "entry_decision_at": research_at,
+                "entry_score": score,
+                "research_date": stamp,
+            }
+        if len(found) == wanted:
+            break
+    return found
 
 
 def research_artifact_path(when: datetime | None = None, *, root: Path | None = None) -> Path:
@@ -98,7 +182,16 @@ def _rank_row(row: dict[str, Any]) -> dict[str, Any]:
     }
     if row.get("gov_confirm"):
         out["gov_confirm"] = int(row["gov_confirm"])
-    for key in ("quiver_count", "news_term", "q_term", "wm_term", "rec_term", "lag_h"):
+    for key in (
+        "quiver_count",
+        "news_term",
+        "q_term",
+        "wm_term",
+        "rec_term",
+        "sent_term",
+        "sentiment",
+        "lag_h",
+    ):
         if key in row:
             out[key] = row[key]
     return out
@@ -281,9 +374,19 @@ def run_research(
     targets, size_skips = conviction_targets(
         candidates,
         horizon_hours=horizon_hours,
-        max_gross_frac=float(book["max_gross_frac"]),
+        max_gross_invest=CONVICTION_MAX_GROSS_INVEST,
         max_name_frac=paper_name_cap(float(book["max_name_frac"])),
     )
+    prior_cut = _prior_research_cut(default_research_dir(repo), before=cut.date().isoformat())
+    tones = mean_signed_news(material, cut, universe=operating)
+    new_prints = batch_new_print_tones(
+        material,
+        until=cut,
+        since=prior_cut,
+        cap_n=CONVICTION_SENTIMENT_CAP_N,
+    )
+    sentiment = sentiment_summary(tones, new_prints)
+    book_gross = math.fsum(float(row["target_frac"]) for row in targets)
     intensities = intensity_map(material, cut, universe=operating)
     diagnose = fixture_diagnostics(
         fixture_events,
@@ -322,6 +425,7 @@ def run_research(
         },
         "intensity": intensities,
         "conviction": conviction_params(),
+        "sentiment": sentiment,
         "proposed_book": {
             "signal": SIGNAL,
             "note": NOTE,
@@ -329,6 +433,9 @@ def run_research(
             "n_targets": len(targets),
             "skipped": size_skips,
             "max_name_frac": paper_name_cap(float(book["max_name_frac"])),
+            "max_gross_invest": CONVICTION_MAX_GROSS_INVEST,
+            "cash_reserve_frac": round(max(0.0, 1.0 - CONVICTION_MAX_GROSS_INVEST), 4),
+            "book_gross": book_gross,
             "max_gross_frac": float(book["max_gross_frac"]),
         },
         "ok": True,
