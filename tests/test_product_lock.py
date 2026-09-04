@@ -2,6 +2,7 @@
 
 import unittest
 from datetime import datetime, timezone
+from pathlib import Path
 from unittest import mock
 
 from signal_sim.events import Event
@@ -98,3 +99,28 @@ class ProductLockTests(unittest.TestCase):
         source = "\n".join(path.read_text(encoding="utf-8") for path in package.rglob("*.py")).lower()
         for fragment in ("yfinance", "stooq", "yahoo"):
             self.assertNotIn(fragment, source, fragment)
+
+    def test_sim_does_not_import_cli(self):
+        import ast
+        import subprocess
+        import sys
+
+        from signal_sim import sim
+
+        tree = ast.parse(Path(sim.__file__).read_text(encoding="utf-8"))
+        imported = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom):
+                if node.module:
+                    imported.add(node.module)
+                imported.update(alias.name for alias in node.names)
+            elif isinstance(node, ast.Import):
+                imported.update(alias.name for alias in node.names)
+        self.assertNotIn("cli", imported)
+        self.assertNotIn("signal_sim.cli", imported)
+        probe = (
+            "import signal_sim.sim, sys; "
+            "raise SystemExit(0 if 'signal_sim.cli' not in sys.modules else 1)"
+        )
+        completed = subprocess.run([sys.executable, "-c", probe], check=False)
+        self.assertEqual(completed.returncode, 0)

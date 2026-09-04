@@ -16,7 +16,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from .cli import load_fixture_events
+from .fixture_load import load_fixture_events
 from .clusters import online_clusters
 from .events import Event
 from .hawkes import log_likelihood

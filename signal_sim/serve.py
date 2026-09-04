@@ -9,7 +9,8 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from . import safety
-from .cli import load_fixture_events, rank_fixture_events
+from .cli import rank_fixture_events
+from .fixture_load import load_fixture_events
 from .diagnose import fixture_diagnostics
 
 
