@@ -11,12 +11,14 @@ from unittest import mock
 from signal_sim import cli
 from signal_sim.drift import fixture_drift_book
 from signal_sim.paper import paper_broker_client, paper_host
+from signal_sim.events import Event
 from signal_sim.rebalance import (
     SIGNAL_DRIFT,
     allocation_base,
     paper_held,
     plan_rebalance_tickets,
     proposed_rebalance,
+    resolve_sizing_marks,
 )
 from signal_sim.sim import load_mark_book
 from signal_sim.sizer import size_targets
@@ -27,6 +29,7 @@ FIXTURES = REPO / "fixtures"
 LIQUID_FILLS = {"NVDA", "MSFT", "XLE", "XOM", "DIS", "NFLX", "SPY", "QQQ"}
 NO_MARK_PRINTED = {"AAPL", "CMCSA", "CVX", "XLK"}
 PAPER_BROKER_HOST = "paper-api." + "alpaca" + ".markets"
+PAPER_DATA_HOST = "data." + "alpaca" + ".markets"
 
 _FAKE_KEYS = {
     "ALPACA_PAPER_API_KEY": "paper-key-id",
@@ -74,6 +77,62 @@ def _clock():
         "next_open": "2026-09-08T13:30:00Z",
         "next_close": "2026-09-08T20:00:00Z",
     }
+
+
+def _paper_urlopen(calls, *, trades=None, snapshots=None):
+    def urlopen(request, timeout=None):
+        calls.append((request.full_url, request.get_method()))
+        url = request.full_url
+        if url.endswith("/v2/account"):
+            return _json_response(_empty_account())
+        if url.endswith("/v2/positions"):
+            return _json_response([])
+        if url.endswith("/v2/clock"):
+            return _json_response(_clock())
+        if "/v2/stocks/trades/latest" in url:
+            return _json_response({"trades": trades or {}})
+        if "/v2/stocks/snapshots" in url:
+            return _json_response(snapshots if snapshots is not None else {})
+        raise AssertionError(url)
+
+    return urlopen
+
+
+class _FakeMarkClient:
+    def __init__(self, paper_marks=None, positions=None):
+        self.paper_marks = paper_marks or {}
+        self._positions = positions or []
+
+    def account(self):
+        return _empty_account()
+
+    def positions(self):
+        return list(self._positions)
+
+    def clock(self):
+        return _clock()
+
+    def sizing_marks(self, symbols):
+        return {ticker: dict(row) for ticker, row in self.paper_marks.items() if ticker in set(symbols)}
+
+
+def _live_event(ticker="NVDA", event_id="live-nvda"):
+    return Event.from_dict(
+        {
+            "id": event_id,
+            "source": "quiver",
+            "kind": "news",
+            "ticker": ticker,
+            "entities": [ticker],
+            "headline": "SECRET HEADLINE about a person",
+            "url": "https://example.invalid/pii",
+            "occurred_at": "2026-09-04T16:00:00Z",
+            "filed_at": None,
+            "observed_at": "2026-09-04T16:00:00Z",
+            "confidence": 1.0,
+            "raw_ref": "raw-pii-ref",
+        }
+    )
 
 
 def _sized_drift_targets(mark_book=None):
@@ -261,6 +320,145 @@ class RebalancePlannerTests(unittest.TestCase):
         self.assertNotIn("urlopen", lowered)
         self.assertNotIn("insert into orders", lowered)
 
+    def test_fixture_mark_wins_over_paper_last_trade(self):
+        book = load_mark_book()
+        client = _FakeMarkClient(
+            {
+                "NVDA": {
+                    "entry_px": 999.0,
+                    "kind": "last_trade",
+                    "source": "alpaca_paper_data",
+                },
+                "AAPL": {
+                    "entry_px": 200.0,
+                    "kind": "last_trade",
+                    "source": "alpaca_paper_data",
+                },
+            }
+        )
+        report = proposed_rebalance(
+            fixtures=FIXTURES,
+            account=_empty_account(),
+            positions=[],
+            clock=_clock(),
+            client=client,
+        )
+        tickets = {row["symbol"]: row for row in report["tickets"]}
+        self.assertAlmostEqual(tickets["NVDA"]["mark_px"], book["marks"]["NVDA"]["entry_px"])
+        self.assertEqual(tickets["NVDA"]["mark_kind"], "fixture_mark")
+        self.assertEqual(tickets["NVDA"]["mark_source"], "fixture")
+        self.assertIn("AAPL", tickets)
+        self.assertAlmostEqual(tickets["AAPL"]["mark_px"], 200.0)
+        self.assertEqual(tickets["AAPL"]["mark_kind"], "last_trade")
+        self.assertEqual(tickets["AAPL"]["mark_source"], "alpaca_paper_data")
+        self.assertIn("mark=last_trade", tickets["AAPL"]["rationale"])
+        self.assertIn("AAPL", report["marks"]["paper_data"])
+        self.assertNotIn("AAPL", report["marks"]["unmarked"])
+        skip_reasons = {row["ticker"]: row["reason"] for row in report["skipped"]}
+        self.assertNotEqual(skip_reasons.get("AAPL"), "no_mark")
+
+    def test_invalid_or_missing_paper_price_stays_no_mark(self):
+        client = _FakeMarkClient(
+            {
+                "AAPL": {"entry_px": 0, "kind": "last_trade", "source": "alpaca_paper_data"},
+                "XLK": {"entry_px": "nan", "kind": "last_trade", "source": "alpaca_paper_data"},
+                "CMCSA": {"kind": "last_trade", "source": "alpaca_paper_data"},
+                "CVX": {
+                    "entry_px": 120.0,
+                    "kind": "fixture_mark",
+                    "source": "fixture",
+                },
+            }
+        )
+        report = proposed_rebalance(
+            fixtures=FIXTURES,
+            account=_empty_account(),
+            positions=[],
+            clock=_clock(),
+            client=client,
+        )
+        skip_reasons = {row["ticker"]: row["reason"] for row in report["skipped"]}
+        for ticker in NO_MARK_PRINTED:
+            self.assertEqual(skip_reasons[ticker], "no_mark")
+        self.assertFalse({row["symbol"] for row in report["tickets"]} & NO_MARK_PRINTED)
+
+    def test_paper_data_error_does_not_invent_a_price(self):
+        class Boom(_FakeMarkClient):
+            def sizing_marks(self, symbols):
+                raise RuntimeError("paper data HTTP 403")
+
+        report = proposed_rebalance(
+            fixtures=FIXTURES,
+            account=_empty_account(),
+            positions=[],
+            clock=_clock(),
+            client=Boom(),
+        )
+        skip_reasons = {row["ticker"]: row["reason"] for row in report["skipped"]}
+        for ticker in NO_MARK_PRINTED:
+            self.assertEqual(skip_reasons[ticker], "no_mark")
+
+    def test_resolve_sizing_marks_skips_unknown_names(self):
+        resolved = resolve_sizing_marks(
+            ["AAPL", "TSLA"],
+            {},
+            _FakeMarkClient(
+                {
+                    "AAPL": {
+                        "entry_px": 10.0,
+                        "kind": "snapshot",
+                        "source": "alpaca_paper_data",
+                    },
+                    "TSLA": {
+                        "entry_px": 11.0,
+                        "kind": "last_trade",
+                        "source": "alpaca_paper_data",
+                    },
+                }
+            ),
+        )
+        self.assertEqual(resolved["AAPL"]["kind"], "snapshot")
+        self.assertNotIn("TSLA", resolved)
+
+    def test_live_intensity_shrinks_overlay_and_rationale(self):
+        plain = proposed_rebalance(
+            fixtures=FIXTURES,
+            account=_empty_account(),
+            positions=[],
+            clock=_clock(),
+        )
+        featured = proposed_rebalance(
+            fixtures=FIXTURES,
+            account=_empty_account(),
+            positions=[],
+            clock=_clock(),
+            intensity=True,
+        )
+        live = proposed_rebalance(
+            fixtures=FIXTURES,
+            account=_empty_account(),
+            positions=[],
+            clock=_clock(),
+            live=True,
+            live_events=[_live_event()],
+        )
+        self.assertEqual(live["intensity_cut"], "now")
+        self.assertIn("live", live["intensity_note"].lower())
+        self.assertGreater(live["intensity"]["NVDA"], featured["intensity"]["NVDA"])
+        plain_nvda = next(row for row in plain["tickets"] if row["symbol"] == "NVDA")
+        featured_nvda = next(row for row in featured["tickets"] if row["symbol"] == "NVDA")
+        live_nvda = next(row for row in live["tickets"] if row["symbol"] == "NVDA")
+        self.assertLessEqual(featured_nvda["qty"], plain_nvda["qty"])
+        self.assertLessEqual(live_nvda["qty"], featured_nvda["qty"])
+        self.assertIn("intensity=", live_nvda["rationale"])
+        self.assertIn("scale=", live_nvda["rationale"])
+        dumped = json.dumps(live)
+        self.assertNotIn("SECRET HEADLINE", dumped)
+        self.assertNotIn("example.invalid", dumped)
+        self.assertNotIn("raw-pii-ref", dumped)
+        self.assertFalse(live["submitted"])
+        self.assertEqual(live["order_post"], "disabled")
+
 
 class RebalanceCliTests(unittest.TestCase):
     def test_requires_fixtures(self):
@@ -290,24 +488,36 @@ class RebalanceCliTests(unittest.TestCase):
         self.assertEqual(code, 2)
         self.assertIn("intensity", error.getvalue())
 
+    def test_live_with_rank_exits_2(self):
+        error = io.StringIO()
+        with mock.patch("signal_sim.paper.read_env", side_effect=_env), redirect_stdout(
+            io.StringIO()
+        ), redirect_stderr(error):
+            code = cli.main(["rebalance", "--fixtures", "--rank", "--live"])
+        self.assertEqual(code, 2)
+        self.assertIn("live", error.getvalue())
+
+    def test_live_missing_intel_keys_exit_2(self):
+        error = io.StringIO()
+        with mock.patch("signal_sim.paper.read_env", side_effect=_env), mock.patch(
+            "signal_sim.live_feeds.read_env", return_value=None
+        ), mock.patch("signal_sim.sources.altdata.live") as quiver, mock.patch(
+            "signal_sim.sources.worldmonitor.live"
+        ) as world, redirect_stdout(io.StringIO()), redirect_stderr(error):
+            code = cli.main(["rebalance", "--fixtures", "--live"])
+        self.assertEqual(code, 2)
+        self.assertIn("QUIVER_API_KEY", error.getvalue())
+        self.assertIn("WORLD_MONITOR_KEY", error.getvalue())
+        quiver.assert_not_called()
+        world.assert_not_called()
+
     def test_cli_prints_tickets_with_get_only(self):
         calls = []
-
-        def urlopen(request, timeout=None):
-            calls.append((request.full_url, request.get_method()))
-            url = request.full_url
-            if url.endswith("/v2/account"):
-                return _json_response(_empty_account())
-            if url.endswith("/v2/positions"):
-                return _json_response([])
-            if url.endswith("/v2/clock"):
-                return _json_response(_clock())
-            raise AssertionError(url)
-
         printed = io.StringIO()
         error = io.StringIO()
         with mock.patch("signal_sim.paper.read_env", side_effect=_env), mock.patch(
-            "signal_sim.alpaca_paper.urllib.request.urlopen", side_effect=urlopen
+            "signal_sim.alpaca_paper.urllib.request.urlopen",
+            side_effect=_paper_urlopen(calls),
         ), redirect_stdout(printed), redirect_stderr(error):
             code = cli.main(["rebalance", "--fixtures"])
         self.assertEqual(code, 0)
@@ -321,10 +531,84 @@ class RebalanceCliTests(unittest.TestCase):
         self.assertNotIn("paper-secret", dumped)
         self.assertNotIn("PA123HIDE", dumped)
         self.assertNotIn("uuid-hide", dumped)
-        self.assertEqual(len(calls), 3)
+        self.assertGreaterEqual(len(calls), 3)
         self.assertTrue(all(method == "GET" for _url, method in calls))
         self.assertTrue(all("/v2/orders" not in url for url, _method in calls))
-        self.assertTrue(all(PAPER_BROKER_HOST in url for url, _method in calls))
+        self.assertTrue(
+            all(PAPER_BROKER_HOST in url or PAPER_DATA_HOST in url for url, _method in calls)
+        )
+        self.assertTrue(any("/v2/account" in url for url, _method in calls))
+
+    def test_cli_uses_paper_last_trade_for_unmarked_names(self):
+        calls = []
+        printed = io.StringIO()
+        with mock.patch("signal_sim.paper.read_env", side_effect=_env), mock.patch(
+            "signal_sim.alpaca_paper.urllib.request.urlopen",
+            side_effect=_paper_urlopen(
+                calls,
+                trades={
+                    "AAPL": {"p": 220.5, "t": "2026-09-04T16:00:00Z"},
+                    "XLK": {"p": 0},
+                },
+                snapshots={
+                    "CMCSA": {"latestTrade": {"p": 32.1}},
+                    "CVX": {"latestQuote": {"ap": 160.0, "bp": 159.0}},
+                },
+            ),
+        ), redirect_stdout(printed), redirect_stderr(io.StringIO()):
+            code = cli.main(["rebalance", "--fixtures"])
+        self.assertEqual(code, 0)
+        payload = json.loads(printed.getvalue())
+        tickets = {row["symbol"]: row for row in payload["tickets"]}
+        self.assertIn("AAPL", tickets)
+        self.assertAlmostEqual(tickets["AAPL"]["mark_px"], 220.5)
+        self.assertEqual(tickets["AAPL"]["mark_kind"], "last_trade")
+        skip_reasons = {row["ticker"]: row["reason"] for row in payload["skipped"]}
+        self.assertEqual(skip_reasons.get("XLK"), "no_mark")
+        self.assertEqual(skip_reasons.get("CVX"), "no_mark")
+        if "CMCSA" in tickets:
+            self.assertEqual(tickets["CMCSA"]["mark_kind"], "snapshot")
+        self.assertFalse(payload["submitted"])
+        self.assertTrue(all(method == "GET" for _url, method in calls))
+        self.assertTrue(all("/v2/orders" not in url for url, _method in calls))
+        self.assertTrue(any(PAPER_DATA_HOST in url for url, _method in calls))
+        self.assertTrue(any("feed=iex" in url for url, _method in calls))
+
+    def test_cli_live_intensity_is_print_only(self):
+        calls = []
+
+        def env(name):
+            values = dict(_FAKE_KEYS)
+            values["QUIVER_API_KEY"] = "quiver-key"
+            values["WORLD_MONITOR_KEY"] = "wm-key"
+            return values.get(name)
+
+        printed = io.StringIO()
+        error = io.StringIO()
+        with mock.patch("signal_sim.paper.read_env", side_effect=env), mock.patch(
+            "signal_sim.live_feeds.read_env", side_effect=env
+        ), mock.patch(
+            "signal_sim.sources.altdata.live",
+            return_value=[{"ticker": "NVDA", "person": "Rep. Hidden"}],
+        ), mock.patch(
+            "signal_sim.sources.worldmonitor.live", return_value=[_live_event("XLE", "wm-xle")]
+        ), mock.patch(
+            "signal_sim.alpaca_paper.urllib.request.urlopen",
+            side_effect=_paper_urlopen(calls),
+        ), redirect_stdout(printed), redirect_stderr(error):
+            code = cli.main(["rebalance", "--fixtures", "--live"])
+        self.assertEqual(code, 0)
+        payload = json.loads(printed.getvalue())
+        self.assertEqual(payload["intensity_cut"], "now")
+        self.assertIn("live_intel", payload)
+        self.assertEqual(payload["live_intel"]["worldmonitor"]["tickers"], {"XLE": 1})
+        dumped = printed.getvalue() + error.getvalue()
+        self.assertNotIn("SECRET HEADLINE", dumped)
+        self.assertNotIn("Rep. Hidden", dumped)
+        self.assertNotIn("example.invalid", dumped)
+        self.assertFalse(payload["submitted"])
+        self.assertTrue(all(method == "GET" for _url, method in calls))
+        self.assertTrue(all("/v2/orders" not in url for url, _method in calls))
 
     def test_submit_flag_still_does_not_post(self):
         calls = []
@@ -334,30 +618,20 @@ class RebalanceCliTests(unittest.TestCase):
                 return "1"
             return _env(name)
 
-        def urlopen(request, timeout=None):
-            calls.append(request.get_method())
-            url = request.full_url
-            if url.endswith("/v2/account"):
-                return _json_response(_empty_account())
-            if url.endswith("/v2/positions"):
-                return _json_response([])
-            if url.endswith("/v2/clock"):
-                return _json_response(_clock())
-            raise AssertionError(url)
-
         printed = io.StringIO()
         error = io.StringIO()
         with mock.patch("signal_sim.paper.read_env", side_effect=env), mock.patch(
             "signal_sim.runtime_env.read_env", side_effect=env
         ), mock.patch(
-            "signal_sim.alpaca_paper.urllib.request.urlopen", side_effect=urlopen
+            "signal_sim.alpaca_paper.urllib.request.urlopen",
+            side_effect=_paper_urlopen(calls),
         ), redirect_stdout(printed), redirect_stderr(error):
             code = cli.main(["rebalance", "--fixtures"])
         self.assertEqual(code, 0)
         payload = json.loads(printed.getvalue())
         self.assertEqual(payload["submit_flag"], "1")
         self.assertFalse(payload["submitted"])
-        self.assertTrue(all(method == "GET" for method in calls))
+        self.assertTrue(all(method == "GET" for _url, method in calls))
         self.assertIn("refuses remote paper POSTs", error.getvalue())
 
 

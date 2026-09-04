@@ -152,7 +152,7 @@ python3 -m signal_sim paper-account --dry-run
 python3 -m signal_sim rebalance --fixtures
 ```
 
-`rebalance --fixtures` prints intended tickets from the existing fixture / drift target book versus the paper account. It does not POST. Qty uses fixture `entry_px`, not a live quote.
+`rebalance --fixtures` prints intended tickets from the existing fixture / drift target book versus the paper account. It does not POST. Qty prefers fixture `entry_px`, then a paper IEX last trade or snapshot if one is returned. `--live` pulls Quiver / World Monitor into the Hawkes overlay without submitting.
 
 The desk refuses to start unless the paper-only flag is on and no `KILL` file sits in the repository root.
 

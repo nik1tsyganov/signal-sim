@@ -8,14 +8,20 @@ does not call submit_paper_order, and does not invent a new alpha.
 from __future__ import annotations
 
 import math
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
 from .drift import NOTE as DRIFT_NOTE
 from .drift import fixture_drift_book
+from .events import Event
 from .fixture_load import load_fixture_events
 from .indicators import UNIVERSE, rank_candidates
+from .live_feeds import (
+    fetch_live_feed_payloads,
+    live_events_for_intensity,
+    summarize_feed,
+)
 from .paper import execution_mark_failure
 from .params import COST_BPS, operate_stamp
 from .sizer import size_targets
@@ -24,9 +30,11 @@ from .store import EventStore
 
 NOTE = (
     "Print-only dry-run. Fixture or cluster-drift target book versus paper "
-    "positions. Not alpha. Not a broker fill. Qty and notional use fixture "
-    "entry_px, not a live quote. No remote paper POST."
+    "positions. Not alpha. Not a broker fill. Qty prefers fixture entry_px, "
+    "then a paper IEX last trade or snapshot latestTrade. Never invents a "
+    "price. Names still unmarked stay skipped. No remote paper POST."
 )
+PAPER_SIZING_SOURCE = "alpaca_paper_data"
 SIGNAL_DRIFT = "cluster-drift-stub"
 SIGNAL_RANK = "rank-candidates"
 _ACCOUNT_FIELDS = (
@@ -137,12 +145,99 @@ def _ticket_payload(symbol: str, side: str, key: str) -> dict[str, str]:
     }
 
 
-def _rationale(*, signal: str, action: str, target_frac: float | None, have_shares: float) -> str:
+def _rationale(
+    *,
+    signal: str,
+    action: str,
+    target_frac: float | None,
+    have_shares: float,
+    intensity: float | None = None,
+    intensity_scale: float | None = None,
+    mark_kind: str | None = None,
+) -> str:
     held = f"paper holds {have_shares:g}"
     if action == "close":
-        return f"{signal}; close leftover; not in target book; {held}"
-    frac = 0.0 if target_frac is None else float(target_frac)
-    return f"{signal}; {action} to target_frac={frac:g}; {held}"
+        parts = [signal, "close leftover", "not in target book", held]
+    else:
+        frac = 0.0 if target_frac is None else float(target_frac)
+        parts = [signal, f"{action} to target_frac={frac:g}", held]
+    if intensity is not None:
+        scale = 1.0 if intensity_scale is None else float(intensity_scale)
+        parts.append(f"intensity={float(intensity):g} scale={scale:g}")
+    if mark_kind and mark_kind != "fixture_mark":
+        parts.append(f"mark={mark_kind}")
+    return "; ".join(parts)
+
+
+def _sizing_px(mark: dict[str, Any] | None) -> float | None:
+    if mark is None or mark.get("unused"):
+        return None
+    px = _finite_number(mark.get("entry_px"))
+    if px is None or px <= 0:
+        return None
+    return px
+
+
+def fixture_sizing_marks(marks: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    """Keep only honest fixture execution marks for print-only sizing."""
+    resolved: dict[str, dict[str, Any]] = {}
+    for ticker, row in marks.items():
+        if not isinstance(row, dict):
+            continue
+        if execution_mark_failure(row.get("kind"), row.get("source")) is not None:
+            continue
+        px = _sizing_px(row)
+        if px is None:
+            continue
+        resolved[str(ticker)] = {
+            "entry_px": px,
+            "kind": "fixture_mark",
+            "source": "fixture",
+        }
+    return resolved
+
+
+def resolve_sizing_marks(
+    needed: list[str],
+    fixture_marks: dict[str, Any],
+    client: Any | None = None,
+) -> dict[str, dict[str, Any]]:
+    """Fixture marks first. Paper last trade / snapshot only for leftovers."""
+    resolved = fixture_sizing_marks(fixture_marks)
+    missing = [ticker for ticker in needed if ticker not in resolved and ticker in UNIVERSE]
+    if not missing or client is None or not hasattr(client, "sizing_marks"):
+        return resolved
+    try:
+        paper = client.sizing_marks(missing) or {}
+    except Exception:
+        return resolved
+    if not isinstance(paper, dict):
+        return resolved
+    for ticker in missing:
+        row = paper.get(ticker)
+        if not isinstance(row, dict):
+            continue
+        px = _sizing_px(row)
+        if px is None:
+            continue
+        kind = str(row.get("kind") or "last_trade")
+        source = str(row.get("source") or PAPER_SIZING_SOURCE)
+        if kind == "fixture_mark" or source == "fixture":
+            continue
+        resolved[ticker] = {"entry_px": px, "kind": kind, "source": source}
+    return resolved
+
+
+def _intensity_cut(events: list[Event]) -> datetime:
+    cut = datetime.now(timezone.utc)
+    latest = None
+    for event in events:
+        observed = event.observed_at
+        if latest is None or observed > latest:
+            latest = observed
+    if latest is not None and latest >= cut:
+        return latest + timedelta(microseconds=1)
+    return cut
 
 
 def plan_rebalance_tickets(
@@ -177,6 +272,14 @@ def plan_rebalance_tickets(
     ) -> None:
         key = f"rebalance:{decision_at}:{ticker}:{side}:{action}"
         notional = abs(qty) * float(mark_px)
+        mark = marks.get(ticker) or {}
+        mark_kind = str(mark.get("kind") or "fixture_mark")
+        mark_source = str(mark.get("source") or "fixture")
+        intensity = None
+        intensity_scale = None
+        if target_frac is not None:
+            intensity = wanted.get(ticker, {}).get("intensity")
+            intensity_scale = wanted.get(ticker, {}).get("intensity_scale")
         tickets.append(
             {
                 "symbol": ticker,
@@ -185,13 +288,17 @@ def plan_rebalance_tickets(
                 "notional": notional,
                 "size_frac": float(trade_frac),
                 "mark_px": float(mark_px),
-                "mark_kind": "fixture_mark",
+                "mark_kind": mark_kind,
+                "mark_source": mark_source,
                 "action": action,
                 "rationale": _rationale(
                     signal=signal,
                     action=action,
                     target_frac=target_frac,
                     have_shares=have_shares,
+                    intensity=None if intensity is None else float(intensity),
+                    intensity_scale=None if intensity_scale is None else float(intensity_scale),
+                    mark_kind=mark_kind,
                 ),
                 "submitted": False,
                 "payload": _ticket_payload(ticker, side, key),
@@ -202,15 +309,11 @@ def plan_rebalance_tickets(
         if ticker in wanted:
             continue
         mark = marks.get(ticker)
-        if mark is None or mark.get("unused"):
+        sell_px = _sizing_px(mark)
+        if sell_px is None:
             skip(ticker, "held_no_mark")
             continue
-        mark_failure = execution_mark_failure(mark.get("kind"), mark.get("source"))
-        if mark_failure is not None:
-            skip(ticker, mark_failure)
-            continue
         have_shares = float(position["shares"])
-        sell_px = float(mark["entry_px"])
         trade_frac = abs(have_shares) * sell_px / allocation
         if trade_frac <= _EPS:
             continue
@@ -223,14 +326,10 @@ def plan_rebalance_tickets(
     for row in targets:
         ticker = str(row["ticker"])
         mark = marks.get(ticker)
-        if mark is None or mark.get("unused"):
+        mark_px = _sizing_px(mark)
+        if mark_px is None:
             skip(ticker, "no_mark")
             continue
-        mark_failure = execution_mark_failure(mark.get("kind"), mark.get("source"))
-        if mark_failure is not None:
-            skip(ticker, mark_failure)
-            continue
-        mark_px = float(mark["entry_px"])
         have_shares = float(held.get(ticker, {}).get("shares", 0.0))
         target_shares = allocation * float(row["target_frac"]) / mark_px
         delta_shares = target_shares - have_shares
@@ -271,13 +370,8 @@ def _fillable_candidates(
     skipped: list[dict[str, str]] = []
     for row in candidates:
         ticker = str(row["ticker"])
-        mark = marks.get(ticker)
-        if mark is None or mark.get("unused"):
+        if _sizing_px(marks.get(ticker)) is None:
             skipped.append({"ticker": ticker, "reason": "no_mark"})
-            continue
-        mark_failure = execution_mark_failure(mark.get("kind"), mark.get("source"))
-        if mark_failure is not None:
-            skipped.append({"ticker": ticker, "reason": mark_failure})
             continue
         fillable.append(row)
     return fillable, skipped
@@ -293,11 +387,13 @@ def proposed_rebalance(
     client: Any | None = None,
     signal: str = "drift",
     intensity: bool = False,
+    live: bool = False,
+    live_events: list[Event] | None = None,
 ) -> dict[str, Any]:
     """Read paper snapshot + fixture target book; return print-only tickets."""
     if signal not in {"drift", "rank"}:
         raise ValueError("signal must be 'drift' or 'rank'")
-    if intensity and signal != "drift":
+    if (intensity or live) and signal != "drift":
         raise ValueError("intensity overlay requires the cluster-drift book")
     if client is not None:
         if account is None:
@@ -320,11 +416,34 @@ def proposed_rebalance(
         event for event in load_fixture_events(root) if event.observed_at <= book["decision_at"]
     ]
 
+    live_summary = None
+    extra_events: list[Event] = []
+    intensity_when = None
+    apply_intensity = bool(intensity or live)
+    if live:
+        if live_events is None:
+            quiver, world = fetch_live_feed_payloads()
+            extra_events = live_events_for_intensity(quiver, world)
+            live_summary = {
+                "quiver": summarize_feed(quiver),
+                "worldmonitor": summarize_feed(world),
+            }
+        else:
+            extra_events = list(live_events)
+            live_summary = {
+                "quiver": summarize_feed([]),
+                "worldmonitor": summarize_feed(extra_events),
+                "injected": True,
+            }
+        intensity_when = _intensity_cut(extra_events)
+
     if signal == "drift":
         drift_book = fixture_drift_book(
             root,
             resolved,
-            intensity=intensity,
+            intensity=apply_intensity,
+            extra_events=extra_events or None,
+            intensity_when=intensity_when,
         )
         candidates = list(drift_book["targets"])
         signal_name = SIGNAL_DRIFT
@@ -335,8 +454,13 @@ def proposed_rebalance(
             candidates = rank_candidates(store.all(), window_end=book["decision_at"])
         signal_name = SIGNAL_RANK
         signal_note = "Existing rank_candidates at the mark-book decision_at. Not a new alpha."
+        drift_book = {}
 
-    fillable, pre_skips = _fillable_candidates(candidates, book["marks"])
+    held, held_skips = paper_held(list(positions))
+    needed = [str(row["ticker"]) for row in candidates]
+    needed.extend(ticker for ticker in held if ticker not in needed)
+    sizing_marks = resolve_sizing_marks(needed, book["marks"], client)
+    fillable, pre_skips = _fillable_candidates(candidates, sizing_marks)
     targets, size_skips = size_targets(
         fillable,
         size_frac=float(book["size_frac"]),
@@ -349,10 +473,9 @@ def proposed_rebalance(
     cash = _finite_number(safe_account.get("cash"))
     if cash is None:
         cash = allocation
-    held, held_skips = paper_held(list(positions))
     tickets, plan_skips = plan_rebalance_tickets(
         targets=targets,
-        marks=book["marks"],
+        marks=sizing_marks,
         held=held,
         cash=cash,
         allocation=allocation,
@@ -363,7 +486,16 @@ def proposed_rebalance(
     skipped = [*held_skips, *pre_skips, *size_skips, *plan_skips]
     stamp = operate_stamp()
     safe_clock = sanitize_clock(clock)
-    return {
+    paper_marked = sorted(
+        ticker
+        for ticker, row in sizing_marks.items()
+        if row.get("source") == PAPER_SIZING_SOURCE
+    )
+    fixture_marked = sorted(
+        ticker for ticker, row in sizing_marks.items() if row.get("source") == "fixture"
+    )
+    unmarked = sorted({ticker for ticker in needed if ticker not in sizing_marks})
+    report = {
         "mode": "paper-rebalance-dry-run",
         "note": NOTE,
         "signal": signal_name,
@@ -386,7 +518,19 @@ def proposed_rebalance(
         "skipped": skipped,
         "n_tickets": len(tickets),
         "n_skipped": len(skipped),
+        "marks": {
+            "fixture": fixture_marked,
+            "paper_data": paper_marked,
+            "unmarked": unmarked,
+        },
         "order_post": "disabled",
         "submitted": False,
         "ok": True,
     }
+    if apply_intensity:
+        report["intensity_note"] = drift_book.get("intensity_note")
+        report["intensity"] = drift_book.get("intensity")
+        report["intensity_cut"] = drift_book.get("intensity_cut", "decision_at")
+    if live_summary is not None:
+        report["live_intel"] = live_summary
+    return report

@@ -142,8 +142,14 @@ def fixture_drift_book(
     mark_book: dict[str, Any] | None = None,
     *,
     intensity: bool = False,
+    extra_events: list[Event] | None = None,
+    intensity_when: datetime | None = None,
 ) -> dict[str, Any]:
-    """Score fixture prints at the mark-book decision. No vendor bars."""
+    """Score fixture prints at the mark-book decision. No vendor bars.
+
+    extra_events and intensity_when only feed the Hawkes overlay. Cluster
+    state stays on fixture prints at decision_at.
+    """
     from .sim import load_mark_book
 
     root = fixtures if fixtures is not None else Path(__file__).resolve().parent.parent / "fixtures"
@@ -157,10 +163,17 @@ def fixture_drift_book(
     feature_events = events + recorded
     horizon_hours = (book["exit_at"] - book["decision_at"]).total_seconds() / 3600.0
     intensities = None
+    intensity_cut = "decision_at"
     if intensity:
         from .hawkes import intensity_map
 
-        intensities = intensity_map(events, book["decision_at"])
+        material = list(events)
+        if extra_events:
+            material.extend(extra_events)
+        when = intensity_when if intensity_when is not None else book["decision_at"]
+        intensities = intensity_map(material, when)
+        if extra_events or intensity_when is not None:
+            intensity_cut = "now"
     targets = drift_targets(
         events,
         when=book["decision_at"],
@@ -201,6 +214,14 @@ def fixture_drift_book(
         "targets": targets,
     }
     if intensity:
-        payload["intensity_note"] = INTENSITY_NOTE
+        note = INTENSITY_NOTE
+        if extra_events:
+            note = (
+                INTENSITY_NOTE
+                + " Live Quiver/World Monitor events included in the overlay. "
+                "Not a fit. Not a ranking input."
+            )
+        payload["intensity_note"] = note
         payload["intensity"] = intensities
+        payload["intensity_cut"] = intensity_cut
     return payload

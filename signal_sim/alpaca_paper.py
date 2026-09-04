@@ -4,18 +4,27 @@ Fills stay on the local ledger via submit_paper_order(). This client GETs
 account, positions, and clock on the paper host and can dry-run validate a
 proposal payload. It has no order-placement method. Host names are assembled
 so the live-broker fragment is never a contiguous substring.
+
+Optional paper IEX last-trade / snapshot GETs are sizing marks only. They
+never become execution marks and never POST.
 """
 
 from __future__ import annotations
 
 import json
+import math
 import urllib.error
+import urllib.parse
 import urllib.request
 from typing import Any
 
 from .indicators import UNIVERSE
 
 _USER_AGENT = "signal-sim-paper/0.1"
+_DATA_HOST_PREFIX = "data."
+_MARKET_SUFFIX = "alpaca" + ".markets"
+_PAPER_SIZING_SOURCE = "alpaca_paper_data"
+_IEX_FEED = "iex"
 _ACCOUNT_FIELDS = (
     "status",
     "currency",
@@ -31,6 +40,52 @@ _CLOCK_FIELDS = ("timestamp", "is_open", "next_open", "next_close")
 _POSITION_FIELDS = ("symbol", "qty", "side")
 
 
+def paper_data_host() -> str:
+    """Assembled paper IEX data host. Safe to call; does not open a socket."""
+    return _DATA_HOST_PREFIX + _MARKET_SUFFIX
+
+
+def _positive_px(value: Any) -> float | None:
+    if isinstance(value, bool) or value is None:
+        return None
+    if isinstance(value, (int, float)):
+        number = float(value)
+    elif isinstance(value, str) and value.strip():
+        try:
+            number = float(value)
+        except ValueError:
+            return None
+    else:
+        return None
+    if not math.isfinite(number) or number <= 0:
+        return None
+    return number
+
+
+def _trade_px(raw: Any) -> float | None:
+    if not isinstance(raw, dict):
+        return None
+    trade = raw.get("trade") if isinstance(raw.get("trade"), dict) else raw
+    return _positive_px(trade.get("p") if "p" in trade else trade.get("price"))
+
+
+def _snapshot_trade_px(raw: Any) -> float | None:
+    if not isinstance(raw, dict):
+        return None
+    trade = raw.get("latestTrade")
+    if trade is None:
+        trade = raw.get("latest_trade")
+    return _trade_px(trade)
+
+
+def _sizing_mark(px: float, kind: str) -> dict[str, Any]:
+    return {
+        "entry_px": float(px),
+        "kind": kind,
+        "source": _PAPER_SIZING_SOURCE,
+    }
+
+
 class AlpacaPaperClient:
     """Paper-host account reader. No submit / place_order / submit_order."""
 
@@ -38,6 +93,7 @@ class AlpacaPaperClient:
 
     def __init__(self, base_url: str, api_key: str, api_secret: str):
         self._base_url = str(base_url).rstrip("/")
+        self._data_base_url = "https://" + paper_data_host()
         self._api_key = api_key
         self._api_secret = api_secret
 
@@ -52,8 +108,7 @@ class AlpacaPaperClient:
             "User-Agent": _USER_AGENT,
         }
 
-    def _get(self, path: str) -> Any:
-        url = f"{self._base_url}{path}"
+    def _get_json(self, url: str, path: str, label: str) -> Any:
         request = urllib.request.Request(url, method="GET")
         for name, value in self._headers().items():
             request.add_header(name, value)
@@ -65,12 +120,80 @@ class AlpacaPaperClient:
                 error.read()
             except OSError:
                 pass
-            raise RuntimeError(f"paper account HTTP {error.code} for {path}") from None
+            raise RuntimeError(f"{label} HTTP {error.code} for {path}") from None
         except urllib.error.URLError:
-            raise RuntimeError(f"paper account request failed for {path}") from None
+            raise RuntimeError(f"{label} request failed for {path}") from None
         except json.JSONDecodeError:
-            raise RuntimeError(f"paper account returned non-JSON for {path}") from None
+            raise RuntimeError(f"{label} returned non-JSON for {path}") from None
         return payload
+
+    def _get(self, path: str) -> Any:
+        return self._get_json(f"{self._base_url}{path}", path, "paper account")
+
+    def _data_get(self, path: str) -> Any:
+        return self._get_json(f"{self._data_base_url}{path}", path, "paper data")
+
+    def _universe_symbols(self, symbols: Any) -> list[str]:
+        names: list[str] = []
+        for item in symbols or []:
+            if item in UNIVERSE and item not in names:
+                names.append(str(item))
+        return names
+
+    def last_trades(self, symbols: Any) -> dict[str, dict[str, Any]]:
+        """IEX last trades for universe names. Empty when a price is absent."""
+        names = self._universe_symbols(symbols)
+        if not names:
+            return {}
+        query = urllib.parse.urlencode({"symbols": ",".join(names), "feed": _IEX_FEED})
+        raw = self._data_get("/v2/stocks/trades/latest?" + query)
+        trades = raw.get("trades") if isinstance(raw, dict) else None
+        if not isinstance(trades, dict):
+            return {}
+        found: dict[str, dict[str, Any]] = {}
+        for ticker in names:
+            px = _trade_px(trades.get(ticker))
+            if px is not None:
+                found[ticker] = _sizing_mark(px, "last_trade")
+        return found
+
+    def snapshots(self, symbols: Any) -> dict[str, dict[str, Any]]:
+        """IEX snapshots; only latestTrade is used. Never a quote mid."""
+        names = self._universe_symbols(symbols)
+        if not names:
+            return {}
+        query = urllib.parse.urlencode({"symbols": ",".join(names), "feed": _IEX_FEED})
+        raw = self._data_get("/v2/stocks/snapshots?" + query)
+        rows = raw
+        if isinstance(raw, dict) and isinstance(raw.get("snapshots"), dict):
+            rows = raw["snapshots"]
+        if not isinstance(rows, dict):
+            return {}
+        found: dict[str, dict[str, Any]] = {}
+        for ticker in names:
+            px = _snapshot_trade_px(rows.get(ticker))
+            if px is not None:
+                found[ticker] = _sizing_mark(px, "snapshot")
+        return found
+
+    def sizing_marks(self, symbols: Any) -> dict[str, dict[str, Any]]:
+        """Prefer last trade, then snapshot latestTrade. Never invents a price."""
+        names = self._universe_symbols(symbols)
+        if not names:
+            return {}
+        found: dict[str, dict[str, Any]] = {}
+        try:
+            found.update(self.last_trades(names))
+        except RuntimeError:
+            pass
+        missing = [ticker for ticker in names if ticker not in found]
+        if missing:
+            try:
+                for ticker, row in self.snapshots(missing).items():
+                    found.setdefault(ticker, row)
+            except RuntimeError:
+                pass
+        return found
 
     def account(self) -> dict[str, Any]:
         raw = self._get("/v2/account")
