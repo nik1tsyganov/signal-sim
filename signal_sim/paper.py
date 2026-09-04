@@ -5,9 +5,10 @@ R1 consults safety.PAPER_ONLY at call time, R3 runs the fail-closed
 kill-switch, R9 is the plain-code validator (schema, ticker allowlist, size
 cap, provenance event ids, idempotency), R8 appends the audit line before
 any return. R2: the default broker "client" is in-process. Known live endpoints raise
-LiveEndpointError. The paper host may construct a read-only Alpaca paper
-client when paper keys are present; it never places orders.
-submit_paper_order() remains the only order path. Live-broker names appear
+LiveEndpointError. The paper host may construct an Alpaca paper client when
+paper keys are present. Remote /v2/orders POSTs go through
+AlpacaPaperClient.post_paper_order after require_paper_submit rails.
+submit_paper_order() remains the only local-ledger order path. Live-broker names appear
 below only in runtime-assembled or bare-number form so no forbidden
 fragment is a contiguous substring of this file (SafetyRailTests scans
 the package).
@@ -63,6 +64,10 @@ class ProvenanceMissing(ValueError):
 
 class LiveEndpointError(ValueError):
     """Client construction named a known live broker endpoint (R2)."""
+
+
+class PaperSubmitRefused(ValueError):
+    """Remote paper POST refused by a hard rail. No request was sent."""
 
 
 class PaperBrokerClient:
@@ -124,6 +129,35 @@ def paper_submit_enabled():
     Default is 0 (missing, empty, or any value other than the string 1).
     """
     return paper_submit_flag() == "1"
+
+
+def require_paper_submit(*, explicit: bool) -> str:
+    """Return the paper HTTPS origin only when every remote-submit rail passes.
+
+    Required together: explicit CLI intent, SIGNAL_SIM_ALPACA_PAPER_SUBMIT=1,
+    paper keys, and a resolved paper-api host. Live or other hosts raise.
+    There is no silent fallback to print-only or a different URL.
+    """
+    if explicit is not True:
+        raise PaperSubmitRefused(
+            "remote paper POST requires explicit --submit-paper or paper-submit"
+        )
+    if paper_submit_enabled() is not True:
+        raise PaperSubmitRefused(
+            "SIGNAL_SIM_ALPACA_PAPER_SUBMIT is not 1; remote paper POST refused"
+        )
+    missing = missing_paper_keys()
+    if missing:
+        raise PaperSubmitRefused("missing paper keys: " + ", ".join(missing))
+    if safety.PAPER_ONLY is not True:
+        raise PaperSubmitRefused("R1: safety.PAPER_ONLY is not True")
+    try:
+        kill_ok = safety.kill_switch_ok() is True
+    except Exception:
+        kill_ok = False
+    if kill_ok is not True:
+        raise PaperSubmitRefused("R3: kill-switch refused the remote paper POST")
+    return resolve_paper_base_url()
 
 
 def resolve_paper_base_url():

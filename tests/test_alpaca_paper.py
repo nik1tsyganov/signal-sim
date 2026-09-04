@@ -4,6 +4,7 @@ import io
 import json
 import os
 import unittest
+import urllib.error
 from contextlib import redirect_stderr, redirect_stdout
 from unittest import mock
 
@@ -12,10 +13,12 @@ from signal_sim.alpaca_paper import AlpacaPaperClient
 from signal_sim.paper import (
     LiveEndpointError,
     OrderRefused,
+    PaperSubmitRefused,
     missing_paper_keys,
     paper_broker_client,
     paper_host,
     paper_submit_enabled,
+    require_paper_submit,
     resolve_paper_base_url,
     submit_paper_order,
 )
@@ -329,6 +332,284 @@ class PaperAccountCliTests(unittest.TestCase):
         self.assertFalse(payload["dry_run"]["submitted"])
         self.assertNotIn("NO", printed.getvalue())
         self.assertNotIn("paper-secret", printed.getvalue() + error.getvalue())
+
+
+class AlpacaPaperSubmitGateTests(unittest.TestCase):
+    def test_flag_zero_never_posts(self):
+        calls = []
+
+        def env(name):
+            return _env(name, {"SIGNAL_SIM_ALPACA_PAPER_SUBMIT": "0"})
+
+        with mock.patch("signal_sim.paper.read_env", side_effect=env), mock.patch(
+            "signal_sim.runtime_env.read_env", side_effect=env
+        ), mock.patch(
+            "signal_sim.alpaca_paper.urllib.request.urlopen",
+            side_effect=lambda *a, **k: calls.append(a) or _json_response({}),
+        ) as urlopen:
+            with self.assertRaises(PaperSubmitRefused) as error:
+                require_paper_submit(explicit=True)
+            client = paper_broker_client(PAPER_BROKER_HOST)
+            with self.assertRaises(PaperSubmitRefused):
+                client.post_paper_order(
+                    {
+                        "symbol": "SPY",
+                        "qty": "1",
+                        "side": "buy",
+                        "type": "market",
+                        "time_in_force": "day",
+                        "client_order_id": "flag-zero",
+                    },
+                    explicit=True,
+                )
+        self.assertIn("SIGNAL_SIM_ALPACA_PAPER_SUBMIT", str(error.exception))
+        urlopen.assert_not_called()
+        self.assertEqual(calls, [])
+
+    def test_missing_explicit_cli_never_posts(self):
+        def env(name):
+            return _env(name, {"SIGNAL_SIM_ALPACA_PAPER_SUBMIT": "1"})
+
+        with mock.patch("signal_sim.paper.read_env", side_effect=env), mock.patch(
+            "signal_sim.runtime_env.read_env", side_effect=env
+        ), mock.patch(
+            "signal_sim.alpaca_paper.urllib.request.urlopen"
+        ) as urlopen:
+            with self.assertRaises(PaperSubmitRefused) as error:
+                require_paper_submit(explicit=False)
+            client = paper_broker_client(PAPER_BROKER_HOST)
+            with self.assertRaises(PaperSubmitRefused):
+                client.post_paper_order(
+                    {
+                        "symbol": "SPY",
+                        "qty": "1",
+                        "side": "buy",
+                        "type": "market",
+                        "time_in_force": "day",
+                        "client_order_id": "no-cli",
+                    },
+                    explicit=False,
+                )
+        self.assertIn("submit-paper", str(error.exception))
+        urlopen.assert_not_called()
+
+    def test_live_host_is_refused_before_http(self):
+        def env(name):
+            return _env(
+                name,
+                {
+                    "SIGNAL_SIM_ALPACA_PAPER_SUBMIT": "1",
+                    "ALPACA_PAPER_API_BASE_URL": "https://" + LIVE_BROKER_HOST,
+                },
+            )
+
+        with mock.patch("signal_sim.paper.read_env", side_effect=env), mock.patch(
+            "signal_sim.runtime_env.read_env", side_effect=env
+        ), mock.patch(
+            "signal_sim.alpaca_paper.urllib.request.urlopen"
+        ) as urlopen:
+            with self.assertRaises(LiveEndpointError):
+                require_paper_submit(explicit=True)
+        urlopen.assert_not_called()
+
+    def test_non_paper_url_is_refused_before_http(self):
+        def env(name):
+            return _env(
+                name,
+                {
+                    "SIGNAL_SIM_ALPACA_PAPER_SUBMIT": "1",
+                    "ALPACA_PAPER_API_BASE_URL": "https://example.invalid",
+                },
+            )
+
+        with mock.patch("signal_sim.paper.read_env", side_effect=env), mock.patch(
+            "signal_sim.runtime_env.read_env", side_effect=env
+        ), mock.patch(
+            "signal_sim.alpaca_paper.urllib.request.urlopen"
+        ) as urlopen:
+            with self.assertRaises(ValueError) as error:
+                require_paper_submit(explicit=True)
+        self.assertIn("paper broker host refused", str(error.exception))
+        urlopen.assert_not_called()
+
+    def test_flag_one_explicit_posts_and_logs_order_id(self):
+        calls = []
+
+        def env(name):
+            return _env(name, {"SIGNAL_SIM_ALPACA_PAPER_SUBMIT": "1"})
+
+        def urlopen(request, timeout=None):
+            calls.append((request.full_url, request.get_method(), request.data))
+            url = request.full_url
+            if "orders:by_client_order_id" in url:
+                raise urllib.error.HTTPError(url, 404, "not found", hdrs=None, fp=io.BytesIO(b""))
+            if request.get_method() == "POST" and url.endswith("/v2/orders"):
+                body = json.loads(request.data.decode("utf-8"))
+                self.assertEqual(body["symbol"], "SPY")
+                self.assertEqual(body["qty"], "1")
+                self.assertEqual(body["side"], "buy")
+                self.assertEqual(body["client_order_id"], "paper-spy-1")
+                self.assertEqual(request.get_header("Apca-api-key-id"), "paper-key-id")
+                return _json_response(
+                    {
+                        "id": "ord-spy-1",
+                        "client_order_id": "paper-spy-1",
+                        "status": "accepted",
+                        "symbol": "SPY",
+                        "qty": "1",
+                        "side": "buy",
+                        "filled_qty": "0",
+                        "account_number": "PA123HIDE",
+                    }
+                )
+            raise AssertionError((url, request.get_method()))
+
+        with mock.patch("signal_sim.paper.read_env", side_effect=env), mock.patch(
+            "signal_sim.runtime_env.read_env", side_effect=env
+        ), mock.patch(
+            "signal_sim.alpaca_paper.urllib.request.urlopen", side_effect=urlopen
+        ):
+            require_paper_submit(explicit=True)
+            client = paper_broker_client(PAPER_BROKER_HOST)
+            result = client.post_paper_order(
+                {
+                    "symbol": "SPY",
+                    "qty": "1",
+                    "side": "buy",
+                    "type": "market",
+                    "time_in_force": "day",
+                    "client_order_id": "paper-spy-1",
+                },
+                explicit=True,
+            )
+        self.assertEqual(result["id"], "ord-spy-1")
+        self.assertEqual(result["status"], "accepted")
+        self.assertTrue(result["submitted"])
+        self.assertFalse(result.get("duplicate"))
+        dumped = json.dumps(result)
+        self.assertNotIn("paper-secret", dumped)
+        self.assertNotIn("PA123HIDE", dumped)
+        self.assertTrue(any(method == "POST" and url.endswith("/v2/orders") for url, method, _data in calls))
+        self.assertTrue(all(PAPER_BROKER_HOST in url for url, _method, _data in calls))
+        self.assertFalse(any(("://" + LIVE_BROKER_HOST) in url for url, _method, _data in calls))
+
+    def test_duplicate_client_order_id_does_not_post_again(self):
+        calls = []
+
+        def env(name):
+            return _env(name, {"SIGNAL_SIM_ALPACA_PAPER_SUBMIT": "1"})
+
+        def urlopen(request, timeout=None):
+            calls.append((request.full_url, request.get_method()))
+            if "orders:by_client_order_id" in request.full_url:
+                return _json_response(
+                    {
+                        "id": "ord-existing",
+                        "client_order_id": "dup-1",
+                        "status": "filled",
+                        "symbol": "QQQ",
+                        "qty": "1",
+                        "side": "buy",
+                    }
+                )
+            raise AssertionError("duplicate path must not POST")
+
+        with mock.patch("signal_sim.paper.read_env", side_effect=env), mock.patch(
+            "signal_sim.runtime_env.read_env", side_effect=env
+        ), mock.patch(
+            "signal_sim.alpaca_paper.urllib.request.urlopen", side_effect=urlopen
+        ):
+            client = paper_broker_client(PAPER_BROKER_HOST)
+            result = client.post_paper_order(
+                {
+                    "symbol": "QQQ",
+                    "qty": "1",
+                    "side": "buy",
+                    "type": "market",
+                    "time_in_force": "day",
+                    "client_order_id": "dup-1",
+                },
+                explicit=True,
+            )
+        self.assertEqual(result["id"], "ord-existing")
+        self.assertTrue(result["duplicate"])
+        self.assertTrue(result["submitted"])
+        self.assertTrue(all(method == "GET" for _url, method in calls))
+        self.assertFalse(any("/v2/orders" in url and method == "POST" for url, method in calls))
+
+    def test_paper_submit_cli_flag_zero_never_posts(self):
+        calls = []
+
+        def env(name):
+            return _env(name, {"SIGNAL_SIM_ALPACA_PAPER_SUBMIT": "0"})
+
+        printed = io.StringIO()
+        error = io.StringIO()
+        with mock.patch("signal_sim.paper.read_env", side_effect=env), mock.patch(
+            "signal_sim.runtime_env.read_env", side_effect=env
+        ), mock.patch(
+            "signal_sim.alpaca_paper.urllib.request.urlopen",
+            side_effect=lambda request, timeout=None: calls.append(request) or _json_response({}),
+        ) as urlopen, redirect_stdout(printed), redirect_stderr(error):
+            code = cli.main(["paper-submit", "--symbol", "SPY", "--qty", "1"])
+        self.assertEqual(code, 2)
+        self.assertIn("SIGNAL_SIM_ALPACA_PAPER_SUBMIT", error.getvalue())
+        self.assertNotIn("paper-secret", printed.getvalue() + error.getvalue())
+        urlopen.assert_not_called()
+        self.assertEqual(calls, [])
+
+    def test_paper_submit_cli_mocked_post_when_flag_one(self):
+        calls = []
+
+        def env(name):
+            return _env(name, {"SIGNAL_SIM_ALPACA_PAPER_SUBMIT": "1"})
+
+        def urlopen(request, timeout=None):
+            calls.append((request.full_url, request.get_method()))
+            url = request.full_url
+            if url.endswith("/v2/account"):
+                return _json_response({"status": "ACTIVE", "cash": "100000", "equity": "100000"})
+            if url.endswith("/v2/positions"):
+                return _json_response([])
+            if url.endswith("/v2/clock"):
+                return _json_response({"is_open": False, "timestamp": "2026-09-04T12:00:00Z"})
+            if "orders:by_client_order_id" in url:
+                raise urllib.error.HTTPError(url, 404, "not found", hdrs=None, fp=io.BytesIO(b""))
+            if request.get_method() == "POST" and url.endswith("/v2/orders"):
+                return _json_response(
+                    {
+                        "id": "ord-cli-1",
+                        "client_order_id": json.loads(request.data.decode("utf-8"))["client_order_id"],
+                        "status": "accepted",
+                        "symbol": "SPY",
+                        "qty": "1",
+                        "side": "buy",
+                    }
+                )
+            if url.endswith("/v2/orders") or "/v2/orders?" in url:
+                return _json_response(
+                    [{"id": "ord-cli-1", "status": "accepted", "symbol": "SPY", "qty": "1"}]
+                )
+            raise AssertionError(url)
+
+        printed = io.StringIO()
+        error = io.StringIO()
+        with mock.patch("signal_sim.paper.read_env", side_effect=env), mock.patch(
+            "signal_sim.runtime_env.read_env", side_effect=env
+        ), mock.patch(
+            "signal_sim.alpaca_paper.urllib.request.urlopen", side_effect=urlopen
+        ), redirect_stdout(printed), redirect_stderr(error):
+            code = cli.main(["paper-submit", "--symbol", "SPY", "--qty", "1"])
+        self.assertEqual(code, 0)
+        payload = json.loads(printed.getvalue())
+        self.assertTrue(payload["ok"])
+        self.assertTrue(payload["submitted"])
+        self.assertEqual(payload["order"]["id"], "ord-cli-1")
+        self.assertEqual(payload["order"]["status"], "accepted")
+        dumped = printed.getvalue() + error.getvalue()
+        self.assertNotIn("paper-secret", dumped)
+        self.assertTrue(any(method == "POST" and url.endswith("/v2/orders") for url, method in calls))
+        self.assertTrue(all(PAPER_BROKER_HOST in url for url, _method in calls))
 
 
 def _paper_keys_present():

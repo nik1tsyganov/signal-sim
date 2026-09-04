@@ -15,12 +15,14 @@ from .live_feeds import LiveFeedConfigError, missing_live_feed_keys, pull_live_f
 from .ledger import WRITE_REFUSED, inspect_ledger
 from .paper import (
     LiveEndpointError,
+    PaperSubmitRefused,
     missing_paper_keys,
     paper_broker_client,
     paper_host,
     paper_submit_enabled,
+    require_paper_submit,
 )
-from .rebalance import apply_local_rebalance, proposed_rebalance
+from .rebalance import apply_local_rebalance, proposed_rebalance, submit_paper_rebalance
 from .runtime_env import paper_submit_flag, runtime_env_status
 from .sim import resolve_mark_book_path
 from .store import EventStore
@@ -183,7 +185,7 @@ def _parser() -> argparse.ArgumentParser:
     )
     rebalance = commands.add_parser(
         "rebalance",
-        help="print proposed paper rebalance tickets; --apply-local fills the local ledger (no POST)",
+        help="print proposed paper rebalance tickets; --apply-local is local-only; --submit-paper POSTs paper",
     )
     rebalance.add_argument(
         "--fixtures",
@@ -217,6 +219,34 @@ def _parser() -> argparse.ArgumentParser:
     rebalance.add_argument(
         "--ledger",
         help="sqlite ledger path (required with --apply-local; unused for print-only)",
+    )
+    rebalance.add_argument(
+        "--submit-paper",
+        action="store_true",
+        help="POST sized tickets to Alpaca paper (requires flag=1; default --limit 1)",
+    )
+    rebalance.add_argument(
+        "--limit",
+        type=int,
+        default=1,
+        help="max paper tickets to POST with --submit-paper (default 1; smallest notional first)",
+    )
+    paper_submit = commands.add_parser(
+        "paper-submit",
+        help="POST one tiny Alpaca paper order (requires flag=1, paper host, keys)",
+    )
+    paper_submit.add_argument("--symbol", required=True, help="universe ticker, e.g. SPY")
+    paper_submit.add_argument(
+        "--side",
+        choices=("buy", "sell"),
+        default="buy",
+        help="order side (default buy)",
+    )
+    paper_submit.add_argument("--qty", help="share quantity (use this or --notional)")
+    paper_submit.add_argument("--notional", help="dollar notional (use this or --qty)")
+    paper_submit.add_argument(
+        "--client-order-id",
+        help="idempotency key (max 48 chars; default is a stable paper-submit key)",
     )
     ledger = commands.add_parser(
         "ledger",
@@ -438,8 +468,9 @@ def main(argv: list[str] | None = None) -> int:
             return 2
         if paper_submit_enabled():
             print(
-                "SIGNAL_SIM_ALPACA_PAPER_SUBMIT=1; this build still "
-                "refuses remote paper POSTs. Fills stay on the local ledger.",
+                "SIGNAL_SIM_ALPACA_PAPER_SUBMIT=1; remote paper POST still "
+                "requires paper-submit or rebalance --submit-paper. "
+                "paper-account stays read-only.",
                 file=sys.stderr,
             )
         try:
@@ -488,14 +519,27 @@ def main(argv: list[str] | None = None) -> int:
             )
             return 2
         apply_local = getattr(args, "apply_local", False)
+        submit_paper = getattr(args, "submit_paper", False)
         ledger = getattr(args, "ledger", None)
+        if apply_local and submit_paper:
+            print(
+                "rebalance --apply-local and --submit-paper are separate; use one",
+                file=sys.stderr,
+            )
+            return 2
         if apply_local and not ledger:
             print("rebalance --apply-local requires --ledger", file=sys.stderr)
             return 2
-        if paper_submit_enabled():
+        if submit_paper:
+            try:
+                require_paper_submit(explicit=True)
+            except (PaperSubmitRefused, LiveEndpointError, ValueError) as error:
+                print(str(error), file=sys.stderr)
+                return 2
+        elif paper_submit_enabled():
             print(
-                "SIGNAL_SIM_ALPACA_PAPER_SUBMIT=1; this build still "
-                "refuses remote paper POSTs. --apply-local writes the local "
+                "SIGNAL_SIM_ALPACA_PAPER_SUBMIT=1; remote paper POST still "
+                "requires --submit-paper. --apply-local writes the local "
                 "ledger only.",
                 file=sys.stderr,
             )
@@ -517,7 +561,17 @@ def main(argv: list[str] | None = None) -> int:
                     ledger_path=ledger,
                     fixtures=fixtures,
                 )
+            elif submit_paper:
+                report = submit_paper_rebalance(
+                    report,
+                    client,
+                    limit=getattr(args, "limit", 1),
+                    explicit=True,
+                )
         except LiveFeedConfigError as error:
+            print(str(error), file=sys.stderr)
+            return 2
+        except PaperSubmitRefused as error:
             print(str(error), file=sys.stderr)
             return 2
         except LiveEndpointError as error:
@@ -532,6 +586,77 @@ def main(argv: list[str] | None = None) -> int:
         report = dict(report)
         report["submit_flag"] = paper_submit_flag()
         report["runtime_env"] = runtime_env_status()
+        print(json.dumps(report, separators=(",", ":")))
+        return 0 if report.get("ok") is True else 1
+    if args.command == "paper-submit":
+        missing = missing_paper_keys()
+        if missing:
+            print("paper-submit missing env: " + ", ".join(missing), file=sys.stderr)
+            return 2
+        qty = getattr(args, "qty", None)
+        notional = getattr(args, "notional", None)
+        if (qty in (None, "")) == (notional in (None, "")):
+            print("paper-submit requires exactly one of --qty or --notional", file=sys.stderr)
+            return 2
+        try:
+            require_paper_submit(explicit=True)
+            client = paper_broker_client(paper_host())
+            account = client.account()
+            clock = client.clock()
+            key = getattr(args, "client_order_id", None)
+            if not key:
+                size_label = f"q:{qty}" if qty not in (None, "") else f"n:{notional}"
+                key = f"ps:{args.symbol}:{args.side}:{size_label}"
+            proposal = {
+                "symbol": args.symbol,
+                "side": args.side,
+                "client_order_id": key,
+            }
+            if qty not in (None, ""):
+                proposal["qty"] = qty
+            else:
+                proposal["notional"] = notional
+            order = client.post_paper_order(proposal, explicit=True)
+            positions = client.positions()
+            orders = client.orders()
+        except (PaperSubmitRefused, LiveEndpointError, ValueError, RuntimeError, NotImplementedError) as error:
+            print(str(error), file=sys.stderr)
+            return 2
+        report = {
+            "mode": "alpaca-paper-submit",
+            "ok": True,
+            "submitted": True,
+            "order_post": "paper",
+            "submit_flag": paper_submit_flag(),
+            "clock": clock,
+            "account": {
+                field: account.get(field)
+                for field in (
+                    "status",
+                    "currency",
+                    "cash",
+                    "equity",
+                    "buying_power",
+                    "trading_blocked",
+                    "account_blocked",
+                )
+            },
+            "order": order,
+            "orders": orders,
+            "positions": {
+                "n": len(positions),
+                "symbols": {
+                    str(row.get("symbol")): str(row.get("qty") or "0")
+                    for row in positions
+                    if row.get("symbol")
+                },
+            },
+            "runtime_env": runtime_env_status(),
+            "note": (
+                "Alpaca paper POST only. Not live money. Kill by setting "
+                "SIGNAL_SIM_ALPACA_PAPER_SUBMIT=0."
+            ),
+        }
         print(json.dumps(report, separators=(",", ":")))
         return 0 if report.get("ok") is True else 1
     if args.command in {"ledger", "paper-ledger"}:

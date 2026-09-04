@@ -33,6 +33,7 @@ With owner keys on a local machine (never committed):
 - **Alpaca paper read smoke:** `python3 -m signal_sim paper-account` constructs the paper-host client when `ALPACA_PAPER_API_KEY` and `ALPACA_PAPER_API_SECRET` are set. It GETs `/v2/account`, `/v2/positions`, and `/v2/clock` on the paper host. `ALPACA_PAPER_API_BASE_URL` is optional and defaults to the paper HTTPS origin. A non-paper Alpaca host or IBKR live port still raises `LiveEndpointError`. Add `--dry-run` to validate a sample order payload in memory. This path does not POST an order.
 - **Proposed rebalance dry-run:** `python3 -m signal_sim rebalance --fixtures` reads that same paper account and positions, sizes the existing fixture cluster-drift target book (or `rank_candidates` with `--rank`), and prints intended tickets: symbol, side, qty, notional, rationale. Qty prefers fixture `entry_px`. If a ranked name has no fixture mark, the client may GET a paper IEX last trade or snapshot `latestTrade` and size from that observed price. It never invents a quote. Names still unmarked stay `no_mark`. `--live` reuses `feeds --live` and folds Quiver / World Monitor events into the existing Hawkes overlay (drift book only). Default is print-only: no ledger write and no broker POST. Paper last-trade marks are not execution marks.
 - **Local apply of those tickets:** `python3 -m signal_sim rebalance --fixtures --apply-local --ledger <path>` records the same dry-run tickets on the local SQLite ledger through `submit_paper_order`. Only tickets with `mark_kind=fixture_mark` and `mark_source=fixture` fill. Paper IEX sizing marks are skipped (`paper_mark_not_execution`) and must not be claimed as broker fills. This still does not POST `/v2/orders`.
+- **Alpaca paper submit (off by default):** `python3 -m signal_sim paper-submit --symbol SPY --qty 1` or `python3 -m signal_sim rebalance --fixtures --submit-paper` (default `--limit 1`, smallest notional first) POST to the paper host only when `SIGNAL_SIM_ALPACA_PAPER_SUBMIT=1`, the resolved base URL is the paper host, keys are present, and the CLI flag is explicit. Live hosts and any other base URL are refused. This is paper only. It is not live-money trading.
 
 Fills go through `submit_paper_order` only. A fill must be `kind=fixture_mark` and `source=fixture`. Research or vendor mark kinds refuse. Constructing a live Alpaca host or IBKR live ports raises and does not open a socket. A present or unreadable `KILL` file refuses the order. Every fill writes an R8 provenance line that cites `params_sha256`. The local ledger fill gate is unchanged: Alpaca paper reads do not become execution marks.
 
@@ -79,6 +80,8 @@ python3 -m signal_sim rebalance --fixtures
 python3 -m signal_sim rebalance --fixtures --live
 python3 -m signal_sim rebalance --fixtures --apply-local --ledger paper-rebalance.sqlite
 python3 -m signal_sim ledger --ledger paper-rebalance.sqlite --fixtures
+python3 -m signal_sim paper-submit --symbol SPY --qty 1
+python3 -m signal_sim rebalance --fixtures --submit-paper --limit 1
 ```
 
 `runtime-env` prints presence booleans only. It never prints secret values.
@@ -89,7 +92,7 @@ Unittest integration cases are marked with `skipUnless` the relevant env names a
 python3 -m unittest tests.test_live_feeds tests.test_alpaca_paper tests.test_rebalance -v
 ```
 
-`SIGNAL_SIM_ALPACA_PAPER_SUBMIT` defaults to `0`. `1` is reserved for a later paper-order POST. This build still refuses remote submits even if that flag is set. Default is read-only account smoke. `rebalance --fixtures` is print-only. `--apply-local` writes fixture-mark fills to `--ledger` only. `ledger --ledger` is the morning-brief read of that file (counts, sides, qtys, mark kinds, optional fixture-mark MTM). It does not POST and does not write. `--live` needs intel keys and still does not POST. Fills stay on the local ledger.
+`SIGNAL_SIM_ALPACA_PAPER_SUBMIT` defaults to `0`. That is the kill switch: omit the name or set `0` and remote paper POSTs are refused. Set `1` **and** pass `paper-submit` or `rebalance --fixtures --submit-paper` to POST on the paper host only. A non-paper `ALPACA_PAPER_API_BASE_URL` is refused. Default is still print-only / read-only. `--apply-local` writes fixture-mark fills to `--ledger` only and cannot be combined with `--submit-paper`. `ledger --ledger` is the morning-brief read of that file (counts, sides, qtys, mark kinds, optional fixture-mark MTM). It does not POST and does not write. `--live` needs intel keys and still does not POST. Local-ledger fills stay on `submit_paper_order`.
 
 A 2026-09-04 Cloud Runtime Secrets pass (presence only; no secret values) is recorded in [paper smoke results](paper-smoke-results.md). That run kept the submit flag at `0`.
 
@@ -111,7 +114,7 @@ Runtime Secrets (values never go in the repo, PR, or logs):
 Plain env on that same environment (not secrets, but still not committed):
 
 - `ALPACA_PAPER_API_BASE_URL=https://paper-api.alpaca.markets`
-- `SIGNAL_SIM_ALPACA_PAPER_SUBMIT=0` (default; omit or `0` keeps paper POSTs off)
+- `SIGNAL_SIM_ALPACA_PAPER_SUBMIT=0` (default; omit or `0` keeps paper POSTs off). Set `1` to allow an explicit `paper-submit` / `--submit-paper`. Set back to `0` to kill remote paper POSTs.
 
 GitHub Actions CI stays secret-free and only runs fixture rails/smoke. A cloud run without Runtime Secrets is expected to skip live integration tests and exit 2 on `feeds --live` / `paper-account` / `rebalance --fixtures`. A run that is not on `signal-sim-paper` should not invent keys or write them into files.
 
@@ -142,7 +145,7 @@ These are not missing code paths to invent. They are owner actions or later prod
 | Blocker | Why it is blocked | What the repo does today |
 |---|---|---|
 | Alpaca paper keys on GitHub CI | Keys stay in Cursor Runtime Secrets or the owner machine. Never commit them. | Paper host without keys still raises `NotImplementedError` and does not open a socket. With keys, `paper-account` is a read-only GET smoke. Live Alpaca hosts and IBKR live ports raise. |
-| Remote Alpaca paper submits | Safer default is local-ledger fills. | `submit_paper_order` is still the only order path. `rebalance --fixtures` prints tickets only. `--apply-local` fills the local ledger from fixture-mark tickets. `SIGNAL_SIM_ALPACA_PAPER_SUBMIT=1` does not enable a POST in this build. |
+| Remote Alpaca paper submits | Safer default is local-ledger fills and print-only. | Flag defaults to `0`. `1` plus `paper-submit` or `rebalance --fixtures --submit-paper` POSTs on the paper host only. Live / non-paper URLs refuse. `--apply-local` stays local. Kill by setting the flag to `0`. |
 | Paid Quiver commercial-use terms | Key presence is not a terms review. | `feeds --live` calls Quiver when `QUIVER_API_KEY` is set. Without the key it exits 2 / raises `NotImplementedError` and does not open HTTP. |
 | Paid World Monitor key on CI | Same as Quiver: owner-machine only. | `feeds --live` calls WM when `WORLD_MONITOR_KEY` is set. Without the key it exits 2. Recorded JSON under `fixtures/recorded/worldmonitor/` still attaches as feature flags only. |
 | Honest vendor bars | Yahoo / Stooq / yfinance are not execution marks. | Fills require `fixture_mark`. Research or vendor kinds refuse. Jump-diffusion stays documentation-only until honest intraday bars exist. |
@@ -160,6 +163,7 @@ There is no TrendRadar live client and no GPL/AGPL vendoring.
 - `paper-account` is a paper-host read smoke. It is not a live-money balance, not a fill, and not permission to trade live.
 - `rebalance --fixtures` tickets are a proposed book versus paper positions. They are not a broker fill, not alpha, and not permission to POST. A paper last trade or snapshot used for qty is a sizing mark only, not a `fixture_mark` fill.
 - `rebalance --fixtures --apply-local` grows a local simulated book from those same tickets. It is a fixture-mark ledger fill, not a broker submit and not a live-money trade. Paper IEX marks never become claimed fills.
+- `paper-submit` / `rebalance --fixtures --submit-paper` is an Alpaca **paper** POST. It is not live money, not alpha, and not permission to point the client at a live host.
 - `ledger --ledger` is a read of that local simulated book. Fixture-mark MTM is plumbing, not alpha.
 - The desk is paper-only and loopback-only. It is not a production broker UI.
 
