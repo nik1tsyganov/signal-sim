@@ -20,6 +20,7 @@ import urllib.request
 from typing import Any
 
 from .indicators import UNIVERSE
+from .universe import is_tradable_ticker
 
 _USER_AGENT = "signal-sim-paper/0.1"
 _DATA_HOST_PREFIX = "data."
@@ -132,11 +133,22 @@ class AlpacaPaperClient:
 
     mode = "alpaca-paper-read"
 
-    def __init__(self, base_url: str, api_key: str, api_secret: str):
+    def __init__(
+        self,
+        base_url: str,
+        api_key: str,
+        api_secret: str,
+        universe: tuple[str, ...] | None = None,
+    ):
         self._base_url = str(base_url).rstrip("/")
         self._data_base_url = "https://" + paper_data_host()
         self._api_key = api_key
         self._api_secret = api_secret
+        self._universe = frozenset(UNIVERSE if universe is None else universe)
+
+    def set_universe(self, universe: Any) -> None:
+        names = [item for item in (universe or ()) if is_tradable_ticker(item)]
+        self._universe = frozenset(names or UNIVERSE)
 
     def __repr__(self) -> str:
         return f"AlpacaPaperClient(mode={self.mode!r}, base_url={self._base_url!r})"
@@ -192,7 +204,7 @@ class AlpacaPaperClient:
     def _universe_symbols(self, symbols: Any) -> list[str]:
         names: list[str] = []
         for item in symbols or []:
-            if item in UNIVERSE and item not in names:
+            if item in self._universe and item not in names:
                 names.append(str(item))
         return names
 
@@ -287,7 +299,7 @@ class AlpacaPaperClient:
                 "reason": "proposal must be a mapping",
             }
         ticker = proposal.get("symbol") or proposal.get("ticker")
-        if ticker not in UNIVERSE:
+        if ticker not in self._universe:
             return {
                 "ok": False,
                 "submitted": False,
@@ -360,7 +372,7 @@ class AlpacaPaperClient:
                 "reason": "proposal must be a mapping",
             }
         ticker = proposal.get("ticker") or proposal.get("symbol")
-        if ticker not in UNIVERSE:
+        if ticker not in self._universe:
             return {
                 "ok": False,
                 "submitted": False,

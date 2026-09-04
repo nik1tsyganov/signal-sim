@@ -2,6 +2,14 @@
 
 What landed in the paper operate loop. This is not a live trading log. Every PnL number the loop prints is **fixture-mark PnL**, not alpha.
 
+## Unreleased — daily research + live sizing + buy/sell
+
+- **Strategy growth:** `python3 -m signal_sim research --live` pulls Quiver congress/insider/gov/news plus World Monitor, expands the operating universe (fixture set ∪ top-N allowlisted intel tickers), ranks / diagnoses / intensity on that set, and writes `docs/research/YYYY-MM-DD.json`. That file is the next rebalance book, not a decorative dump. No PII.
+- **Live-price sizing:** `--live` and `--submit-paper` size qty from an observed paper IEX last trade or snapshot `latestTrade` when one exists. Fixture `entry_px` (including the $36/$40 QQQ/SPY research marks) is the fallback only. Offline fixture-only mode still prefers fixture marks. Never invents a price.
+- **Buy and sell:** rebalance diffs the target book against paper positions. Leftover names not in the book get close/sell tickets. Opens and increases stay buys. `--submit-paper` POSTs sells as well as buys.
+- **Daily ops:** [daily-ops.md](docs/daily-ops.md) — morning `research --live`, after-open print `rebalance --fixtures --live`, optional `--submit-paper`, then `paper-performance --write`. Kill switch remains `SIGNAL_SIM_ALPACA_PAPER_SUBMIT=0`. Do not spray another full-book submit while earlier paper orders are still open.
+- **Paper only.** No live-money trading.
+
 ## Unreleased — paper submit smoke
 
 - **Recorded one-share paper POST:** [paper submit smoke](docs/paper-submit-smoke.md) runs `paper-account`, then `paper-submit --symbol SPY --qty 1` once, on `main` after PR 9. Cite: order `d7629fcb-ba1a-4c8d-a732-63b0f61cf12a`, `client_order_id=ps:SPY:buy:q:1`, immediate status `pending_new`, read-back `new`, `filled_qty=0`. Clock was closed. Full rebalance book was not submitted. Paper host only.

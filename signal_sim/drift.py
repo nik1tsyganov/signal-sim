@@ -37,10 +37,14 @@ def _aware(value: datetime | str) -> datetime:
     return datetime.fromisoformat(value.replace("Z", "+00:00"))
 
 
-def cluster_state(events: list[Event], when: datetime) -> dict[str, dict[str, Any]]:
+def cluster_state(
+    events: list[Event],
+    when: datetime,
+    universe: tuple[str, ...] | None = None,
+) -> dict[str, dict[str, Any]]:
     """Recency-weighted cluster size per ticker. Sign is +1: fixtures have no negative tone."""
     by_ticker: dict[str, dict[str, Any]] = {}
-    for row in online_clusters(events, when):
+    for row in online_clusters(events, when, universe=universe):
         ticker = str(row["ticker"])
         last = _aware(str(row["last_seen_at"]))
         age_hours = max(0.0, (when - last).total_seconds() / 3600.0)
@@ -71,18 +75,19 @@ def drift_targets(
     size_frac: float,
     horizon_hours: float,
     intensities: dict[str, float] | None = None,
+    universe: tuple[str, ...] | None = None,
 ) -> list[dict[str, Any]]:
     """Turn cluster state into a signed target book. Not a return forecast.
 
     Gross and name caps stay with the paper sizer so no_mark names do not
     consume budget before replay refuses them.
     """
-    states = cluster_state(events, when)
+    states = cluster_state(events, when, universe=universe)
     peak = max((abs(float(row["state"])) for row in states.values()), default=0.0)
-    confirms = filed_confirm_features(events, when)
-    lags = filed_lag_features(events, when)
-    intel = intel_features(events, when)
-    hotspot = trendradar_features(events, when)
+    confirms = filed_confirm_features(events, when, universe=universe)
+    lags = filed_lag_features(events, when, universe=universe)
+    intel = intel_features(events, when, universe=universe)
+    hotspot = trendradar_features(events, when, universe=universe)
     ranked: list[dict[str, Any]] = []
     for row in sorted(states.values(), key=lambda item: (-abs(float(item["state"])), str(item["ticker"]))):
         if peak <= 0:
@@ -144,11 +149,14 @@ def fixture_drift_book(
     intensity: bool = False,
     extra_events: list[Event] | None = None,
     intensity_when: datetime | None = None,
+    universe: tuple[str, ...] | None = None,
+    include_extra_in_clusters: bool = False,
 ) -> dict[str, Any]:
     """Score fixture prints at the mark-book decision. No vendor bars.
 
-    extra_events and intensity_when only feed the Hawkes overlay. Cluster
-    state stays on fixture prints at decision_at.
+    By default extra_events and intensity_when only feed the Hawkes overlay.
+    Live research sets include_extra_in_clusters so new intel names can enter
+    the target book. Offline fixture drift stays on fixture prints at decision_at.
     """
     from .sim import load_mark_book
 
@@ -164,6 +172,11 @@ def fixture_drift_book(
     horizon_hours = (book["exit_at"] - book["decision_at"]).total_seconds() / 3600.0
     intensities = None
     intensity_cut = "decision_at"
+    cluster_events = list(events)
+    cluster_when = book["decision_at"]
+    if extra_events and include_extra_in_clusters:
+        cluster_events.extend(extra_events)
+        cluster_when = intensity_when if intensity_when is not None else book["decision_at"]
     if intensity:
         from .hawkes import intensity_map
 
@@ -171,20 +184,22 @@ def fixture_drift_book(
         if extra_events:
             material.extend(extra_events)
         when = intensity_when if intensity_when is not None else book["decision_at"]
-        intensities = intensity_map(material, when)
+        intensities = intensity_map(material, when, universe=universe)
         if extra_events or intensity_when is not None:
             intensity_cut = "now"
     targets = drift_targets(
-        events,
-        when=book["decision_at"],
+        cluster_events,
+        when=cluster_when,
         size_frac=float(book["size_frac"]),
         horizon_hours=horizon_hours,
         intensities=intensities,
+        universe=universe,
     )
-    intel = intel_features(feature_events, book["decision_at"])
-    hotspot = trendradar_features(events, book["decision_at"])
-    lags = filed_lag_features(events, book["decision_at"])
-    confirms = filed_confirm_features(events, book["decision_at"])
+    feature_cut = cluster_when
+    intel = intel_features(feature_events + list(extra_events or []), feature_cut, universe=universe)
+    hotspot = trendradar_features(cluster_events, feature_cut, universe=universe)
+    lags = filed_lag_features(cluster_events, feature_cut, universe=universe)
+    confirms = filed_confirm_features(cluster_events, feature_cut, universe=universe)
     for row in targets:
         feat = intel.get(str(row["ticker"]), {})
         row["intel_brief"] = int(feat.get("intel_brief", 0))
@@ -212,6 +227,7 @@ def fixture_drift_book(
         "confirms": confirms,
         "filing_lags": lags,
         "targets": targets,
+        "universe": list(universe) if universe is not None else None,
     }
     if intensity:
         note = INTENSITY_NOTE

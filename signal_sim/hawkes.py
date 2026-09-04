@@ -47,11 +47,15 @@ def _hours(later: datetime, earlier: datetime) -> float:
     return (later - earlier).total_seconds() / _SECONDS_PER_HOUR
 
 
-def _relevant(events: Iterable[Event]) -> list[tuple[datetime, float]]:
+def _relevant(
+    events: Iterable[Event],
+    universe: tuple[str, ...] | None = None,
+) -> list[tuple[datetime, float]]:
+    allowed = UNIVERSE if universe is None else universe
     return sorted(
         (event.observed_at, mark)
         for event in events
-        if event.ticker in UNIVERSE and (mark := _mark(event)) > 0
+        if event.ticker in allowed and (mark := _mark(event)) > 0
     )
 
 
@@ -97,9 +101,11 @@ def intensity_map(
     baseline: float = BASELINE,
     alpha: float = EXCITATION,
     beta: float = DECAY,
+    universe: tuple[str, ...] | None = None,
 ) -> dict[str, float]:
     """Declared-parameter intensity per universe ticker. Not a fit."""
     material = list(events)
+    names = UNIVERSE if universe is None else universe
     return {
         ticker: intensity_at(
             (event for event in material if event.ticker == ticker),
@@ -107,8 +113,9 @@ def intensity_map(
             baseline=baseline,
             alpha=alpha,
             beta=beta,
+            universe=names,
         )
-        for ticker in UNIVERSE
+        for ticker in names
     }
 
 
@@ -126,12 +133,13 @@ def intensity_at(
     baseline: float = BASELINE,
     alpha: float = EXCITATION,
     beta: float = DECAY,
+    universe: tuple[str, ...] | None = None,
 ) -> float:
     """Return hourly conditional intensity at ``when`` using only prior observations."""
     _parameters(baseline, alpha, beta)
     excitation = math.fsum(
         alpha * mark * math.exp(-beta * _hours(when, observed_at))
-        for observed_at, mark in _relevant(events)
+        for observed_at, mark in _relevant(events, universe)
         if observed_at < when
     )
     return float(baseline + excitation)

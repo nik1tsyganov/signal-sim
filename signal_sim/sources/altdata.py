@@ -19,12 +19,14 @@ import json
 import math
 import os
 import re
+import urllib.error
 import urllib.request
 from datetime import date, datetime, timezone
 
 from signal_sim.events import Event
 from signal_sim.indicators import UNIVERSE
 from signal_sim.safety import assert_event_timestamps
+from signal_sim.universe import is_tradable_ticker
 
 KINDS = ("congress_trade", "insider", "gov_contract")
 TRANSACTIONS = ("purchase", "sale")
@@ -100,7 +102,18 @@ def load_events(dir_path: str) -> list[dict]:
 
 _HOST = "https://api.quiverquant.com"
 _DEFAULT_DATASETS = ("congresstrading",)
+RESEARCH_DATASETS = ("congresstrading", "insiders", "govcontracts", "quivernews")
 _USER_AGENT = "signal-sim-paper/0.1"
+
+
+def _accept_set(accept):
+    if accept is None:
+        return set(UNIVERSE)
+    return {ticker for ticker in accept if is_tradable_ticker(ticker)}
+
+
+def _ticker_accepted(ticker, accept):
+    return ticker in _accept_set(accept)
 
 
 def read_env(name):
@@ -210,54 +223,59 @@ def _fetch(dataset, key):
     return payload
 
 
-def _congress_events(payload, now):
+def _congress_events(payload, now, accept=None):
     events = []
+    allowed = _accept_set(accept)
     for index, raw in enumerate(payload):
         ticker = _first(raw, "Ticker", "ticker")
         legacy_test_shape = "Ticker" not in raw and all(
             name in raw
             for name in ("ticker", "representative", "trade_date", "report_date")
         )
-        if ticker not in UNIVERSE and not legacy_test_shape:
+        if ticker not in allowed and not legacy_test_shape:
             continue
         transaction = _transaction(_first(raw, "Transaction", "transaction"))
         if transaction is None:
             continue
-        occurred_at = _iso_timestamp(
-            _first(raw, "TransactionDate", "trade_date", "occurred_at")
-        )
-        filed_at = _iso_timestamp(
-            _first(raw, "ReportDate", "report_date", "filed_at")
-        )
-        mapped = {
-            "id": _row_id(raw, "congresstrading", index),
-            "source": "quiver",
-            "kind": "congress_trade",
-            "ticker": ticker,
-            "person": _first(raw, "Representative", "representative") or "Unknown",
-            "transaction": transaction,
-            "amount_range_usd": _amount_range(raw),
-            "occurred_at": occurred_at,
-            "filed_at": filed_at,
-            "observed_at": _observed_at(now, filed_at),
-            "raw_ref": f"quiver:congresstrading:{_row_id(raw, 'congresstrading', index)}",
-        }
-        chamber = _first(raw, "House", "house", "chamber")
-        if chamber is not None:
-            mapped["chamber"] = chamber
-        description = _first(raw, "Description", "description")
-        if description is not None:
-            mapped["entities"] = [str(description)]
-        events.append(_validated(mapped, "quiver.live.congresstrading"))
+        try:
+            occurred_at = _iso_timestamp(
+                _first(raw, "TransactionDate", "trade_date", "occurred_at")
+            )
+            filed_at = _iso_timestamp(
+                _first(raw, "ReportDate", "report_date", "filed_at")
+            )
+            mapped = {
+                "id": _row_id(raw, "congresstrading", index),
+                "source": "quiver",
+                "kind": "congress_trade",
+                "ticker": ticker,
+                "person": _first(raw, "Representative", "representative") or "Unknown",
+                "transaction": transaction,
+                "amount_range_usd": _amount_range(raw),
+                "occurred_at": occurred_at,
+                "filed_at": filed_at,
+                "observed_at": _observed_at(now, filed_at),
+                "raw_ref": f"quiver:congresstrading:{_row_id(raw, 'congresstrading', index)}",
+            }
+            chamber = _first(raw, "House", "house", "chamber")
+            if chamber is not None:
+                mapped["chamber"] = chamber
+            description = _first(raw, "Description", "description")
+            if description is not None:
+                mapped["entities"] = [str(description)]
+            events.append(_validated(mapped, "quiver.live.congresstrading"))
+        except (ValueError, TypeError):
+            continue
     events.sort(key=lambda pair: pair[1])
     return [event for event, _filed in events]
 
 
-def _insider_events(payload, now):
+def _insider_events(payload, now, accept=None):
     events = []
+    allowed = _accept_set(accept)
     for index, raw in enumerate(payload):
         ticker = _first(raw, "Ticker", "ticker")
-        if ticker not in UNIVERSE:
+        if ticker not in allowed:
             continue
         transaction = _transaction(
             _first(raw, "AcquiredDisposedCode", "acquired_disposed_code", "transaction"),
@@ -265,32 +283,35 @@ def _insider_events(payload, now):
         )
         if transaction is None:
             continue
-        occurred_at = _iso_timestamp(_first(raw, "Date", "date", "occurred_at"))
-        filed_at = _iso_timestamp(
-            _first(raw, "FiledDate", "FilingDate", "ReportDate", "filed_at")
-            or occurred_at
-        )
-        mapped = {
-            "id": _row_id(raw, "insiders", index),
-            "source": "quiver",
-            "kind": "insider",
-            "ticker": ticker,
-            "person": _first(raw, "Name", "name", "person") or "Unknown",
-            "transaction": transaction,
-            "amount_range_usd": _amount_range(raw),
-            "occurred_at": occurred_at,
-            "filed_at": filed_at,
-            "observed_at": _observed_at(now, filed_at),
-            "raw_ref": f"quiver:insiders:{_row_id(raw, 'insiders', index)}",
-        }
-        events.append(_validated(mapped, "quiver.live.insiders"))
+        try:
+            occurred_at = _iso_timestamp(_first(raw, "Date", "date", "occurred_at"))
+            filed_at = _iso_timestamp(
+                _first(raw, "FiledDate", "FilingDate", "ReportDate", "filed_at")
+                or occurred_at
+            )
+            mapped = {
+                "id": _row_id(raw, "insiders", index),
+                "source": "quiver",
+                "kind": "insider",
+                "ticker": ticker,
+                "person": _first(raw, "Name", "name", "person") or "Unknown",
+                "transaction": transaction,
+                "amount_range_usd": _amount_range(raw),
+                "occurred_at": occurred_at,
+                "filed_at": filed_at,
+                "observed_at": _observed_at(now, filed_at),
+                "raw_ref": f"quiver:insiders:{_row_id(raw, 'insiders', index)}",
+            }
+            events.append(_validated(mapped, "quiver.live.insiders"))
+        except (ValueError, TypeError):
+            continue
     events.sort(key=lambda pair: pair[1])
     return [event for event, _filed in events]
 
 
-def _canonical_event(raw, dataset, index, kind, occurred_at, filed_at, now):
+def _canonical_event(raw, dataset, index, kind, occurred_at, filed_at, now, accept=None):
     ticker = _first(raw, "Ticker", "ticker")
-    if ticker not in UNIVERSE:
+    if ticker not in _accept_set(accept):
         return None
     row_id = _row_id(raw, dataset, index)
     headline = _first(raw, "Headline", "headline", "Title", "title", "Description")
@@ -318,58 +339,73 @@ def _canonical_event(raw, dataset, index, kind, occurred_at, filed_at, now):
     )
 
 
-def _gov_contract_events(payload, now):
+def _gov_contract_events(payload, now, accept=None):
     events = []
+    allowed = _accept_set(accept)
     for index, raw in enumerate(payload):
-        if _first(raw, "Ticker", "ticker") not in UNIVERSE:
+        if _first(raw, "Ticker", "ticker") not in allowed:
             continue
-        occurred_at = _iso_timestamp(
-            _first(raw, "Date", "date", "StartDate", "start_date", "occurred_at")
-            or _first(raw, "AwardDate", "award_date")
-        )
-        filed_at = _iso_timestamp(
-            _first(
-                raw,
-                "FiledDate",
-                "FilingDate",
-                "ReportDate",
-                "AwardDate",
-                "filed_at",
-                "award_date",
+        try:
+            occurred_at = _iso_timestamp(
+                _first(raw, "Date", "date", "StartDate", "start_date", "occurred_at")
+                or _first(raw, "AwardDate", "award_date")
             )
-            or occurred_at
-        )
-        event = _canonical_event(
-            raw, "govcontracts", index, "gov_contract", occurred_at, filed_at, now
-        )
+            filed_at = _iso_timestamp(
+                _first(
+                    raw,
+                    "FiledDate",
+                    "FilingDate",
+                    "ReportDate",
+                    "AwardDate",
+                    "filed_at",
+                    "award_date",
+                )
+                or occurred_at
+            )
+            event = _canonical_event(
+                raw,
+                "govcontracts",
+                index,
+                "gov_contract",
+                occurred_at,
+                filed_at,
+                now,
+                accept=allowed,
+            )
+        except (ValueError, TypeError):
+            continue
         if event is not None:
             events.append(event)
     return events
 
 
-def _news_events(payload, now):
+def _news_events(payload, now, accept=None):
     events = []
+    allowed = _accept_set(accept)
     for index, raw in enumerate(payload):
-        if _first(raw, "Ticker", "ticker") not in UNIVERSE:
+        if _first(raw, "Ticker", "ticker") not in allowed:
             continue
-        occurred_at = _iso_timestamp(
-            _first(
-                raw,
-                "DateTime",
-                "Datetime",
-                "datetime",
-                "HeadlineTime",
-                "PublishedAt",
-                "Published",
-                "Timestamp",
-                "Time",
-                "Date",
-                "occurred_at",
+        try:
+            occurred_at = _iso_timestamp(
+                _first(
+                    raw,
+                    "DateTime",
+                    "Datetime",
+                    "datetime",
+                    "HeadlineTime",
+                    "PublishedAt",
+                    "Published",
+                    "Timestamp",
+                    "Time",
+                    "Date",
+                    "occurred_at",
+                )
             )
-        )
-        event = _canonical_event(
-            raw, "quivernews", index, "news", occurred_at, None, now
-        )
+            event = _canonical_event(
+                raw, "quivernews", index, "news", occurred_at, None, now, accept=allowed
+            )
+        except (ValueError, TypeError):
+            continue
         if event is not None:
             events.append(event)
     return events
@@ -383,7 +419,7 @@ _FETCHERS = {
 }
 
 
-def map_recorded(dataset, path, now=None):
+def map_recorded(dataset, path, now=None, accept=None):
     """Map a checked-in REST-shaped payload. No HTTP. Live stay stubbed without a key."""
     mapper = _FETCHERS.get(dataset)
     if mapper is None:
@@ -392,14 +428,16 @@ def map_recorded(dataset, path, now=None):
         payload = json.load(handle)
     if now is None:
         now = datetime.now(timezone.utc)
-    return mapper(payload, now)
+    return mapper(payload, now, accept=accept)
 
 
-def live(datasets=None):
+def live(datasets=None, accept=None):
     """Fetch and map selected Quiver live datasets.
 
     The default remains Congress-only so ``QuiverSource.live()`` stays the
     existing choke point. Tests replace ``urlopen`` and never call the network.
+    ``accept`` widens the ticker filter to an allowlist for research / live
+    universe expansion. Default stays the frozen fixture universe.
     """
     key = read_env("QUIVER_API_KEY")
     if not key:
@@ -415,8 +453,41 @@ def live(datasets=None):
         mapper = _FETCHERS.get(dataset)
         if mapper is None:
             raise ValueError(f"unknown Quiver dataset: {dataset!r}")
-        events.extend(mapper(_fetch(dataset, key), now))
+        try:
+            payload = _fetch(dataset, key)
+        except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, OSError):
+            # One 403/timeout must not kill congress or the daily research book.
+            continue
+        events.extend(mapper(payload, now, accept=accept))
     return events
+
+
+def as_event(raw):
+    """Coerce a mapped Quiver row into a canonical Event. No PII is required."""
+    if isinstance(raw, Event):
+        return raw
+    if not isinstance(raw, dict):
+        raise TypeError("Quiver row must be an Event or mapping")
+    person = raw.get("person")
+    entities = raw.get("entities")
+    if not isinstance(entities, list) or not all(isinstance(item, str) for item in entities):
+        entities = [str(person)] if person else []
+    return Event.from_dict(
+        {
+            "id": raw["id"],
+            "source": raw.get("source") or "quiver",
+            "kind": raw["kind"],
+            "ticker": raw["ticker"],
+            "entities": entities,
+            "headline": str(raw.get("headline") or ""),
+            "url": str(raw.get("url") or ""),
+            "occurred_at": raw["occurred_at"],
+            "filed_at": raw.get("filed_at"),
+            "observed_at": raw["observed_at"],
+            "confidence": raw.get("confidence", 0.0),
+            "raw_ref": raw.get("raw_ref") or f"quiver:{raw['ticker']}",
+        }
+    )
 
 
 class QuiverSource:

@@ -13,10 +13,15 @@ from .events import Event
 from .indicators import NEWS_KINDS, UNIVERSE
 
 
-def online_clusters(events: list[Event], when: datetime) -> list[dict[str, object]]:
+def online_clusters(
+    events: list[Event],
+    when: datetime,
+    universe: tuple[str, ...] | None = None,
+) -> list[dict[str, object]]:
+    allowed = set(UNIVERSE if universe is None else universe)
     groups: dict[tuple[str, str], dict[str, object]] = {}
     for event in events:
-        if event.kind not in NEWS_KINDS or event.ticker not in UNIVERSE:
+        if event.kind not in NEWS_KINDS or event.ticker not in allowed:
             continue
         if event.observed_at > when:
             continue

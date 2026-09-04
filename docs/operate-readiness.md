@@ -29,11 +29,13 @@ Without keys, the repo can:
 
 With owner keys on a local machine (never committed):
 
+- **Daily research book:** `python3 -m signal_sim research --live` pulls Quiver (congress, insider, gov contracts, news) and World Monitor, expands the operating universe beyond the frozen fixture list (allowlisted US liquid names only, capped), and writes `docs/research/YYYY-MM-DD.json`. The file is the next rebalance target book: counts, ranked tickers, sized targets. No person names, headlines, or URLs. Safe every weekday morning.
 - **Live intel:** `python3 -m signal_sim feeds --live` pulls Quiver and World Monitor, then prints event counts and a ticker histogram only. It does not dump person names, headlines, URLs, or raw payloads. Missing `QUIVER_API_KEY` or `WORLD_MONITOR_KEY` exits 2 with the missing env names. `QUIVER_USERNAME` is unused by this path.
 - **Alpaca paper read smoke:** `python3 -m signal_sim paper-account` constructs the paper-host client when `ALPACA_PAPER_API_KEY` and `ALPACA_PAPER_API_SECRET` are set. It GETs `/v2/account`, `/v2/positions`, and `/v2/clock` on the paper host. `ALPACA_PAPER_API_BASE_URL` is optional and defaults to the paper HTTPS origin. A non-paper Alpaca host or IBKR live port still raises `LiveEndpointError`. Add `--dry-run` to validate a sample order payload in memory. This path does not POST an order.
-- **Proposed rebalance dry-run:** `python3 -m signal_sim rebalance --fixtures` reads that same paper account and positions, sizes the existing fixture cluster-drift target book (or `rank_candidates` with `--rank`), and prints intended tickets: symbol, side, qty, notional, rationale. Qty prefers fixture `entry_px`. If a ranked name has no fixture mark, the client may GET a paper IEX last trade or snapshot `latestTrade` and size from that observed price. It never invents a quote. Names still unmarked stay `no_mark`. `--live` reuses `feeds --live` and folds Quiver / World Monitor events into the existing Hawkes overlay (drift book only). Default is print-only: no ledger write and no broker POST. Paper last-trade marks are not execution marks.
+- **Proposed rebalance dry-run:** `python3 -m signal_sim rebalance --fixtures` reads that same paper account and positions, sizes the existing fixture cluster-drift target book (or `rank_candidates` with `--rank`), and prints intended tickets: symbol, side, qty, notional, rationale. Offline fixture-only qty prefers fixture `entry_px`. `--live` and `--submit-paper` prefer an observed paper IEX last trade or snapshot `latestTrade` when one exists so QQQ/SPY are not sized at the fixture $36/$40 marks. It never invents a quote. Names still unmarked stay `no_mark`. `--live` loads today's research book (or computes it) so new intel names can enter; tickets are a full target-versus-positions diff (buys, sells, leftover closes). Default is print-only: no ledger write and no broker POST. Paper last-trade marks are not execution marks.
 - **Local apply of those tickets:** `python3 -m signal_sim rebalance --fixtures --apply-local --ledger <path>` records the same dry-run tickets on the local SQLite ledger through `submit_paper_order`. Only tickets with `mark_kind=fixture_mark` and `mark_source=fixture` fill. Paper IEX sizing marks are skipped (`paper_mark_not_execution`) and must not be claimed as broker fills. This still does not POST `/v2/orders`.
-- **Alpaca paper submit (off by default):** `python3 -m signal_sim paper-submit --symbol SPY --qty 1` or `python3 -m signal_sim rebalance --fixtures --submit-paper` (default `--limit 1`, smallest notional first) POST to the paper host only when `SIGNAL_SIM_ALPACA_PAPER_SUBMIT=1`, the resolved base URL is the paper host, keys are present, and the CLI flag is explicit. Live hosts and any other base URL are refused. This is paper only. It is not live-money trading.
+- **Alpaca paper submit (off by default):** `python3 -m signal_sim paper-submit --symbol SPY --qty 1` or `python3 -m signal_sim rebalance --fixtures --submit-paper` (default `--limit 1`, smallest notional first) POST to the paper host only when `SIGNAL_SIM_ALPACA_PAPER_SUBMIT=1`, the resolved base URL is the paper host, keys are present, and the CLI flag is explicit. Live hosts and any other base URL are refused. Sells and leftover closes POST as well as buys. This is paper only. It is not live-money trading. If earlier paper orders are still open, print the book and wait; do not spray another full-book submit.
+- **Paper performance snapshot:** `python3 -m signal_sim paper-performance --write` writes a sanitized paper account/positions/open-order summary to `docs/research/YYYY-MM-DD-paper.json`. Not alpha.
 
 Fills go through `submit_paper_order` only. A fill must be `kind=fixture_mark` and `source=fixture`. Research or vendor mark kinds refuse. Constructing a live Alpaca host or IBKR live ports raises and does not open a socket. A present or unreadable `KILL` file refuses the order. Every fill writes an R8 provenance line that cites `params_sha256`. The local ledger fill gate is unchanged: Alpaca paper reads do not become execution marks.
 
@@ -74,15 +76,19 @@ These need keys in the process environment. They are skipped in CI and in unitte
 ```bash
 python3 -m signal_sim runtime-env
 python3 -m signal_sim feeds --live
+python3 -m signal_sim research --live
 python3 -m signal_sim paper-account
 python3 -m signal_sim paper-account --dry-run
 python3 -m signal_sim rebalance --fixtures
 python3 -m signal_sim rebalance --fixtures --live
 python3 -m signal_sim rebalance --fixtures --apply-local --ledger paper-rebalance.sqlite
 python3 -m signal_sim ledger --ledger paper-rebalance.sqlite --fixtures
+python3 -m signal_sim paper-performance --write
 python3 -m signal_sim paper-submit --symbol SPY --qty 1
-python3 -m signal_sim rebalance --fixtures --submit-paper --limit 1
+python3 -m signal_sim rebalance --fixtures --live --submit-paper --limit 1
 ```
+
+Weekday command order is in [daily ops](daily-ops.md). Print `rebalance --fixtures --live` before any submit. If open paper orders from earlier in the day are still working, skip `--submit-paper`.
 
 `runtime-env` prints presence booleans only. It never prints secret values.
 
