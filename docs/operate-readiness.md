@@ -155,6 +155,8 @@ Tests may mutate a parsed book in memory. That does not change the checked-in ma
 
 Adding a key to `frozen_operate_params()` changes `params_sha256`. Do not retune any of these to move fixture-mark PnL.
 
+Research-live score' weights live under `conviction` in the same manifest. They are **not** locked policy and are **not** in the operate digest. Paper research caps each name at `conviction.max_name_frac` (0.20). See [research-conviction.md](research-conviction.md). Not fitted. Not alpha.
+
 ## Blocked on the owner
 
 These are not missing code paths to invent. They are owner actions or later product work:

@@ -12,27 +12,27 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
+from .conviction import conviction_targets, paper_name_cap, research_rank_rows
 from .diagnose import fixture_diagnostics
 from .drift import fixture_drift_book
 from .events import Event
 from .fixture_load import load_fixture_events
 from .hawkes import intensity_map
-from .indicators import UNIVERSE, filed_confirm_features, intel_features, rank_candidates
+from .indicators import UNIVERSE, filed_confirm_features, intel_features
 from .live_feeds import (
     LiveFeedConfigError,
     fetch_live_feed_payloads,
     strategy_events,
     summarize_feed,
 )
-from .params import operate_stamp
+from .params import conviction_params, operate_stamp
 from .sim import load_mark_book, resolve_mark_book_path
-from .sizer import size_targets
 from .universe import expand_operating_universe, load_liquid_allowlist
 
 NOTE = (
     "Daily live research book. Fixture universe union top-N allowlisted "
-    "Quiver/World Monitor tickers. Rank plus cluster-drift, then the paper "
-    "sizer. Not alpha. Not a broker fill. No PII. Paper only."
+    "Quiver/World Monitor tickers. Declared score' plus conviction weights. "
+    "Not fitted. Not alpha. Not a broker fill. No PII. Paper only."
 )
 SIGNAL = "research-live"
 _PII_KEYS = (
@@ -54,7 +54,6 @@ TARGET_KEYS = (
     "n_clusters",
     "state",
     "intensity",
-    "intensity_scale",
     "insider_confirm",
     "congress_confirm",
     "gov_confirm",
@@ -62,6 +61,12 @@ TARGET_KEYS = (
     "wm_intel",
     "chokepoint",
     "news_breakout",
+    "quiver_count",
+    "news_term",
+    "q_term",
+    "wm_term",
+    "rec_term",
+    "lag_h",
 )
 
 
@@ -86,12 +91,16 @@ def _iso(value: datetime) -> str:
 def _rank_row(row: dict[str, Any]) -> dict[str, Any]:
     out: dict[str, Any] = {
         "ticker": str(row["ticker"]),
-        "score": int(row["score"]),
+        "score": float(row["score"]),
         "news_breakout": int(row.get("news_breakout") or 0),
+        "congress_confirm": int(row.get("congress_confirm") or 0),
         "insider_confirm": int(row.get("insider_confirm") or 0),
     }
     if row.get("gov_confirm"):
         out["gov_confirm"] = int(row["gov_confirm"])
+    for key in ("quiver_count", "news_term", "q_term", "wm_term", "rec_term", "lag_h"):
+        if key in row:
+            out[key] = row[key]
     return out
 
 
@@ -247,8 +256,7 @@ def run_research(
     operating = tuple(universe_info["operating"])
     material = list(fixture_events) + extra
 
-    ranked = rank_candidates(material, window_end=cut, universe=operating)
-    ranked = _attach_live_features(ranked, material, cut, operating)
+    ranked = research_rank_rows(material, cut, universe=operating)
     drift_book = fixture_drift_book(
         root,
         resolved,
@@ -258,19 +266,23 @@ def run_research(
         universe=operating,
         include_extra_in_clusters=True,
     )
-    candidates = _attach_live_features(
-        _merge_candidates(ranked, list(drift_book.get("targets") or [])),
-        material,
-        cut,
-        operating,
-    )
+    drift_by_ticker = {
+        str(row["ticker"]): row for row in list(drift_book.get("targets") or [])
+    }
+    candidates = []
+    for row in ranked:
+        item = dict(row)
+        extra_row = drift_by_ticker.get(str(item["ticker"])) or {}
+        for key in ("cluster_size", "n_clusters", "state", "intensity"):
+            if key in extra_row:
+                item[key] = extra_row[key]
+        candidates.append(item)
     horizon_hours = (book["exit_at"] - book["decision_at"]).total_seconds() / 3600.0
-    targets, size_skips = size_targets(
+    targets, size_skips = conviction_targets(
         candidates,
-        size_frac=float(book["size_frac"]),
         horizon_hours=horizon_hours,
         max_gross_frac=float(book["max_gross_frac"]),
-        max_name_frac=float(book["max_name_frac"]),
+        max_name_frac=paper_name_cap(float(book["max_name_frac"])),
     )
     intensities = intensity_map(material, cut, universe=operating)
     diagnose = fixture_diagnostics(
@@ -309,11 +321,15 @@ def run_research(
             "n_clusters": (diagnose.get("stats") or {}).get("n_clusters"),
         },
         "intensity": intensities,
+        "conviction": conviction_params(),
         "proposed_book": {
             "signal": SIGNAL,
+            "note": NOTE,
             "targets": [_target_row(row) for row in targets],
             "n_targets": len(targets),
             "skipped": size_skips,
+            "max_name_frac": paper_name_cap(float(book["max_name_frac"])),
+            "max_gross_frac": float(book["max_gross_frac"]),
         },
         "ok": True,
     }

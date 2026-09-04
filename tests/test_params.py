@@ -27,6 +27,9 @@ class ParamsManifestTests(unittest.TestCase):
         self.assertEqual(params.MAX_DRAWDOWN, raw["max_drawdown"])
         self.assertEqual(params.MAX_GROSS_FRAC, raw["max_gross_frac"])
         self.assertEqual(params.MAX_NAME_FRAC, raw["max_name_frac"])
+        self.assertAlmostEqual(params.CONVICTION_MAX_NAME_FRAC, raw["conviction"]["max_name_frac"])
+        self.assertAlmostEqual(params.CONVICTION_W_NEWS, raw["conviction"]["w_news"])
+        self.assertIn("not fitted", raw["conviction"]["note"].lower())
         self.assertEqual(params.HAWKES_BASELINE, raw["hawkes_baseline"])
         self.assertEqual(params.PLACEBO_SEED, raw["placebo_seed"])
         from signal_sim.sizer import MAX_GROSS_FRAC, MAX_NAME_FRAC

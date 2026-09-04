@@ -10,7 +10,7 @@ The research artifact is the next rebalance book. It is not a decorative JSON.
 python3 -m signal_sim research --live
 ```
 
-Pulls Quiver (congress, insider, gov contracts, news) and World Monitor, expands the operating universe to the frozen fixture set union top-N allowlisted intel tickers, then ranks / diagnoses / intensity on that set. Writes `docs/research/YYYY-MM-DD.json`: counts, top tickers, and the proposed book. No person names, headlines, or URLs.
+Pulls Quiver (congress, insider, gov contracts, news) and World Monitor, expands the operating universe to the frozen fixture set union top-N allowlisted intel tickers, then ranks with declared **score'** (un-lumped congress vs insider; not fitted) and writes a **conviction-weighted** `docs/research/YYYY-MM-DD.json`. Higher score' gets more of the gross, capped at paper `max_name_frac=0.20`. Each target stamps `target_frac`. No person names, headlines, or URLs. See [research-conviction.md](research-conviction.md).
 
 Safe to run every weekday morning. Missing intel keys exit 2.
 
@@ -20,7 +20,7 @@ Safe to run every weekday morning. Missing intel keys exit 2.
 python3 -m signal_sim rebalance --fixtures --live
 ```
 
-Loads today's research artifact when present (otherwise computes the same book). Diffs that target book against paper positions: **buys and sells**, including leftover closes. Qty prefers an observed paper IEX last trade or snapshot `latestTrade` when one exists. Fixture `$36`/`$40` QQQ/SPY marks are not used to size a live or `--submit-paper` ticket when a paper mark is available. Never invents a price.
+Loads today's research artifact when present (otherwise computes the same book). Diffs that conviction book against paper positions: **buys and sells**. Sell/reduce when a name drops out of the book, score' falls below `min_score`, or the held frac exceeds the new target by more than `trim_band`. Qty prefers an observed paper IEX last trade or snapshot `latestTrade` when one exists. Fixture `$36`/`$40` QQQ/SPY marks are not used to size a live or `--submit-paper` ticket when a paper mark is available. Never invents a price.
 
 Print-only. No POST.
 
@@ -69,4 +69,4 @@ SIGNAL_SIM_ALPACA_PAPER_SUBMIT=0
 
 Remote `/v2/orders` POSTs stay off. Print-only research and rebalance still run.
 
-See [operate readiness](operate-readiness.md).
+See [operate readiness](operate-readiness.md) and [research-conviction.md](research-conviction.md). The research book is still labeled **not fitted / not alpha**.

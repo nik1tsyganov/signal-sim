@@ -36,6 +36,25 @@ STARTING_CASH = float(_PARAMS["starting_cash"])
 MAX_DRAWDOWN = float(_PARAMS["max_drawdown"])
 MAX_GROSS_FRAC = float(_PARAMS["max_gross_frac"])
 MAX_NAME_FRAC = float(_PARAMS["max_name_frac"])
+_CONVICTION = _PARAMS.get("conviction")
+if not isinstance(_CONVICTION, dict):
+    _CONVICTION = {}
+CONVICTION_NOTE = str(
+    _CONVICTION.get("note")
+    or "Declared research-live score' weights. Not fitted. Not searched. Not alpha."
+)
+CONVICTION_MAX_NAME_FRAC = float(_CONVICTION.get("max_name_frac", 0.2))
+CONVICTION_TOP_K = int(_CONVICTION.get("top_k", 10))
+CONVICTION_MIN_SCORE = float(_CONVICTION.get("min_score", 1.0))
+CONVICTION_TRIM_BAND = float(_CONVICTION.get("trim_band", 0.02))
+CONVICTION_W_NEWS = float(_CONVICTION.get("w_news", 0.75))
+CONVICTION_W_CONGRESS = float(_CONVICTION.get("w_congress", 3.0))
+CONVICTION_W_INSIDER = float(_CONVICTION.get("w_insider", 3.0))
+CONVICTION_W_GOV = float(_CONVICTION.get("w_gov", 2.0))
+CONVICTION_W_QUIVER = float(_CONVICTION.get("w_quiver", 3.0))
+CONVICTION_W_WM = float(_CONVICTION.get("w_wm", 2.0))
+CONVICTION_W_RECENCY = float(_CONVICTION.get("w_recency", 2.0))
+CONVICTION_QUIVER_COUNT_REF = float(_CONVICTION.get("quiver_count_ref", 20))
 
 
 def frozen_operate_params() -> dict[str, Any]:
@@ -65,3 +84,28 @@ def params_sha256(values: dict[str, Any] | None = None) -> str:
 def operate_stamp() -> dict[str, Any]:
     frozen = frozen_operate_params()
     return {"params": frozen, "params_sha256": params_sha256(frozen)}
+
+
+def conviction_params() -> dict[str, Any]:
+    """Declared score' weights for the research-live book. Not in the locked digest."""
+    return {
+        "note": CONVICTION_NOTE,
+        "max_name_frac": CONVICTION_MAX_NAME_FRAC,
+        "top_k": CONVICTION_TOP_K,
+        "min_score": CONVICTION_MIN_SCORE,
+        "trim_band": CONVICTION_TRIM_BAND,
+        "w_news": CONVICTION_W_NEWS,
+        "w_congress": CONVICTION_W_CONGRESS,
+        "w_insider": CONVICTION_W_INSIDER,
+        "w_gov": CONVICTION_W_GOV,
+        "w_quiver": CONVICTION_W_QUIVER,
+        "w_wm": CONVICTION_W_WM,
+        "w_recency": CONVICTION_W_RECENCY,
+        "quiver_count_ref": CONVICTION_QUIVER_COUNT_REF,
+        "half_life_hours": HALF_LIFE_HOURS,
+        "formula": (
+            "score' = 0.75*log1p(news_breakout) + 3.0*congress_confirm + "
+            "3.0*insider_confirm + 2.0*gov_confirm + 3.0*log1p(quiver_count)/log1p(20) "
+            "+ 2.0*(intel_brief+wm_intel+chokepoint) + 2.0*exp(-lag_h/half_life_hours)"
+        ),
+    }
