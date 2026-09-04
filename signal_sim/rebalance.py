@@ -76,6 +76,49 @@ _ACCOUNT_FIELDS = (
 )
 _CLOCK_FIELDS = ("timestamp", "is_open", "next_open", "next_close")
 _EPS = 1e-12
+_CLIENT_ORDER_ID_MAX = 48
+
+
+def paper_session_stamp(
+    *,
+    research_date: str | None = None,
+    when: datetime | None = None,
+) -> str:
+    """Compact UTC session date for paper client_order_id.
+
+    Live books use the research artifact date. Otherwise use ``when`` or now.
+    Frozen fixture ``decision_at`` is not a session stamp — reusing it after
+    a cancel permanently burns the Alpaca client_order_id.
+    """
+    raw = research_date.strip() if isinstance(research_date, str) else ""
+    digits = "".join(ch for ch in raw if ch.isdigit())
+    if len(digits) >= 8:
+        return digits[:8]
+    stamp = when if when is not None else datetime.now(timezone.utc)
+    if stamp.tzinfo is None or stamp.utcoffset() is None:
+        stamp = stamp.replace(tzinfo=timezone.utc)
+    return stamp.astimezone(timezone.utc).strftime("%Y%m%d")
+
+
+def paper_client_order_id(
+    ticker: str,
+    side: str,
+    action: str,
+    *,
+    session: str,
+    attempt: int = 1,
+) -> str:
+    """Date-scoped paper idempotency key. Stays at or under 48 characters."""
+    if not isinstance(session, str) or not session.isdigit() or len(session) != 8:
+        raise ValueError("paper client_order_id session must be YYYYMMDD")
+    if attempt < 1:
+        raise ValueError("paper client_order_id attempt must be >= 1")
+    key = f"rb:{session}:{ticker}:{side}:{action}"
+    if attempt > 1:
+        key = f"{key}:r{attempt}"
+    if len(key) > _CLIENT_ORDER_ID_MAX:
+        raise ValueError("paper client_order_id exceeds 48 characters")
+    return key
 
 
 def _finite_number(value: Any) -> float | None:
@@ -318,6 +361,7 @@ def plan_rebalance_tickets(
     cost_bps: float,
     signal: str,
     decision_at: str,
+    session: str | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
     """Share-accurate tickets. Same delta as fixture replay; print-only."""
     tickets: list[dict[str, Any]] = []
@@ -338,7 +382,12 @@ def plan_rebalance_tickets(
         target_frac: float | None,
         qty: float,
     ) -> None:
-        key = f"rebalance:{decision_at}:{ticker}:{side}:{action}"
+        key = paper_client_order_id(
+            ticker,
+            side,
+            action,
+            session=session or paper_session_stamp(),
+        )
         notional = abs(qty) * float(mark_px)
         mark = marks.get(ticker) or {}
         mark_kind = str(mark.get("kind") or "fixture_mark")
@@ -560,6 +609,12 @@ def proposed_rebalance(
     cash = _finite_number(safe_account.get("cash"))
     if cash is None:
         cash = allocation
+    research_date = None
+    if isinstance(research_report, dict):
+        raw_date = research_report.get("date")
+        if isinstance(raw_date, str) and raw_date.strip():
+            research_date = raw_date.strip()
+    session = paper_session_stamp(research_date=research_date)
     tickets, plan_skips = plan_rebalance_tickets(
         targets=targets,
         marks=sizing_marks,
@@ -569,6 +624,7 @@ def proposed_rebalance(
         cost_bps=float(book.get("cost_bps", COST_BPS)),
         signal=signal_name,
         decision_at=decision_at,
+        session=session,
     )
     skipped = [*held_skips, *pre_skips, *size_skips, *plan_skips]
     stamp = operate_stamp()
@@ -590,6 +646,7 @@ def proposed_rebalance(
         "params": stamp["params"],
         "params_sha256": stamp["params_sha256"],
         "decision_at": decision_at,
+        "session": session,
         "printed_at": _utc_now(),
         "clock": safe_clock,
         "account": safe_account,
@@ -708,7 +765,12 @@ def apply_local_rebalance(
         payload = row.get("payload") if isinstance(row.get("payload"), dict) else {}
         idempotency_key = payload.get("client_order_id")
         if not isinstance(idempotency_key, str) or not idempotency_key:
-            idempotency_key = f"rebalance:{decision_at}:{ticker}:{row.get('side')}:{row.get('action')}"
+            idempotency_key = paper_client_order_id(
+                ticker,
+                str(row.get("side") or "buy"),
+                str(row.get("action") or "open"),
+                session=paper_session_stamp(),
+            )
         cost = allocation * float(row["size_frac"]) * cost_bps / 10000.0
         try:
             filled = submit_paper_order(

@@ -30,6 +30,8 @@ If paper orders from earlier in the day are still open, **do not spray another f
 
 **2026-09-04 cancel (follow-up):** [paper order cancel](paper-order-cancel.md) DELETEd all 11 via `paper-cancel --open --limit 11`. Read-back `canceled` / `filled_qty=0`. Open list empty. Buying power `$400000`. Reprint `research --live` + print-only `rebalance --fixtures --live` (live-sized SPY ~13 @ ~$771). **No new `--submit-paper`.** Next submit waits for the open, then uses the position-aware diff.
 
+**2026-09-04 live-session submit:** [paper live submit](paper-live-submit.md). Clock open. Print-only live-sized (SPY ~13 @ ~$773). First `--submit-paper` only filled MSFT — canceled morning client ids blocked the rest. Date-scoped `rb:{YYYYMMDD}:…` keys, then a second `--submit-paper --limit 20`, posted and filled the remaining live-sized book (10 positions). Do not spray another full-book submit while those names are already held.
+
 ## Cancel open paper orders before the next submit
 
 Do not `--submit-paper` while leftover day orders are still working. List them with `paper-performance` (read-only). Cancel on the paper host only when you mean to, with the same rails as submit (`SIGNAL_SIM_ALPACA_PAPER_SUBMIT=1`, paper-api host, keys, explicit CLI):
@@ -48,7 +50,7 @@ python3 -m signal_sim paper-cancel --open --limit 11
 python3 -m signal_sim rebalance --fixtures --live --submit-paper --limit 4
 ```
 
-Requires `SIGNAL_SIM_ALPACA_PAPER_SUBMIT=1`, the paper-api host, keys, and `--submit-paper`. Default `--limit` is 1 (smallest notional first). Raise the limit only after the print looks sane. A non-paper host is refused. Flag `0` never POSTs.
+Requires `SIGNAL_SIM_ALPACA_PAPER_SUBMIT=1`, the paper-api host, keys, and `--submit-paper`. Default `--limit` is 1 (smallest notional first). Raise the limit only after the print looks sane. A non-paper host is refused. Flag `0` never POSTs. Paper `client_order_id` is date-scoped (`rb:{YYYYMMDD}:…`). A same-day cancel no longer permanently burns the book.
 
 ## After fills
 
