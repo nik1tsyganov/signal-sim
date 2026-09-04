@@ -8,7 +8,7 @@ This is not a live desk. Every `total_pnl` / `ending_equity` is **fixture-mark P
 
 1. Review this PR. The agent will not merge it.
 2. Run `python3 -m signal_sim smoke --fixtures` locally (`python -m` on Windows). Confirm `ok=True` and that every PnL is fixture-mark.
-3. On the machine that already has intel and Alpaca **paper** keys, run the optional live checks below. Do not paste keys into chat or the repo.
+3. On the machine that already has intel and Alpaca **paper** keys, or a Cursor Cloud run launched from **`signal-sim-paper`** with Runtime Secrets, run the optional live checks below. Do not paste keys into chat or the repo.
 4. Decide merge yourself. Do not ask the agent to merge.
 
 ## What the paper loop can do today
@@ -65,10 +65,13 @@ Then `GET /api/params`, `GET /api/rails`, `GET /api/smoke`, `GET /api/drift`, `G
 These need keys in the process environment. They are skipped in CI and in unittest when the env names are absent. Do not put keys in the repo.
 
 ```bash
+python3 -m signal_sim runtime-env
 python3 -m signal_sim feeds --live
 python3 -m signal_sim paper-account
 python3 -m signal_sim paper-account --dry-run
 ```
+
+`runtime-env` prints presence booleans only. It never prints secret values.
 
 Unittest integration cases are marked with `skipUnless` the relevant env names are set. To run them on the owner machine:
 
@@ -76,7 +79,27 @@ Unittest integration cases are marked with `skipUnless` the relevant env names a
 python3 -m unittest tests.test_live_feeds tests.test_alpaca_paper -v
 ```
 
-`SIGNAL_SIM_ALPACA_PAPER_SUBMIT=1` is reserved for a later paper-order POST. This build still refuses remote submits even if that flag is set. Default is read-only account smoke. Fills stay on the local ledger.
+`SIGNAL_SIM_ALPACA_PAPER_SUBMIT` defaults to `0`. `1` is reserved for a later paper-order POST. This build still refuses remote submits even if that flag is set. Default is read-only account smoke. Fills stay on the local ledger.
+
+## Cursor Cloud Runtime Secrets
+
+Cloud agents do not read a repo `.env`. Paper keys belong in **Dashboard Runtime Secrets** on a saved environment.
+
+Prefer launching the agent with the saved environment named **`signal-sim-paper`**.
+
+Runtime Secrets (values never go in the repo, PR, or logs):
+
+- `ALPACA_PAPER_API_KEY`
+- `ALPACA_PAPER_API_SECRET`
+- `QUIVER_API_KEY`
+- `WORLD_MONITOR_KEY`
+
+Plain env on that same environment (not secrets, but still not committed):
+
+- `ALPACA_PAPER_API_BASE_URL=https://paper-api.alpaca.markets`
+- `SIGNAL_SIM_ALPACA_PAPER_SUBMIT=0` (default; omit or `0` keeps paper POSTs off)
+
+GitHub Actions CI stays secret-free and only runs fixture rails/smoke. A cloud run without Runtime Secrets is expected to skip live integration tests and exit 2 on `feeds --live` / `paper-account`. A run that is not on `signal-sim-paper` should not invent keys or write them into files.
 
 ## Locked policy vs book fields
 
@@ -104,7 +127,7 @@ These are not missing code paths to invent. They are owner actions or later prod
 
 | Blocker | Why it is blocked | What the repo does today |
 |---|---|---|
-| Alpaca paper keys on CI | Keys stay on the owner machine. Never commit them. | Paper host without keys still raises `NotImplementedError` and does not open a socket. With keys, `paper-account` is a read-only GET smoke. Live Alpaca hosts and IBKR live ports raise. |
+| Alpaca paper keys on GitHub CI | Keys stay in Cursor Runtime Secrets or the owner machine. Never commit them. | Paper host without keys still raises `NotImplementedError` and does not open a socket. With keys, `paper-account` is a read-only GET smoke. Live Alpaca hosts and IBKR live ports raise. |
 | Remote Alpaca paper submits | Safer default is local-ledger fills. | `submit_paper_order` is still the only order path. `SIGNAL_SIM_ALPACA_PAPER_SUBMIT=1` does not enable a POST in this build. |
 | Paid Quiver commercial-use terms | Key presence is not a terms review. | `feeds --live` calls Quiver when `QUIVER_API_KEY` is set. Without the key it exits 2 / raises `NotImplementedError` and does not open HTTP. |
 | Paid World Monitor key on CI | Same as Quiver: owner-machine only. | `feeds --live` calls WM when `WORLD_MONITOR_KEY` is set. Without the key it exits 2. Recorded JSON under `fixtures/recorded/worldmonitor/` still attaches as feature flags only. |

@@ -23,6 +23,7 @@ from urllib.parse import urlsplit
 from . import safety
 from .alpaca_paper import AlpacaPaperClient
 from .indicators import UNIVERSE
+from .runtime_env import paper_submit_flag
 from .secrets import read_env
 
 SIDES = ("buy", "sell")
@@ -118,8 +119,11 @@ def missing_paper_keys():
 
 
 def paper_submit_enabled():
-    """Remote paper POSTs stay off unless this later gate is explicitly 1."""
-    return read_env("SIGNAL_SIM_ALPACA_PAPER_SUBMIT") == "1"
+    """Remote paper POSTs stay off unless this later gate is explicitly 1.
+
+    Default is 0 (missing, empty, or any value other than the string 1).
+    """
+    return paper_submit_flag() == "1"
 
 
 def resolve_paper_base_url():

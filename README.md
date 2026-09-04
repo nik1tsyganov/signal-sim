@@ -142,7 +142,10 @@ python3 -m signal_sim drift --fixtures
 
 These commands are not part of `smoke --fixtures`. They exit 2 when the required env names are missing. They never print secret values.
 
+Cursor Cloud agents should launch with the saved environment **`signal-sim-paper`** and Dashboard Runtime Secrets (`ALPACA_PAPER_API_KEY`, `ALPACA_PAPER_API_SECRET`, `QUIVER_API_KEY`, `WORLD_MONITOR_KEY`). Set `ALPACA_PAPER_API_BASE_URL` to the paper HTTPS origin. `SIGNAL_SIM_ALPACA_PAPER_SUBMIT` defaults to `0`. Do not commit a `.env`.
+
 ```bash
+python3 -m signal_sim runtime-env
 python3 -m signal_sim feeds --live
 python3 -m signal_sim paper-account
 python3 -m signal_sim paper-account --dry-run

@@ -19,6 +19,7 @@ from .paper import (
     paper_host,
     paper_submit_enabled,
 )
+from .runtime_env import paper_submit_flag, runtime_env_status
 from .store import EventStore
 
 
@@ -176,6 +177,10 @@ def _parser() -> argparse.ArgumentParser:
         "--dry-run",
         action="store_true",
         help="also validate a sample paper-order payload (does not POST)",
+    )
+    commands.add_parser(
+        "runtime-env",
+        help="print Runtime Secret / env presence only (never values)",
     )
     return parser
 
@@ -355,6 +360,8 @@ def main(argv: list[str] | None = None) -> int:
         except LiveFeedConfigError as error:
             print(str(error), file=sys.stderr)
             return 2
+        report = dict(report)
+        report["runtime_env"] = runtime_env_status()
         print(json.dumps(report, separators=(",", ":")))
         return 0 if report.get("ok") is True else 1
     if args.command == "paper-account":
@@ -367,7 +374,7 @@ def main(argv: list[str] | None = None) -> int:
             return 2
         if paper_submit_enabled():
             print(
-                "SIGNAL_SIM_ALPACA_PAPER_SUBMIT is set; this build still "
+                "SIGNAL_SIM_ALPACA_PAPER_SUBMIT=1; this build still "
                 "refuses remote paper POSTs. Fills stay on the local ledger.",
                 file=sys.stderr,
             )
@@ -387,8 +394,15 @@ def main(argv: list[str] | None = None) -> int:
         except NotImplementedError as error:
             print(str(error), file=sys.stderr)
             return 2
+        report = dict(report)
+        report["submit_flag"] = paper_submit_flag()
+        report["runtime_env"] = runtime_env_status()
         print(json.dumps(report, separators=(",", ":")))
         return 0 if report.get("ok") is True else 1
+    if args.command == "runtime-env":
+        report = runtime_env_status()
+        print(json.dumps(report, separators=(",", ":")))
+        return 0 if report.get("ok") is True else 2
     return 2
 
 

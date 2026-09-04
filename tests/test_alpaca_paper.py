@@ -194,11 +194,13 @@ class AlpacaPaperClientUnitTests(unittest.TestCase):
         urlopen.assert_not_called()
 
     def test_submit_flag_does_not_add_an_order_method(self):
-        with mock.patch(
-            "signal_sim.paper.read_env",
-            side_effect=lambda name: "1"
-            if name == "SIGNAL_SIM_ALPACA_PAPER_SUBMIT"
-            else _env(name),
+        def env(name):
+            if name == "SIGNAL_SIM_ALPACA_PAPER_SUBMIT":
+                return "1"
+            return _env(name)
+
+        with mock.patch("signal_sim.paper.read_env", side_effect=env), mock.patch(
+            "signal_sim.runtime_env.read_env", side_effect=env
         ):
             self.assertTrue(paper_submit_enabled())
             client = paper_broker_client(PAPER_BROKER_HOST)
