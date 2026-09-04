@@ -118,6 +118,22 @@ class ServeTests(unittest.TestCase):
         self.assertNotIn("candidates", payload)
         self.assertNotIn("sharpe", json.dumps(payload).lower())
 
+    def test_api_drift_matches_drift_fixtures(self):
+        expected = io.StringIO()
+        with redirect_stdout(expected):
+            cli.main(["drift", "--fixtures"])
+
+        body, content_type = self.request("/api/drift")
+
+        self.assertEqual(json.loads(body), json.loads(expected.getvalue()))
+        self.assertEqual(content_type, "application/json")
+        payload = json.loads(body)
+        self.assertEqual(payload["mode"], "local-paper-drift")
+        nvda = next(row for row in payload["targets"] if row["ticker"] == "NVDA")
+        self.assertEqual(nvda["insider_confirm"], 1)
+        self.assertEqual(nvda["congress_confirm"], 1)
+        self.assertNotIn("sharpe", json.dumps(payload).lower())
+
     def test_get_api_path_does_not_place_orders(self):
         with patch.object(serve.safety, "PAPER_ONLY", True), patch.object(
             serve.safety, "kill_switch_ok", return_value=True
@@ -230,6 +246,10 @@ class ServeTests(unittest.TestCase):
         self.assertIn(b"/api/path", body)
         self.assertIn(b"/api/diagnose", body)
         self.assertIn(b"/api/marks", body)
+        self.assertIn(b"/api/drift", body)
+        self.assertIn(b"Drift targets", body)
+        self.assertIn(b"insider_confirm", body)
+        self.assertIn(b"intensity", body)
         self.assertIn(b"no_mark", body)
         self.assertIn(b"data.steps", body)
         self.assertIn(b"not_in_rank_cut", body)
@@ -248,6 +268,7 @@ class ServeTests(unittest.TestCase):
         self.assertIn(b"/api/rank", body)
         self.assertIn(b"/api/diagnose", body)
         self.assertIn(b"/api/marks", body)
+        self.assertIn(b"/api/drift", body)
         self.assertIn(b"/api/replay", body)
         self.assertIn(b"/api/liquid", body)
         self.assertIn(b"/api/path", body)

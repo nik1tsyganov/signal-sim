@@ -80,6 +80,21 @@ def _filed_confirmation(
     )
 
 
+def filed_confirm_features(
+    events: list[Event],
+    when: datetime,
+    universe: tuple[str, ...] | None = None,
+) -> dict[str, dict[str, int]]:
+    """Insider/congress confirms at ``when``. Uses filed_at/observed_at, never trade date."""
+    features: dict[str, dict[str, int]] = {}
+    for ticker in UNIVERSE if universe is None else universe:
+        insider = _filed_confirmation(events, ticker, {"insider"}, when)
+        congress = _filed_confirmation(events, ticker, {"congress_trade"}, when)
+        if insider or congress:
+            features[ticker] = {"insider_confirm": insider, "congress_confirm": congress}
+    return features
+
+
 def rank_candidates(
     events: list[Event],
     window_start: datetime | None = None,

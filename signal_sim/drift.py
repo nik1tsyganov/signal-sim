@@ -13,6 +13,7 @@ from typing import Any
 from .clusters import online_clusters
 from .events import Event
 from .fixture_load import load_fixture_events
+from .indicators import filed_confirm_features
 from .sizer import MAX_GROSS_FRAC
 
 
@@ -78,6 +79,7 @@ def drift_targets(
     """
     states = cluster_state(events, when)
     peak = max((abs(float(row["state"])) for row in states.values()), default=0.0)
+    confirms = filed_confirm_features(events, when)
     ranked: list[dict[str, Any]] = []
     for row in sorted(states.values(), key=lambda item: (-abs(float(item["state"])), str(item["ticker"]))):
         if peak <= 0:
@@ -94,7 +96,13 @@ def drift_targets(
             "cluster_size": row["cluster_size"],
             "n_clusters": row["n_clusters"],
             "state": float(row["state"]),
+            "insider_confirm": 0,
+            "congress_confirm": 0,
         }
+        row_confirms = confirms.get(str(row["ticker"]))
+        if row_confirms:
+            target["insider_confirm"] = row_confirms["insider_confirm"]
+            target["congress_confirm"] = row_confirms["congress_confirm"]
         if intensities is not None:
             from .hawkes import intensity_size_scale
 

@@ -23,6 +23,7 @@ _FALLBACK = (
     b"PAPER ONLY\n"
     b"GET /api/rank ranked fixture events at decision_at\n"
     b"GET /api/diagnose Hawkes and clusters; not a ranking input\n"
+    b"GET /api/drift cluster-drift target book; not a ranking input\n"
     b"GET /api/marks who can fill vs no_mark\n"
     b"POST /api/replay default liquid sector book\n"
     b"POST /api/liquid same eight-name sector book\n"
@@ -52,6 +53,12 @@ class _DeskHandler(BaseHTTPRequestHandler):
         if path == "/api/diagnose":
             events = load_fixture_events(_FIXTURES_PATH)
             body = json.dumps(fixture_diagnostics(events), separators=(",", ":")).encode("utf-8")
+            self._send(body, "application/json")
+            return
+        if path == "/api/drift":
+            from .drift import fixture_drift_book
+
+            body = json.dumps(fixture_drift_book(_FIXTURES_PATH), separators=(",", ":")).encode("utf-8")
             self._send(body, "application/json")
             return
         if path == "/api/marks":

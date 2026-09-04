@@ -54,7 +54,15 @@ def size_targets(
             "horizon_hours": float(row.get("horizon_hours") or horizon_hours),
             "score": row.get("score"),
         }
-        for key in ("cluster_size", "n_clusters", "state", "intensity", "intensity_scale"):
+        for key in (
+            "cluster_size",
+            "n_clusters",
+            "state",
+            "intensity",
+            "intensity_scale",
+            "insider_confirm",
+            "congress_confirm",
+        ):
             if key in row:
                 target[key] = row[key]
         targets.append(target)

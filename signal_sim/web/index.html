@@ -125,6 +125,11 @@
             <p>GET /api/diagnose. Hawkes intensity and clusters only. Not a ranking input.</p>
             <div id="diagnose-result">Loading diagnose…</div>
         </section>
+        <section id="drift">
+            <h2>Drift targets</h2>
+            <p>GET /api/drift. Fixture cluster-drift target book for the paper ledger. Not alpha. Not a ranking input.</p>
+            <div id="drift-result">Loading drift…</div>
+        </section>
         <section id="paper">
             <h2>Paper replay</h2>
             <p>Fixture marks only. GET does not place orders. Default replay fills the liquid sector book (tech/energy/media/ETF). Unmarked ranked names are no_mark. Path walks the three-step ledger.</p>
@@ -326,9 +331,36 @@
                     cut: data.cut,
                     n_clusters: (data.stats || {}).n_clusters,
                     n_events_after_decision: (data.stats || {}).n_events_after_decision,
+                    intensity: data.intensity || {},
                 }, null, 2))}</pre>`;
             } catch (err) {
                 box.innerHTML = `<div class="error">Diagnose failed: ${escapeHtml(err.message)}</div>`;
+            }
+        }
+
+        async function loadDrift() {
+            const box = document.getElementById('drift-result');
+            try {
+                const response = await fetch('/api/drift');
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                const data = await response.json();
+                box.innerHTML = `<pre>${escapeHtml(JSON.stringify({
+                    mode: data.mode,
+                    note: data.note,
+                    decision_at: data.decision_at,
+                    horizon_hours: data.horizon_hours,
+                    targets: (data.targets || []).map((row) => ({
+                        ticker: row.ticker,
+                        target_frac: row.target_frac,
+                        horizon_hours: row.horizon_hours,
+                        insider_confirm: row.insider_confirm,
+                        congress_confirm: row.congress_confirm,
+                    })),
+                }, null, 2))}</pre>`;
+            } catch (err) {
+                box.innerHTML = `<div class="error">Drift failed: ${escapeHtml(err.message)}</div>`;
             }
         }
 
@@ -336,6 +368,7 @@
             loadRanks();
             loadMarks();
             loadDiagnose();
+            loadDrift();
             const replay = document.getElementById('replay-btn');
             const liquid = document.getElementById('liquid-btn');
             const path = document.getElementById('path-btn');
