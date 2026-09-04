@@ -74,6 +74,11 @@ def _parser() -> argparse.ArgumentParser:
         "--marks",
         help="fixture mark book JSON or alias: liquid (default), two-name",
     )
+    drift.add_argument(
+        "--intensity",
+        action="store_true",
+        help="attach declared Hawkes intensity (diagnose params; not a fit)",
+    )
     replay = commands.add_parser(
         "replay",
         help="replay fixture ranks through the local paper ledger",
@@ -100,6 +105,11 @@ def _parser() -> argparse.ArgumentParser:
         "--drift",
         action="store_true",
         help="size from the cluster-drift stub instead of rank (rank stays unchanged)",
+    )
+    replay.add_argument(
+        "--intensity",
+        action="store_true",
+        help="apply declared Hawkes intensity overlay when --drift is set",
     )
     return parser
 
@@ -144,7 +154,16 @@ def main(argv: list[str] | None = None) -> int:
 
         fixtures = Path(__file__).resolve().parent.parent / "fixtures"
         mark_book_path = resolve_mark_book_path(args.marks) if args.marks else None
-        print(json.dumps(fixture_drift_book(fixtures, mark_book_path), separators=(",", ":")))
+        print(
+            json.dumps(
+                fixture_drift_book(
+                    fixtures,
+                    mark_book_path,
+                    intensity=getattr(args, "intensity", False),
+                ),
+                separators=(",", ":"),
+            )
+        )
         return 0
     if args.command == "serve":
         from .serve import serve
@@ -159,13 +178,18 @@ def main(argv: list[str] | None = None) -> int:
         ledger = args.ledger
         if not ledger:
             ledger = tempfile.NamedTemporaryFile(prefix="paper-replay-", suffix=".sqlite", delete=False).name
-        if args.path and getattr(args, "drift", False):
-            print("replay --path cannot be combined with --drift", file=sys.stderr)
+        if getattr(args, "intensity", False) and not getattr(args, "drift", False):
+            print("replay --intensity requires --drift", file=sys.stderr)
             return 2
         if args.path:
             from .sim import run_fixture_path
 
-            summary = run_fixture_path(fixtures=fixtures, ledger_path=ledger)
+            summary = run_fixture_path(
+                fixtures=fixtures,
+                ledger_path=ledger,
+                drift=getattr(args, "drift", False),
+                intensity=getattr(args, "intensity", False),
+            )
         else:
             from .sim import resolve_mark_book_path
 
@@ -174,7 +198,11 @@ def main(argv: list[str] | None = None) -> int:
             if getattr(args, "drift", False):
                 from .drift import fixture_drift_book
 
-                candidates = fixture_drift_book(fixtures, mark_book_path)["targets"]
+                candidates = fixture_drift_book(
+                    fixtures,
+                    mark_book_path,
+                    intensity=getattr(args, "intensity", False),
+                )["targets"]
             summary = run_fixture_replay(
                 fixtures=fixtures,
                 ledger_path=ledger,

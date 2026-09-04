@@ -18,9 +18,15 @@ from .sizer import MAX_GROSS_FRAC
 
 # Declared, not fitted. Do not treat as a calibrated half-life.
 HALF_LIFE_HOURS = 24.0
+# Drop names whose state is below this fraction of the peak. Not a fit.
+MIN_RELATIVE_STATE = 0.5
 NOTE = (
     "Stub. Fixture cluster count only. Declared half-life, not a fitted drift. "
     "Not alpha. Target book for the paper ledger."
+)
+INTENSITY_NOTE = (
+    "Declared Hawkes intensity feature from diagnose/intensity_at params. "
+    "Not a fit. Risk overlay may shrink size; it never raises it."
 )
 
 
@@ -63,6 +69,7 @@ def drift_targets(
     when: datetime,
     size_frac: float,
     horizon_hours: float,
+    intensities: dict[str, float] | None = None,
 ) -> list[dict[str, Any]]:
     """Turn cluster state into a signed target book. Not a return forecast.
 
@@ -76,47 +83,68 @@ def drift_targets(
         if peak <= 0:
             continue
         signed = float(row["state"]) / peak
-        ranked.append(
-            {
-                "ticker": row["ticker"],
-                "score": float(row["state"]),
-                "target_frac": size_frac * abs(signed),
-                "side": "buy" if signed >= 0 else "sell",
-                "horizon_hours": float(horizon_hours),
-                "cluster_size": row["cluster_size"],
-                "n_clusters": row["n_clusters"],
-                "state": float(row["state"]),
-            }
-        )
+        if abs(signed) < MIN_RELATIVE_STATE:
+            continue
+        target = {
+            "ticker": row["ticker"],
+            "score": float(row["state"]),
+            "target_frac": size_frac * abs(signed),
+            "side": "buy" if signed >= 0 else "sell",
+            "horizon_hours": float(horizon_hours),
+            "cluster_size": row["cluster_size"],
+            "n_clusters": row["n_clusters"],
+            "state": float(row["state"]),
+        }
+        if intensities is not None:
+            from .hawkes import intensity_size_scale
+
+            intensity = float(intensities.get(str(row["ticker"]), 0.0))
+            target["intensity"] = intensity
+            target["intensity_scale"] = intensity_size_scale(intensity)
+        ranked.append(target)
     return ranked
 
 
 def fixture_drift_book(
     fixtures: Path | None = None,
     mark_book_path: Path | str | None = None,
+    mark_book: dict[str, Any] | None = None,
+    *,
+    intensity: bool = False,
 ) -> dict[str, Any]:
     """Score fixture prints at the mark-book decision. No vendor bars."""
     from .sim import load_mark_book
 
     root = fixtures if fixtures is not None else Path(__file__).resolve().parent.parent / "fixtures"
-    book = load_mark_book(mark_book_path)
+    book = mark_book if mark_book is not None else load_mark_book(mark_book_path)
     events = [event for event in load_fixture_events(root) if event.observed_at <= book["decision_at"]]
     horizon_hours = (book["exit_at"] - book["decision_at"]).total_seconds() / 3600.0
+    intensities = None
+    if intensity:
+        from .hawkes import intensity_map
+
+        intensities = intensity_map(events, book["decision_at"])
     targets = drift_targets(
         events,
         when=book["decision_at"],
         size_frac=float(book["size_frac"]),
         horizon_hours=horizon_hours,
+        intensities=intensities,
     )
     decision_at = book["decision_at"].isoformat().replace("+00:00", "Z")
-    return {
+    payload = {
         "mode": "local-paper-drift",
         "note": NOTE,
         "method": "online-news-cluster-drift-stub",
         "half_life_hours": HALF_LIFE_HOURS,
+        "min_relative_state": MIN_RELATIVE_STATE,
         "decision_at": decision_at,
         "horizon_hours": horizon_hours,
         "max_gross_frac": float(book.get("max_gross_frac", MAX_GROSS_FRAC)),
         "mark_path": book.get("path"),
         "targets": targets,
     }
+    if intensity:
+        payload["intensity_note"] = INTENSITY_NOTE
+        payload["intensity"] = intensities
+    return payload

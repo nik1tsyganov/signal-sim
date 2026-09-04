@@ -10,8 +10,7 @@ from typing import Any
 
 from .clusters import online_clusters
 from .events import Event
-from .hawkes import intensity_at, log_likelihood
-from .indicators import UNIVERSE
+from .hawkes import intensity_map, log_likelihood
 
 
 def fixture_diagnostics(
@@ -29,13 +28,7 @@ def fixture_diagnostics(
     window = [event for event in events if event.observed_at <= decision_at]
     if not window:
         raise ValueError("diagnose requires at least one fixture event at or before decision_at")
-    intensities = {
-        ticker: intensity_at(
-            (event for event in window if event.ticker == ticker),
-            decision_at,
-        )
-        for ticker in UNIVERSE
-    }
+    intensities = intensity_map(window, decision_at)
     clusters = online_clusters(window, decision_at)
     return {
         "mode": "local-paper-diagnose",

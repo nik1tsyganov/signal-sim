@@ -36,6 +36,8 @@ def size_targets(
         ticker = str(row["ticker"])
         requested = row.get("target_frac")
         frac = float(size_frac) if requested is None else float(requested)
+        if row.get("intensity_scale") is not None:
+            frac *= min(1.0, float(row["intensity_scale"]))
         if frac <= 0:
             skipped.append({"ticker": ticker, "reason": "non_positive_target"})
             continue
@@ -52,7 +54,7 @@ def size_targets(
             "horizon_hours": float(row.get("horizon_hours") or horizon_hours),
             "score": row.get("score"),
         }
-        for key in ("cluster_size", "n_clusters", "state"):
+        for key in ("cluster_size", "n_clusters", "state", "intensity", "intensity_scale"):
             if key in row:
                 target[key] = row[key]
         targets.append(target)

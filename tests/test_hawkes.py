@@ -34,6 +34,16 @@ def event(event_id, observed_at, *, kind="news", ticker="NVDA", occurred_at=None
 
 
 class HawkesIntensityTests(unittest.TestCase):
+    def test_declared_parameters_are_not_refit(self):
+        from signal_sim import hawkes
+
+        self.assertEqual(hawkes.BASELINE, 0.1)
+        self.assertEqual(hawkes.EXCITATION, 0.8)
+        self.assertEqual(hawkes.DECAY, 1.0)
+        self.assertLessEqual(hawkes.intensity_size_scale(0.05), 1.0)
+        self.assertEqual(hawkes.intensity_size_scale(0.1), 1.0)
+        self.assertLess(hawkes.intensity_size_scale(0.4), 1.0)
+
     def test_event_causes_a_finite_upward_intensity_jump(self):
         from signal_sim.hawkes import intensity_at
 
@@ -196,9 +206,7 @@ class DiagnoseCliTests(unittest.TestCase):
         def inflated(_events, _when, **_kwargs):
             return 99.0
 
-        with patch("signal_sim.diagnose.intensity_at", side_effect=inflated), patch(
-            "signal_sim.hawkes.intensity_at", side_effect=inflated
-        ):
+        with patch("signal_sim.hawkes.intensity_at", side_effect=inflated):
             rank_after = rank_candidates(events, window_end=decision_at)
             second = run_fixture_replay(
                 fixtures=fixtures,

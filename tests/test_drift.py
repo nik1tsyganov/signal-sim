@@ -163,13 +163,82 @@ class ClusterDriftStubTests(unittest.TestCase):
         self.assertNotIn("signal", payload)
         self.assertEqual({row["ticker"] for row in payload["orders"]}, LIQUID_FILLS)
 
-    def test_replay_path_rejects_drift_flag(self):
+    def test_replay_path_with_drift_opens_adds_and_reduces_across_sectors(self):
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        output = io.StringIO()
+        with redirect_stdout(output):
+            exit_code = cli.main(
+                [
+                    "replay",
+                    "--fixtures",
+                    "--path",
+                    "--drift",
+                    "--ledger",
+                    os.path.join(tmp, "drift-path.sqlite"),
+                ]
+            )
+        self.assertEqual(exit_code, 0)
+        payload = json.loads(output.getvalue())
+        self.assertEqual(payload["mode"], "local-paper-path")
+        self.assertEqual(payload["signal"], "cluster-drift-stub")
+        self.assertEqual(len(payload["position_history"]), 3)
+        first = set(payload["position_history"][0]["held"])
+        second = set(payload["position_history"][1]["held"])
+        third = set(payload["position_history"][2]["held"])
+        self.assertTrue({"NVDA", "MSFT"} & first)
+        self.assertTrue({"XLE", "XOM"} & first)
+        self.assertTrue({"DIS", "NFLX"} & first)
+        self.assertTrue({"SPY", "QQQ"} & first)
+        self.assertTrue(second)
+        self.assertTrue(third)
+        self.assertTrue(first - second, "later drift must reduce or close a step-1 name")
+        self.assertTrue(third - second, "a later step must add a name across the liquid book")
+        self.assertTrue({"MSFT", "NFLX"} <= second)
+        self.assertTrue({"SPY", "XLE"} <= third)
+        self.assertNotIn("sharpe", json.dumps(payload).lower())
+        self.assertNotIn("yahoo", json.dumps(payload).lower())
+
+    def test_intensity_flag_attaches_diagnose_feature_and_never_raises_size(self):
+        plain = fixture_drift_book(FIXTURES)
+        featured = fixture_drift_book(FIXTURES, intensity=True)
+        self.assertNotIn("intensity", json.dumps(plain))
+        self.assertIn("not a fit", featured["intensity_note"].lower())
+        by_plain = {row["ticker"]: row["target_frac"] for row in plain["targets"]}
+        by_feat = {row["ticker"]: row for row in featured["targets"]}
+        self.assertEqual(set(by_plain), set(by_feat))
+        for ticker, frac in by_plain.items():
+            self.assertIn("intensity", by_feat[ticker])
+            self.assertLessEqual(by_feat[ticker]["intensity_scale"], 1.0)
+        from signal_sim.sizer import size_targets
+
+        sized_plain, _ = size_targets(
+            plain["targets"], size_frac=0.1, horizon_hours=34.75
+        )
+        sized_int, _ = size_targets(
+            featured["targets"], size_frac=0.1, horizon_hours=34.75
+        )
+        plain_frac = {row["ticker"]: row["target_frac"] for row in sized_plain}
+        int_frac = {row["ticker"]: row["target_frac"] for row in sized_int}
+        for ticker, frac in plain_frac.items():
+            if ticker in int_frac:
+                self.assertLessEqual(int_frac[ticker], frac)
+
+    def test_intensity_overlay_does_not_change_rank(self):
+        events = load_fixture_events(FIXTURES)
+        book = load_mark_book()
+        before = rank_candidates(events, window_end=book["decision_at"])
+        fixture_drift_book(FIXTURES, intensity=True)
+        after = rank_candidates(events, window_end=book["decision_at"])
+        self.assertEqual(before, after)
+
+    def test_replay_intensity_requires_drift(self):
         output = io.StringIO()
         error = io.StringIO()
         with redirect_stdout(output), redirect_stderr(error):
-            exit_code = cli.main(["replay", "--fixtures", "--path", "--drift"])
+            exit_code = cli.main(["replay", "--fixtures", "--intensity"])
         self.assertEqual(exit_code, 2)
-        self.assertIn("cannot be combined", error.getvalue())
+        self.assertIn("requires --drift", error.getvalue())
 
     def test_mutated_drift_does_not_change_rank(self):
         events = load_fixture_events(FIXTURES)

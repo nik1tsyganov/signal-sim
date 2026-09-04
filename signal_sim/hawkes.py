@@ -54,6 +54,35 @@ def _relevant(events: Iterable[Event]) -> list[tuple[datetime, float]]:
     )
 
 
+def intensity_map(
+    events: Iterable[Event],
+    when: datetime,
+    *,
+    baseline: float = BASELINE,
+    alpha: float = EXCITATION,
+    beta: float = DECAY,
+) -> dict[str, float]:
+    """Declared-parameter intensity per universe ticker. Not a fit."""
+    material = list(events)
+    return {
+        ticker: intensity_at(
+            (event for event in material if event.ticker == ticker),
+            when,
+            baseline=baseline,
+            alpha=alpha,
+            beta=beta,
+        )
+        for ticker in UNIVERSE
+    }
+
+
+def intensity_size_scale(intensity: float, baseline: float = BASELINE) -> float:
+    """Declared risk overlay: intensity above baseline shrinks size, never raises it."""
+    if not math.isfinite(intensity) or intensity <= 0:
+        return 1.0
+    return min(1.0, baseline / intensity)
+
+
 def intensity_at(
     events: Iterable[Event],
     when: datetime,
