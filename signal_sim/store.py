@@ -50,6 +50,15 @@ class EventStore:
         for event in events:
             self.add(event)
 
+    def amend(self, event: Event, *, supersedes: str) -> None:
+        """Insert a new immutable event. Never mutates the superseded row (docs R4)."""
+        if event.id == supersedes:
+            raise ValueError("amendment must use a new event id")
+        found = self.connection.execute("SELECT 1 FROM events WHERE id = ?", (supersedes,)).fetchone()
+        if found is None:
+            raise ValueError(f"unknown event id: {supersedes}")
+        self.add(event)
+
     def all(self) -> list[Event]:
         cursor = self.connection.execute(
             """

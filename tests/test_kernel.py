@@ -176,6 +176,36 @@ class RankingTests(unittest.TestCase):
             store.add(event(id="stored", headline="rewrite"))
         self.assertEqual(store.all()[0].headline, original.headline)
 
+    def test_amendment_is_a_new_event_not_an_edit(self):
+        connection = sqlite3.connect(":memory:")
+        store = EventStore(connection)
+        original = event(
+            id="ptr-1",
+            kind="congress_trade",
+            occurred_at="2026-07-15T00:00:00Z",
+            filed_at="2026-08-10T21:00:00Z",
+            observed_at="2026-08-11T14:02:00Z",
+        )
+        store.add(original)
+        amendment = event(
+            id="ptr-1-amend",
+            kind="congress_trade",
+            occurred_at="2026-07-15T00:00:00Z",
+            filed_at="2026-08-20T21:00:00Z",
+            observed_at="2026-08-21T14:02:00Z",
+            headline="corrected amount",
+        )
+        store.amend(amendment, supersedes=original.id)
+        rows = {row.id: row for row in store.all()}
+        self.assertEqual(set(rows), {"ptr-1", "ptr-1-amend"})
+        self.assertEqual(rows["ptr-1"].to_dict(), original.to_dict())
+        self.assertEqual(rows["ptr-1"].observed_at, original.observed_at)
+        self.assertEqual(rows["ptr-1-amend"].headline, "corrected amount")
+        self.assertGreater(rows["ptr-1-amend"].observed_at, rows["ptr-1"].observed_at)
+        with self.assertRaisesRegex(ValueError, "new event id"):
+            store.amend(event(id="ptr-1", headline="rewrite"), supersedes="ptr-1")
+        self.assertEqual(rows["ptr-1"].to_dict(), original.to_dict())
+
 
 class PaperOnlyCliTests(unittest.TestCase):
     def test_rank_output_contains_no_live_trading_hosts(self):
