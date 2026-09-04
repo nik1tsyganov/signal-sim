@@ -123,10 +123,20 @@ def _parse_mark_book(raw: dict[str, Any], marks_path: Path) -> dict[str, Any]:
     max_name_frac = _positive(max_name_frac, "max_name_frac")
     if max_name_frac > 1:
         raise ValueError("max_name_frac must be at most 1")
-    cost_bps = _non_negative(raw.get("cost_bps", COST_BPS), "cost_bps")
-    decision_delay_hours = _positive(
-        raw.get("decision_delay_hours", DECISION_DELAY_HOURS), "decision_delay_hours"
-    )
+    if "cost_bps" in raw:
+        cost_bps = _non_negative(raw.get("cost_bps"), "cost_bps")
+        if cost_bps != COST_BPS:
+            raise ValueError("cost_bps must match fixtures/params.json")
+    else:
+        cost_bps = COST_BPS
+    if "decision_delay_hours" in raw:
+        decision_delay_hours = _positive(
+            raw.get("decision_delay_hours"), "decision_delay_hours"
+        )
+        if decision_delay_hours != DECISION_DELAY_HOURS:
+            raise ValueError("decision_delay_hours must match fixtures/params.json")
+    else:
+        decision_delay_hours = DECISION_DELAY_HOURS
     fill_at = decision_at + timedelta(hours=decision_delay_hours)
     if fill_at >= exit_at:
         raise ValueError("fill_at must be before exit_at")

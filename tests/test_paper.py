@@ -21,6 +21,7 @@ from unittest import mock
 
 from signal_sim.indicators import UNIVERSE
 from signal_sim.paper import (
+    AlpacaPaperStub,
     LiveEndpointError,
     OrderRefused,
     ProvenanceMissing,
@@ -234,6 +235,11 @@ class SubmitPaperOrderTests(PaperOrderPathBase):
         self._assert_refused()
         self.assertEqual(self._audit_lines()[-1]["outcome"], "refused")
 
+    def test_unreadable_kill_check_refuses_order(self):
+        with mock.patch("signal_sim.safety.os.stat", side_effect=PermissionError("denied")):
+            self._assert_refused()
+        self.assertEqual(self._audit_lines()[-1]["outcome"], "refused")
+
     def test_kill_switch_error_fails_closed(self):
         with mock.patch(
             "signal_sim.safety.kill_switch_ok", side_effect=RuntimeError("boom")
@@ -392,9 +398,30 @@ class PaperBrokerClientTests(unittest.TestCase):
                     with self.assertRaises(LiveEndpointError):
                         paper_broker_client(host, port)
 
-    def test_paper_broker_host_is_still_refused_in_v0(self):
-        with self.assertRaises(ValueError):
-            paper_broker_client(PAPER_BROKER_HOST, 443)
+    def test_paper_broker_host_is_a_stub_and_never_opens_a_socket(self):
+        with mock.patch("socket.create_connection") as connect, mock.patch(
+            "urllib.request.urlopen"
+        ) as urlopen:
+            with self.assertRaises(NotImplementedError) as error:
+                paper_broker_client(PAPER_BROKER_HOST, 443)
+            self.assertIn("no verified key", str(error.exception))
+            connect.assert_not_called()
+            urlopen.assert_not_called()
+            with self.assertRaises(NotImplementedError):
+                AlpacaPaperStub()
+            connect.assert_not_called()
+            urlopen.assert_not_called()
+
+    def test_live_host_and_ports_never_open_a_socket(self):
+        with mock.patch("socket.create_connection") as connect, mock.patch(
+            "urllib.request.urlopen"
+        ) as urlopen:
+            with self.assertRaises(LiveEndpointError):
+                paper_broker_client(LIVE_BROKER_HOST, 443)
+            with self.assertRaises(LiveEndpointError):
+                paper_broker_client("gw.example.internal", IBKR_LIVE_PORTS[0])
+            connect.assert_not_called()
+            urlopen.assert_not_called()
 
     def test_ibkr_paper_port_is_still_refused_in_v0(self):
         with self.assertRaises(ValueError):

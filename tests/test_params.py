@@ -27,6 +27,9 @@ class ParamsManifestTests(unittest.TestCase):
         self.assertEqual(params.PLACEBO_SEED, raw["placebo_seed"])
 
     def test_shadow_and_default_mark_books_read_the_same_manifest(self):
+        from signal_sim.sim import TWO_NAME_MARKS, load_mark_path
+        from signal_sim.walkforward import load_walkforward_folds
+
         raw = json.loads(MANIFEST.read_text(encoding="utf-8"))
         frozen = shadow.frozen_params()
         self.assertEqual(frozen["half_life_hours"], raw["half_life_hours"])
@@ -35,12 +38,35 @@ class ParamsManifestTests(unittest.TestCase):
         self.assertEqual(frozen["cost_bps"], raw["cost_bps"])
         self.assertEqual(frozen["decision_delay_hours"], raw["decision_delay_hours"])
         self.assertIn("not fitted", frozen["note"].lower())
-        book = load_mark_book()
-        self.assertEqual(book["cost_bps"], raw["cost_bps"])
-        self.assertEqual(book["decision_delay_hours"], raw["decision_delay_hours"])
+        books = [load_mark_book(), load_mark_book(TWO_NAME_MARKS), *load_mark_path()]
+        books.extend(load_walkforward_folds())
+        for book in books:
+            self.assertEqual(book["cost_bps"], raw["cost_bps"])
+            self.assertEqual(book["decision_delay_hours"], raw["decision_delay_hours"])
         folds = json.loads((REPO / "fixtures" / "marks" / "walkforward.json").read_text(encoding="utf-8"))
         self.assertEqual(folds["cost_bps"], raw["cost_bps"])
         self.assertEqual(folds["decision_delay_hours"], raw["decision_delay_hours"])
+
+    def test_mark_book_cannot_override_manifest_cost_or_delay(self):
+        import os
+        import tempfile
+
+        from signal_sim.sim import load_mark_book
+
+        raw = json.loads(MANIFEST.read_text(encoding="utf-8"))
+        book = json.loads((REPO / "fixtures" / "marks" / "universe.json").read_text(encoding="utf-8"))
+        book["cost_bps"] = float(raw["cost_bps"]) + 1
+        handle = tempfile.NamedTemporaryFile("w", suffix=".json", delete=False)
+        self.addCleanup(os.unlink, handle.name)
+        handle.write(json.dumps(book))
+        handle.close()
+        with self.assertRaisesRegex(ValueError, "cost_bps must match"):
+            load_mark_book(handle.name)
+        book["cost_bps"] = raw["cost_bps"]
+        book["decision_delay_hours"] = float(raw["decision_delay_hours"]) + 1
+        Path(handle.name).write_text(json.dumps(book), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "decision_delay_hours must match"):
+            load_mark_book(handle.name)
 
     def test_hardcoded_constant_without_manifest_update_fails(self):
         raw = json.loads(MANIFEST.read_text(encoding="utf-8"))

@@ -69,13 +69,23 @@ class PaperBrokerClient:
     mode = "in-process"
 
 
+class AlpacaPaperStub:
+    """Later paper-host adapter. v0 has no keys and must not open a socket."""
+
+    mode = "paper-stub"
+
+    def __init__(self, *args, **kwargs):
+        raise NotImplementedError("no verified key + terms")
+
+
 def paper_broker_client(host=None, port=None):
     """Construct the broker client. v0 egress allowlist is empty (R2).
 
-    The default (no host, no port) is the in-process paper broker. Any
-    network endpoint is refused; known live endpoints (a non-paper broker
-    host, or IBKR live ports on any host) raise LiveEndpointError so a
-    future misconfiguration fails at startup, not at order time.
+    The default (no host, no port) is the in-process paper broker. The
+    paper-host name is a stub: it raises NotImplementedError for missing
+    keys and never opens a socket. Known live endpoints (a non-paper
+    broker host, or IBKR live ports on any host) raise LiveEndpointError
+    so a future misconfiguration fails at startup, not at order time.
     """
     if host is None and port is None:
         return PaperBrokerClient()
@@ -90,6 +100,8 @@ def paper_broker_client(host=None, port=None):
         port_number = None
     if port_number in _LIVE_PORTS:
         raise LiveEndpointError(f"live broker port refused: {host!r} port {port!r}")
+    if host_text.startswith(_PAPER_HOST_PREFIX) and _LIVE_HOST_FRAGMENT in host_text:
+        raise NotImplementedError("no verified key + terms")
     raise ValueError(
         "v0 egress allowlist is empty - PaperBroker is in-process only; "
         f"got {host!r} port {port!r}"

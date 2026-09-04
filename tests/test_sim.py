@@ -150,7 +150,11 @@ class ReplayRoundTripTests(unittest.TestCase):
         self.assertEqual(summary["fill_rule"], "decision-time fixture mark; size_frac of starting_cash")
         self.assertLess(summary["decision_at"], summary["fill_at"])
         self.assertTrue(all(row["filled_at"] == summary["fill_at"] for row in summary["orders"]))
-        self.assertEqual(summary["stats"]["cost_bps"], 0.0)
+        from signal_sim.params import COST_BPS, DECISION_DELAY_HOURS
+
+        self.assertEqual(summary["stats"]["cost_bps"], COST_BPS)
+        self.assertEqual(summary["cost_bps"], COST_BPS)
+        self.assertEqual(summary["decision_delay_hours"], DECISION_DELAY_HOURS)
         self.assertGreaterEqual(summary["stats"]["n_clusters"], 1)
 
         connection = sqlite3.connect(self.ledger)
