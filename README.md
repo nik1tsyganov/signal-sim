@@ -151,9 +151,10 @@ python3 -m signal_sim paper-account
 python3 -m signal_sim paper-account --dry-run
 python3 -m signal_sim rebalance --fixtures
 python3 -m signal_sim rebalance --fixtures --apply-local --ledger paper-rebalance.sqlite
+python3 -m signal_sim ledger --ledger paper-rebalance.sqlite --fixtures
 ```
 
-`rebalance --fixtures` prints intended tickets from the existing fixture / drift target book versus the paper account. It does not POST. Qty prefers fixture `entry_px`, then a paper IEX last trade or snapshot if one is returned. `--live` pulls Quiver / World Monitor into the Hawkes overlay without submitting. `--apply-local` records only `mark_source=fixture` tickets on the local ledger through `submit_paper_order`. Paper IEX marks size qty but never become fills. Default stays print-only. A 2026-09-04 local book smoke with cite counts is in [local book smoke](docs/local-book-smoke.md).
+`rebalance --fixtures` prints intended tickets from the existing fixture / drift target book versus the paper account. It does not POST. Qty prefers fixture `entry_px`, then a paper IEX last trade or snapshot if one is returned. `--live` pulls Quiver / World Monitor into the Hawkes overlay without submitting. `--apply-local` records only `mark_source=fixture` tickets on the local ledger through `submit_paper_order`. Paper IEX marks size qty but never become fills. Default stays print-only. `ledger --ledger` is the read-only morning-brief inspect of that sqlite (counts, sides, qtys, mark kinds, optional fixture-mark MTM). It does not POST and does not write. A 2026-09-04 local book smoke with cite counts is in [local book smoke](docs/local-book-smoke.md).
 
 The desk refuses to start unless the paper-only flag is on and no `KILL` file sits in the repository root.
 

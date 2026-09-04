@@ -12,6 +12,7 @@ from .fixture_load import load_fixture_events
 from .hawkes import fixture_intensity
 from .indicators import rank_candidates
 from .live_feeds import LiveFeedConfigError, missing_live_feed_keys, pull_live_feeds
+from .ledger import WRITE_REFUSED, inspect_ledger
 from .paper import (
     LiveEndpointError,
     missing_paper_keys,
@@ -216,6 +217,29 @@ def _parser() -> argparse.ArgumentParser:
     rebalance.add_argument(
         "--ledger",
         help="sqlite ledger path (required with --apply-local; unused for print-only)",
+    )
+    ledger = commands.add_parser(
+        "ledger",
+        aliases=["paper-ledger"],
+        help="read-only inspect of a local paper ledger (no POST, no write)",
+    )
+    ledger.add_argument(
+        "--ledger",
+        help="sqlite ledger path (required)",
+    )
+    ledger.add_argument(
+        "--fixtures",
+        action="store_true",
+        help="label mark kinds and print fixture-mark MTM versus fixtures/marks (not alpha)",
+    )
+    ledger.add_argument(
+        "--marks",
+        help="fixture mark book JSON or alias: liquid (default), two-name",
+    )
+    ledger.add_argument(
+        "--write",
+        action="store_true",
+        help="refused; inspect is read-only and does not write the ledger",
     )
     commands.add_parser(
         "runtime-env",
@@ -508,6 +532,52 @@ def main(argv: list[str] | None = None) -> int:
         report = dict(report)
         report["submit_flag"] = paper_submit_flag()
         report["runtime_env"] = runtime_env_status()
+        print(json.dumps(report, separators=(",", ":")))
+        return 0 if report.get("ok") is True else 1
+    if args.command in {"ledger", "paper-ledger"}:
+        ledger = getattr(args, "ledger", None)
+        if not ledger:
+            print("ledger inspect requires --ledger", file=sys.stderr)
+            return 2
+        if getattr(args, "write", False):
+            print(WRITE_REFUSED, file=sys.stderr)
+            return 2
+        if paper_submit_enabled():
+            print(
+                "SIGNAL_SIM_ALPACA_PAPER_SUBMIT=1 is unused for ledger inspect; "
+                "this path is read-only and does not POST.",
+                file=sys.stderr,
+            )
+        fixtures = None
+        mark_book_path = getattr(args, "marks", None)
+        if getattr(args, "fixtures", False) or mark_book_path:
+            fixtures = Path(__file__).resolve().parent.parent / "fixtures"
+        try:
+            report = inspect_ledger(
+                ledger,
+                fixtures=fixtures,
+                mark_book_path=mark_book_path,
+            )
+        except FileNotFoundError as error:
+            print(str(error), file=sys.stderr)
+            return 2
+        except ValueError as error:
+            print(str(error), file=sys.stderr)
+            return 2
+        mtm = report.get("mtm") or {}
+        if mtm:
+            print(
+                f"ledger inspect: n_orders={report.get('n_orders')} "
+                f"n_fills={report.get('n_fills')} "
+                f"fixture-mark total_pnl={mtm.get('total_pnl')} (not alpha)",
+                file=sys.stderr,
+            )
+        else:
+            print(
+                f"ledger inspect: n_orders={report.get('n_orders')} "
+                f"n_fills={report.get('n_fills')} (read-only)",
+                file=sys.stderr,
+            )
         print(json.dumps(report, separators=(",", ":")))
         return 0 if report.get("ok") is True else 1
     if args.command == "runtime-env":

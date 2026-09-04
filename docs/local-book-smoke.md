@@ -2,7 +2,7 @@
 
 End-to-end local simulated book after PR 6 (`rebalance --fixtures --apply-local --ledger`). Paper only. No live money. No Alpaca `/v2/orders` POST. Secret values were never printed or written into this file.
 
-**Morning-brief cite (not alpha):** print-only `n_tickets=10` / `n_skipped=2`; apply `n_applied=7` / `n_apply_skipped=3` (`paper_mark_not_execution`); ledger `7` fixture-mark fills; fixture-mark MTM `total_pnl=-265.07`.
+**Morning-brief cite (not alpha):** print-only `n_tickets=10` / `n_skipped=2`; apply `n_applied=7` / `n_apply_skipped=3` (`paper_mark_not_execution`); ledger `7` fixture-mark fills; fixture-mark MTM `total_pnl=-265.07`. Local book state: `python3 -m signal_sim ledger --ledger /tmp/signal-sim-paper.sqlite --fixtures`.
 
 ## Environment
 
@@ -32,9 +32,10 @@ python3 -m pip install -e .
 python3 -m signal_sim runtime-env
 python3 -m signal_sim rebalance --fixtures
 python3 -m signal_sim rebalance --fixtures --apply-local --ledger /tmp/signal-sim-paper.sqlite
+python3 -m signal_sim ledger --ledger /tmp/signal-sim-paper.sqlite --fixtures
 ```
 
-`--apply-local` requires `--ledger`. Print-only does not write that path.
+`--apply-local` requires `--ledger`. Print-only does not write that path. `ledger --ledger` is read-only inspect (`paper-ledger` is the same command). It does not POST and does not write the sqlite file. `--write` is refused. Pass `--fixtures` to label mark kinds and print fixture-mark MTM versus `fixtures/marks` (not alpha).
 
 ## 1. Print-only (`rebalance --fixtures`)
 
@@ -86,7 +87,15 @@ Re-running apply on the same ledger is idempotent: `n_applied=0`, `n_apply_skipp
 
 ## 3. Ledger inspect / fixture-mark PnL
 
-There is **no** dedicated ledger inspect / positions / PnL CLI. `replay --fixtures --ledger` would size a different book onto the same file; do not use it to read this apply. This summary is sqlite + the liquid fixture book.
+Read-only inspect of the apply-local sqlite (do **not** point `replay --fixtures --ledger` at this file; replay would size a different book onto it):
+
+```bash
+python3 -m signal_sim ledger --ledger /tmp/signal-sim-paper.sqlite --fixtures
+```
+
+That command prints order/fill counts, symbols, sides, qtys, mark kinds, and fixture-mark MTM versus `fixtures/marks/liquid.json`. It is fixture-mark plumbing, not alpha. It does not POST to Alpaca and does not write the ledger. `SIGNAL_SIM_ALPACA_PAPER_SUBMIT` is unused for this path.
+
+Equivalent sqlite (what inspect reads):
 
 ```sql
 SELECT o.ticker, o.side, o.size_frac, o.status, f.price, f.cost, f.filled_at
