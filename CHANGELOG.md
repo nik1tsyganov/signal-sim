@@ -2,6 +2,12 @@
 
 What landed in the paper operate loop. This is not a live trading log. Every PnL number the loop prints is **fixture-mark PnL**, not alpha.
 
+## Unreleased — ledger inspect
+
+- **Read-only inspect:** `python3 -m signal_sim ledger --ledger <path>` (`paper-ledger` is the same command) prints order/fill counts, symbols, sides, qtys, and mark kinds from a local sqlite ledger. `--fixtures` adds fixture-mark MTM versus `fixtures/marks`. Labeled plumbing, not alpha.
+- **Read-only:** no Alpaca POST and no ledger write. `--write` is refused. `SIGNAL_SIM_ALPACA_PAPER_SUBMIT` is unused for this path and stays `0` for trading.
+- **Morning brief:** [local book smoke](docs/local-book-smoke.md) cites `python3 -m signal_sim ledger --ledger /tmp/signal-sim-paper.sqlite --fixtures`.
+
 ## Unreleased — local book smoke
 
 - **Recorded apply:** [local book smoke](docs/local-book-smoke.md) runs print-only `rebalance --fixtures`, then `--apply-local --ledger /tmp/signal-sim-paper.sqlite`, on `main` after PR 6. Cite: `n_tickets=10` / `n_skipped=2`; `n_applied=7` / `n_apply_skipped=3` (`paper_mark_not_execution`). Fixture-mark MTM only; not alpha.

@@ -25,6 +25,7 @@ Without keys, the repo can:
 - Assert local rails without live calls (`rails --fixtures`, `GET /api/rails`).
 - Run one frozen-params pass of rails + rank + diagnose + intensity + drift + replay + walkforward + shadow (`smoke --fixtures`, `GET /api/smoke`).
 - Serve the same loop on loopback only (`serve`). The desk smoke button is click-only; it does not auto-run on page load.
+- Inspect a local sqlite ledger (`ledger --ledger <path>` or `paper-ledger`). Default is read-only: no POST, no write. `--fixtures` labels mark kinds and prints fixture-mark MTM versus `fixtures/marks` (not alpha). `--write` is refused.
 
 With owner keys on a local machine (never committed):
 
@@ -50,7 +51,10 @@ python3 -m signal_sim walkforward --fixtures
 python3 -m signal_sim shadow --fixtures
 python3 -m signal_sim diagnose --fixtures
 python3 -m signal_sim intensity --fixtures
+python3 -m signal_sim ledger --ledger paper-rebalance.sqlite --fixtures
 ```
+
+`ledger --ledger` is read-only and does not require paper keys. `--fixtures` is optional and only used to label mark kinds and print fixture-mark MTM.
 
 Desk (loopback only; default port 8765):
 
@@ -74,6 +78,7 @@ python3 -m signal_sim paper-account --dry-run
 python3 -m signal_sim rebalance --fixtures
 python3 -m signal_sim rebalance --fixtures --live
 python3 -m signal_sim rebalance --fixtures --apply-local --ledger paper-rebalance.sqlite
+python3 -m signal_sim ledger --ledger paper-rebalance.sqlite --fixtures
 ```
 
 `runtime-env` prints presence booleans only. It never prints secret values.
@@ -84,11 +89,11 @@ Unittest integration cases are marked with `skipUnless` the relevant env names a
 python3 -m unittest tests.test_live_feeds tests.test_alpaca_paper tests.test_rebalance -v
 ```
 
-`SIGNAL_SIM_ALPACA_PAPER_SUBMIT` defaults to `0`. `1` is reserved for a later paper-order POST. This build still refuses remote submits even if that flag is set. Default is read-only account smoke. `rebalance --fixtures` is print-only. `--apply-local` writes fixture-mark fills to `--ledger` only. `--live` needs intel keys and still does not POST. Fills stay on the local ledger.
+`SIGNAL_SIM_ALPACA_PAPER_SUBMIT` defaults to `0`. `1` is reserved for a later paper-order POST. This build still refuses remote submits even if that flag is set. Default is read-only account smoke. `rebalance --fixtures` is print-only. `--apply-local` writes fixture-mark fills to `--ledger` only. `ledger --ledger` is the morning-brief read of that file (counts, sides, qtys, mark kinds, optional fixture-mark MTM). It does not POST and does not write. `--live` needs intel keys and still does not POST. Fills stay on the local ledger.
 
 A 2026-09-04 Cloud Runtime Secrets pass (presence only; no secret values) is recorded in [paper smoke results](paper-smoke-results.md). That run kept the submit flag at `0`.
 
-A 2026-09-04 local book smoke (print-only, then `--apply-local` onto `/tmp/signal-sim-paper.sqlite`) is recorded in [local book smoke](local-book-smoke.md). Morning-brief cite, **not alpha**: print-only `n_tickets=10` / `n_skipped=2`; apply `n_applied=7` / `n_apply_skipped=3` (`paper_mark_not_execution`); fixture-mark MTM `total_pnl=-265.07`. Submit stayed `0`. No `/v2/orders` POST. Do not apply-local a `--live` paper-mark ticket as a fill.
+A 2026-09-04 local book smoke (print-only, then `--apply-local` onto `/tmp/signal-sim-paper.sqlite`) is recorded in [local book smoke](local-book-smoke.md). Morning-brief cite, **not alpha**: print-only `n_tickets=10` / `n_skipped=2`; apply `n_applied=7` / `n_apply_skipped=3` (`paper_mark_not_execution`); fixture-mark MTM `total_pnl=-265.07`. Local book state: `python3 -m signal_sim ledger --ledger /tmp/signal-sim-paper.sqlite --fixtures`. Submit stayed `0`. No `/v2/orders` POST. Do not apply-local a `--live` paper-mark ticket as a fill.
 
 ## Cursor Cloud Runtime Secrets
 
@@ -155,6 +160,7 @@ There is no TrendRadar live client and no GPL/AGPL vendoring.
 - `paper-account` is a paper-host read smoke. It is not a live-money balance, not a fill, and not permission to trade live.
 - `rebalance --fixtures` tickets are a proposed book versus paper positions. They are not a broker fill, not alpha, and not permission to POST. A paper last trade or snapshot used for qty is a sizing mark only, not a `fixture_mark` fill.
 - `rebalance --fixtures --apply-local` grows a local simulated book from those same tickets. It is a fixture-mark ledger fill, not a broker submit and not a live-money trade. Paper IEX marks never become claimed fills.
+- `ledger --ledger` is a read of that local simulated book. Fixture-mark MTM is plumbing, not alpha.
 - The desk is paper-only and loopback-only. It is not a production broker UI.
 
 See [the changelog](../CHANGELOG.md), [paper trading and quant research](paper-trading-and-quant.md), and [alternative data and safety](alt-data-and-safety.md).
