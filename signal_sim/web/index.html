@@ -243,6 +243,14 @@
                  .replace(/'/g, "&#039;");
         }
 
+        function renderJson(value) {
+            return '<pre>' + escapeHtml(JSON.stringify(value, null, 2)) + '</pre>';
+        }
+
+        function renderError(label, err) {
+            return '<div class="error">' + label + ': ' + escapeHtml(err.message) + '</div>';
+        }
+
         function renderPaperSummary(data) {
             if (data.steps && data.steps.length) {
                 const history = data.position_history && data.position_history.length
@@ -282,9 +290,9 @@
                     throw new Error(`HTTP ${response.status}: ${response.statusText}`);
                 }
                 const data = await response.json();
-                box.innerHTML = `<pre>${escapeHtml(JSON.stringify(renderPaperSummary(data), null, 2))}</pre>`;
+                box.innerHTML = renderJson(renderPaperSummary(data));
             } catch (err) {
-                box.innerHTML = `<div class="error">Replay failed: ${escapeHtml(err.message)}</div>`;
+                box.innerHTML = renderError('Replay failed', err);
             }
         }
 
@@ -310,7 +318,7 @@
                 }
                 const rankedSet = new Set(ranked);
                 const notInRankCut = (marks.universe || []).filter((ticker) => !rankedSet.has(ticker));
-                box.innerHTML = `<pre>${escapeHtml(JSON.stringify({
+                box.innerHTML = renderJson({
                     universe: marks.universe || [],
                     default_fillable: marks.default_fillable || [],
                     liquid_fillable: marks.liquid_fillable || [],
@@ -319,9 +327,9 @@
                     no_print: marks.no_print || [],
                     no_print_reason: marks.no_print_reason || '',
                     not_in_rank_cut: notInRankCut,
-                }, null, 2))}</pre>`;
+                });
             } catch (err) {
-                box.innerHTML = `<div class="error">Marks failed: ${escapeHtml(err.message)}</div>`;
+                box.innerHTML = renderError('Marks failed', err);
             }
         }
 
@@ -333,7 +341,7 @@
                     throw new Error(`HTTP ${response.status}: ${response.statusText}`);
                 }
                 const data = await response.json();
-                box.innerHTML = `<pre>${escapeHtml(JSON.stringify({
+                box.innerHTML = renderJson({
                     mode: data.mode,
                     note: data.note,
                     when: data.when,
@@ -346,9 +354,9 @@
                     intensity: data.intensity || {},
                     intel: data.intel || {},
                     trendradar: data.trendradar || {},
-                }, null, 2))}</pre>`;
+                });
             } catch (err) {
-                box.innerHTML = `<div class="error">Diagnose failed: ${escapeHtml(err.message)}</div>`;
+                box.innerHTML = renderError('Diagnose failed', err);
             }
         }
 
@@ -360,14 +368,14 @@
                     throw new Error(`HTTP ${response.status}: ${response.statusText}`);
                 }
                 const data = await response.json();
-                box.innerHTML = `<pre>${escapeHtml(JSON.stringify({
+                box.innerHTML = renderJson({
                     mode: data.mode,
                     note: data.note,
                     decision_at: data.decision_at,
                     horizon_hours: data.horizon_hours,
                     intel: data.intel || {},
                     trendradar: data.trendradar || {},
-                    targets: (data.targets || []).map((row) => ({)
+                    targets: (data.targets || []).map((row) => ({
                         ticker: row.ticker,
                         target_frac: row.target_frac,
                         horizon_hours: row.horizon_hours,
@@ -378,9 +386,9 @@
                         chokepoint: row.chokepoint,
                         trendradar: row.trendradar,
                     })),
-                }, null, 2))}</pre>`;
+                });
             } catch (err) {
-                box.innerHTML = `<div class="error">Drift failed: ${escapeHtml(err.message)}</div>`;
+                box.innerHTML = renderError('Drift failed', err);
             }
         }
 
@@ -402,15 +410,15 @@
                     news_only: (fold.comparisons || {}).news_only && fold.comparisons.news_only.total_pnl,
                     pnl_note: fold.pnl_note,
                 }));
-                box.innerHTML = `<pre>${escapeHtml(JSON.stringify({
+                box.innerHTML = renderJson({
                     mode: data.mode,
                     note: data.note,
                     params: data.params || {},
                     n_folds: (data.walkforward || {}).n_folds,
                     folds: folds,
-                }, null, 2))}</pre>`;
+                });
             } catch (err) {
-                box.innerHTML = `<div class="error">Shadow-paper failed: ${escapeHtml(err.message)}</div>`;
+                box.innerHTML = renderError('Shadow-paper failed', err);
             }
         }
 
@@ -432,14 +440,14 @@
                     news_only: (fold.comparisons || {}).news_only && fold.comparisons.news_only.total_pnl,
                     pnl_note: fold.pnl_note,
                 }));
-                box.innerHTML = `<pre>${escapeHtml(JSON.stringify({
+                box.innerHTML = renderJson({
                     mode: data.mode,
                     note: data.note,
                     n_folds: data.n_folds,
                     folds: rows,
-                }, null, 2))}</pre>`;
+                });
             } catch (err) {
-                box.innerHTML = `<div class="error">Walk-forward failed: ${escapeHtml(err.message)}</div>`;
+                box.innerHTML = renderError('Walk-forward failed', err);
             }
         }
 

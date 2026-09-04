@@ -158,10 +158,15 @@ class _DeskHandler(BaseHTTPRequestHandler):
         return
 
 
+class _DeskServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
+    daemon_threads = True
+    allow_reuse_address = True
+
+
 def _make_server(port: int = DEFAULT_PORT) -> socketserver.TCPServer:
     if safety.PAPER_ONLY is not True or safety.kill_switch_ok() is not True:
         raise RuntimeError("paper-only safety checks failed; server refused")
-    return socketserver.TCPServer((_LOOPBACK, port), _DeskHandler)
+    return _DeskServer((_LOOPBACK, port), _DeskHandler)
 
 
 def serve(port: int = DEFAULT_PORT) -> None:

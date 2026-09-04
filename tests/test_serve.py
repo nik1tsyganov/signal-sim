@@ -301,6 +301,8 @@ class ServeTests(unittest.TestCase):
         self.assertIn(b"equity_curve", body)
         self.assertIn(b"position_history", body)
         self.assertIn(b"n_events_after_decision", body)
+        self.assertIn(b"renderJson", body)
+        self.assertNotIn(b"${escapeHtml(JSON.stringify({", body)
         self.assertNotIn(b"sharpe", body.lower())
 
     def test_root_falls_back_to_paper_only_message(self):
