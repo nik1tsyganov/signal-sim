@@ -2,6 +2,11 @@
 
 What landed in the paper operate loop. This is not a live trading log. Every PnL number the loop prints is **fixture-mark PnL**, not alpha.
 
+## Unreleased — proposed rebalance dry-run
+
+- **Rebalance dry-run:** `python3 -m signal_sim rebalance --fixtures` reads the Alpaca paper account and positions, sizes the existing fixture cluster-drift target book (or rank with `--rank`), and prints intended tickets. No remote paper POST. No `submit_paper_order`. Qty uses fixture `entry_px`.
+- **Fills:** still local-ledger only. `SIGNAL_SIM_ALPACA_PAPER_SUBMIT` stays `0` and still does not enable a POST.
+
 ## Unreleased — live intel + Alpaca paper read
 
 - **Live intel:** `python3 -m signal_sim feeds --live` pulls Quiver and World Monitor and prints counts plus a ticker histogram only. Missing `QUIVER_API_KEY` or `WORLD_MONITOR_KEY` exits 2. No raw PII dump.

@@ -19,7 +19,9 @@ from .paper import (
     paper_host,
     paper_submit_enabled,
 )
+from .rebalance import proposed_rebalance
 from .runtime_env import paper_submit_flag, runtime_env_status
+from .sim import resolve_mark_book_path
 from .store import EventStore
 
 
@@ -178,6 +180,29 @@ def _parser() -> argparse.ArgumentParser:
         action="store_true",
         help="also validate a sample paper-order payload (does not POST)",
     )
+    rebalance = commands.add_parser(
+        "rebalance",
+        help="print proposed paper rebalance tickets (no POST)",
+    )
+    rebalance.add_argument(
+        "--fixtures",
+        action="store_true",
+        help="load local fixture events and marks (required; the only supported target book)",
+    )
+    rebalance.add_argument(
+        "--marks",
+        help="fixture mark book JSON or alias: liquid (default), two-name",
+    )
+    rebalance.add_argument(
+        "--rank",
+        action="store_true",
+        help="size from rank_candidates instead of the cluster-drift stub",
+    )
+    rebalance.add_argument(
+        "--intensity",
+        action="store_true",
+        help="apply declared Hawkes intensity overlay on the drift book",
+    )
     commands.add_parser(
         "runtime-env",
         help="print Runtime Secret / env presence only (never values)",
@@ -198,6 +223,7 @@ def main(argv: list[str] | None = None) -> int:
         "shadow",
         "rails",
         "smoke",
+        "rebalance",
     } and not args.fixtures:
         print(
             f"{args.command} requires --fixtures; only local fixture events are supported",
@@ -392,6 +418,48 @@ def main(argv: list[str] | None = None) -> int:
             print(str(error), file=sys.stderr)
             return 2
         except NotImplementedError as error:
+            print(str(error), file=sys.stderr)
+            return 2
+        report = dict(report)
+        report["submit_flag"] = paper_submit_flag()
+        report["runtime_env"] = runtime_env_status()
+        print(json.dumps(report, separators=(",", ":")))
+        return 0 if report.get("ok") is True else 1
+    if args.command == "rebalance":
+        if getattr(args, "intensity", False) and getattr(args, "rank", False):
+            print("rebalance --intensity requires the drift book (omit --rank)", file=sys.stderr)
+            return 2
+        missing = missing_paper_keys()
+        if missing:
+            print(
+                "rebalance missing env: " + ", ".join(missing),
+                file=sys.stderr,
+            )
+            return 2
+        if paper_submit_enabled():
+            print(
+                "SIGNAL_SIM_ALPACA_PAPER_SUBMIT=1; this build still "
+                "refuses remote paper POSTs. Rebalance is print-only.",
+                file=sys.stderr,
+            )
+        try:
+            client = paper_broker_client(paper_host())
+            mark_book_path = resolve_mark_book_path(args.marks) if args.marks else None
+            fixtures = Path(__file__).resolve().parent.parent / "fixtures"
+            report = proposed_rebalance(
+                fixtures=fixtures,
+                mark_book_path=mark_book_path,
+                client=client,
+                signal="rank" if getattr(args, "rank", False) else "drift",
+                intensity=getattr(args, "intensity", False),
+            )
+        except LiveEndpointError as error:
+            print(str(error), file=sys.stderr)
+            return 2
+        except NotImplementedError as error:
+            print(str(error), file=sys.stderr)
+            return 2
+        except ValueError as error:
             print(str(error), file=sys.stderr)
             return 2
         report = dict(report)

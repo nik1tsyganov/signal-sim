@@ -149,7 +149,10 @@ python3 -m signal_sim runtime-env
 python3 -m signal_sim feeds --live
 python3 -m signal_sim paper-account
 python3 -m signal_sim paper-account --dry-run
+python3 -m signal_sim rebalance --fixtures
 ```
+
+`rebalance --fixtures` prints intended tickets from the existing fixture / drift target book versus the paper account. It does not POST. Qty uses fixture `entry_px`, not a live quote.
 
 The desk refuses to start unless the paper-only flag is on and no `KILL` file sits in the repository root.
 
