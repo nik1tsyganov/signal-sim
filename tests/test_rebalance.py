@@ -1,0 +1,390 @@
+"""Print-only paper rebalance dry-run. HTTP is mocked unless paper keys exist."""
+
+import io
+import json
+import os
+import unittest
+from contextlib import redirect_stderr, redirect_stdout
+from pathlib import Path
+from unittest import mock
+
+from signal_sim import cli
+from signal_sim.drift import fixture_drift_book
+from signal_sim.paper import paper_broker_client, paper_host
+from signal_sim.rebalance import (
+    SIGNAL_DRIFT,
+    allocation_base,
+    paper_held,
+    plan_rebalance_tickets,
+    proposed_rebalance,
+)
+from signal_sim.sim import load_mark_book
+from signal_sim.sizer import size_targets
+
+
+REPO = Path(__file__).resolve().parent.parent
+FIXTURES = REPO / "fixtures"
+LIQUID_FILLS = {"NVDA", "MSFT", "XLE", "XOM", "DIS", "NFLX", "SPY", "QQQ"}
+NO_MARK_PRINTED = {"AAPL", "CMCSA", "CVX", "XLK"}
+PAPER_BROKER_HOST = "paper-api." + "alpaca" + ".markets"
+
+_FAKE_KEYS = {
+    "ALPACA_PAPER_API_KEY": "paper-key-id",
+    "ALPACA_PAPER_API_SECRET": "paper-secret",
+}
+
+
+def _env(name, extra=None):
+    values = dict(_FAKE_KEYS)
+    if extra:
+        values.update(extra)
+    return values.get(name)
+
+
+def _json_response(payload):
+    response = mock.MagicMock()
+    response.read.return_value = json.dumps(payload).encode("utf-8")
+    response.__enter__.return_value = response
+    response.__exit__.return_value = False
+    return response
+
+
+def _empty_account(**overrides):
+    row = {
+        "status": "ACTIVE",
+        "currency": "USD",
+        "cash": "100000",
+        "equity": "100000",
+        "buying_power": "200000",
+        "trading_blocked": False,
+        "account_blocked": False,
+        "pattern_day_trader": False,
+        "shorting_enabled": True,
+        "account_number": "PA123HIDE",
+        "id": "uuid-hide",
+    }
+    row.update(overrides)
+    return row
+
+
+def _clock():
+    return {
+        "timestamp": "2026-09-04T12:00:00Z",
+        "is_open": False,
+        "next_open": "2026-09-08T13:30:00Z",
+        "next_close": "2026-09-08T20:00:00Z",
+    }
+
+
+def _sized_drift_targets(mark_book=None):
+    book = mark_book if mark_book is not None else load_mark_book()
+    drift = fixture_drift_book(FIXTURES)
+    horizon_hours = (book["exit_at"] - book["decision_at"]).total_seconds() / 3600.0
+    fillable = [row for row in drift["targets"] if row["ticker"] in book["marks"]]
+    targets, skipped = size_targets(
+        fillable,
+        size_frac=float(book["size_frac"]),
+        horizon_hours=horizon_hours,
+        max_gross_frac=float(book["max_gross_frac"]),
+        max_name_frac=float(book["max_name_frac"]),
+    )
+    return book, targets, skipped
+
+
+class RebalancePlannerTests(unittest.TestCase):
+    def test_empty_paper_opens_fillable_drift_targets(self):
+        book, expected, _size_skips = _sized_drift_targets()
+        report = proposed_rebalance(
+            fixtures=FIXTURES,
+            account=_empty_account(),
+            positions=[],
+            clock=_clock(),
+        )
+        self.assertEqual(report["mode"], "paper-rebalance-dry-run")
+        self.assertEqual(report["signal"], SIGNAL_DRIFT)
+        self.assertTrue(report["ok"])
+        self.assertFalse(report["submitted"])
+        self.assertEqual(report["order_post"], "disabled")
+        self.assertIn("not alpha", report["note"].lower())
+        self.assertEqual(report["decision_at"], "2026-09-02T10:15:00Z")
+        self.assertTrue(report["printed_at"].endswith("Z"))
+        self.assertEqual(report["clock"]["timestamp"], "2026-09-04T12:00:00Z")
+        self.assertNotIn("account_number", report["account"])
+        self.assertNotIn("id", report["account"])
+        tickets = {row["symbol"]: row for row in report["tickets"]}
+        self.assertEqual(set(tickets), {row["ticker"] for row in expected})
+        self.assertEqual(set(tickets), LIQUID_FILLS)
+        for row in expected:
+            ticket = tickets[row["ticker"]]
+            self.assertEqual(ticket["side"], "buy")
+            self.assertEqual(ticket["action"], "open")
+            self.assertFalse(ticket["submitted"])
+            self.assertAlmostEqual(ticket["size_frac"], float(row["target_frac"]))
+            self.assertAlmostEqual(
+                ticket["qty"],
+                100000.0 * float(row["target_frac"]) / book["marks"][row["ticker"]]["entry_px"],
+            )
+            self.assertAlmostEqual(
+                ticket["notional"],
+                abs(ticket["qty"]) * book["marks"][row["ticker"]]["entry_px"],
+            )
+            self.assertIn("cluster-drift-stub", ticket["rationale"])
+            self.assertEqual(ticket["payload"]["type"], "market")
+        skip_reasons = {row["ticker"]: row["reason"] for row in report["skipped"]}
+        for ticker in NO_MARK_PRINTED:
+            self.assertEqual(skip_reasons[ticker], "no_mark")
+
+    def test_held_leftover_without_target_is_a_close(self):
+        book = load_mark_book()
+        report = proposed_rebalance(
+            fixtures=FIXTURES,
+            account=_empty_account(),
+            positions=[{"symbol": "SPY", "qty": "10", "side": "long"}],
+            clock=_clock(),
+        )
+        spy = next(row for row in report["tickets"] if row["symbol"] == "SPY")
+        expected_target = next(
+            row for row in report["targets"] if row["ticker"] == "SPY"
+        )
+        target_shares = 100000.0 * float(expected_target["target_frac"]) / book["marks"]["SPY"]["entry_px"]
+        self.assertEqual(spy["side"], "buy" if target_shares > 10 else "sell")
+        self.assertEqual(spy["action"], "adjust")
+        tickets, skipped = plan_rebalance_tickets(
+            targets=[],
+            marks=book["marks"],
+            held={"SPY": {"shares": 10.0, "side": "long"}},
+            cash=100000.0,
+            allocation=100000.0,
+            cost_bps=0.0,
+            signal=SIGNAL_DRIFT,
+            decision_at="2026-09-02T10:15:00Z",
+        )
+        self.assertEqual(skipped, [])
+        self.assertEqual(len(tickets), 1)
+        self.assertEqual(tickets[0]["symbol"], "SPY")
+        self.assertEqual(tickets[0]["side"], "sell")
+        self.assertEqual(tickets[0]["action"], "close")
+        self.assertAlmostEqual(tickets[0]["qty"], -10.0)
+        self.assertIn("close leftover", tickets[0]["rationale"])
+        self.assertFalse(tickets[0]["submitted"])
+
+    def test_held_unmarked_name_is_skipped_without_a_price(self):
+        report = proposed_rebalance(
+            fixtures=FIXTURES,
+            account=_empty_account(),
+            positions=[
+                {"symbol": "AAPL", "qty": "3", "side": "long"},
+                {"symbol": "TSLA", "qty": "1", "side": "long"},
+            ],
+            clock=_clock(),
+        )
+        reasons = {row["ticker"]: row["reason"] for row in report["skipped"]}
+        self.assertEqual(reasons["AAPL"], "held_no_mark")
+        self.assertEqual(reasons["TSLA"], "ticker_not_in_universe")
+        self.assertFalse(any(row["symbol"] == "AAPL" for row in report["tickets"]))
+        self.assertFalse(any(row["symbol"] == "TSLA" for row in report["tickets"]))
+
+    def test_on_target_holding_emits_no_ticket(self):
+        book, expected, _skipped = _sized_drift_targets()
+        nvda = next(row for row in expected if row["ticker"] == "NVDA")
+        qty = 100000.0 * float(nvda["target_frac"]) / book["marks"]["NVDA"]["entry_px"]
+        tickets, skipped = plan_rebalance_tickets(
+            targets=[nvda],
+            marks=book["marks"],
+            held={"NVDA": {"shares": qty, "side": "long"}},
+            cash=100000.0,
+            allocation=100000.0,
+            cost_bps=0.0,
+            signal=SIGNAL_DRIFT,
+            decision_at="2026-09-02T10:15:00Z",
+        )
+        self.assertEqual(tickets, [])
+        self.assertEqual(skipped, [])
+
+    def test_cash_constraint_skips_instead_of_resizing(self):
+        book, expected, _skipped = _sized_drift_targets()
+        nvda = next(row for row in expected if row["ticker"] == "NVDA")
+        tickets, skipped = plan_rebalance_tickets(
+            targets=[nvda],
+            marks=book["marks"],
+            held={},
+            cash=1.0,
+            allocation=100000.0,
+            cost_bps=0.0,
+            signal=SIGNAL_DRIFT,
+            decision_at="2026-09-02T10:15:00Z",
+        )
+        self.assertEqual(tickets, [])
+        self.assertEqual(skipped, [{"ticker": "NVDA", "reason": "cash_constraint"}])
+
+    def test_allocation_prefers_paper_equity(self):
+        self.assertEqual(allocation_base({"equity": "250000", "cash": "1"}, 100000.0), 250000.0)
+        self.assertEqual(allocation_base({"cash": "80"}, 100000.0), 80.0)
+        self.assertEqual(allocation_base({}, 100000.0), 100000.0)
+
+    def test_paper_held_signs_shorts(self):
+        held, skipped = paper_held(
+            [
+                {"symbol": "NVDA", "qty": "2", "side": "long"},
+                {"symbol": "MSFT", "qty": "4", "side": "short"},
+            ]
+        )
+        self.assertEqual(held["NVDA"]["shares"], 2.0)
+        self.assertEqual(held["MSFT"]["shares"], -4.0)
+        self.assertEqual(skipped, [])
+
+    def test_rank_signal_uses_existing_rank_candidates(self):
+        report = proposed_rebalance(
+            fixtures=FIXTURES,
+            account=_empty_account(),
+            positions=[],
+            clock=_clock(),
+            signal="rank",
+        )
+        self.assertEqual(report["signal"], "rank-candidates")
+        self.assertTrue(report["tickets"])
+        self.assertTrue(all(row["side"] == "buy" for row in report["tickets"]))
+        self.assertTrue({row["symbol"] for row in report["tickets"]}.issubset(LIQUID_FILLS))
+
+    def test_missing_account_raises_before_http(self):
+        with mock.patch("signal_sim.alpaca_paper.urllib.request.urlopen") as urlopen:
+            with self.assertRaises(ValueError):
+                proposed_rebalance(fixtures=FIXTURES)
+        urlopen.assert_not_called()
+
+    def test_does_not_import_an_order_path(self):
+        import inspect
+
+        source = inspect.getsource(__import__("signal_sim.rebalance", fromlist=["proposed_rebalance"]))
+        lowered = source.lower()
+        self.assertNotIn("submit_paper_order(", lowered)
+        self.assertNotIn("urlopen", lowered)
+        self.assertNotIn("insert into orders", lowered)
+
+
+class RebalanceCliTests(unittest.TestCase):
+    def test_requires_fixtures(self):
+        error = io.StringIO()
+        with redirect_stdout(io.StringIO()), redirect_stderr(error):
+            code = cli.main(["rebalance"])
+        self.assertEqual(code, 2)
+        self.assertIn("requires --fixtures", error.getvalue())
+
+    def test_missing_keys_exit_2(self):
+        error = io.StringIO()
+        with mock.patch("signal_sim.paper.read_env", return_value=None), redirect_stdout(
+            io.StringIO()
+        ), redirect_stderr(error):
+            code = cli.main(["rebalance", "--fixtures"])
+        self.assertEqual(code, 2)
+        self.assertIn("ALPACA_PAPER_API_KEY", error.getvalue())
+        self.assertIn("ALPACA_PAPER_API_SECRET", error.getvalue())
+        self.assertNotIn("paper-secret", error.getvalue())
+
+    def test_intensity_with_rank_exits_2(self):
+        error = io.StringIO()
+        with mock.patch("signal_sim.paper.read_env", side_effect=_env), redirect_stdout(
+            io.StringIO()
+        ), redirect_stderr(error):
+            code = cli.main(["rebalance", "--fixtures", "--rank", "--intensity"])
+        self.assertEqual(code, 2)
+        self.assertIn("intensity", error.getvalue())
+
+    def test_cli_prints_tickets_with_get_only(self):
+        calls = []
+
+        def urlopen(request, timeout=None):
+            calls.append((request.full_url, request.get_method()))
+            url = request.full_url
+            if url.endswith("/v2/account"):
+                return _json_response(_empty_account())
+            if url.endswith("/v2/positions"):
+                return _json_response([])
+            if url.endswith("/v2/clock"):
+                return _json_response(_clock())
+            raise AssertionError(url)
+
+        printed = io.StringIO()
+        error = io.StringIO()
+        with mock.patch("signal_sim.paper.read_env", side_effect=_env), mock.patch(
+            "signal_sim.alpaca_paper.urllib.request.urlopen", side_effect=urlopen
+        ), redirect_stdout(printed), redirect_stderr(error):
+            code = cli.main(["rebalance", "--fixtures"])
+        self.assertEqual(code, 0)
+        payload = json.loads(printed.getvalue())
+        self.assertTrue(payload["ok"])
+        self.assertFalse(payload["submitted"])
+        self.assertEqual(payload["order_post"], "disabled")
+        self.assertGreaterEqual(payload["n_tickets"], 1)
+        self.assertTrue(all(row["submitted"] is False for row in payload["tickets"]))
+        dumped = printed.getvalue() + error.getvalue()
+        self.assertNotIn("paper-secret", dumped)
+        self.assertNotIn("PA123HIDE", dumped)
+        self.assertNotIn("uuid-hide", dumped)
+        self.assertEqual(len(calls), 3)
+        self.assertTrue(all(method == "GET" for _url, method in calls))
+        self.assertTrue(all("/v2/orders" not in url for url, _method in calls))
+        self.assertTrue(all(PAPER_BROKER_HOST in url for url, _method in calls))
+
+    def test_submit_flag_still_does_not_post(self):
+        calls = []
+
+        def env(name):
+            if name == "SIGNAL_SIM_ALPACA_PAPER_SUBMIT":
+                return "1"
+            return _env(name)
+
+        def urlopen(request, timeout=None):
+            calls.append(request.get_method())
+            url = request.full_url
+            if url.endswith("/v2/account"):
+                return _json_response(_empty_account())
+            if url.endswith("/v2/positions"):
+                return _json_response([])
+            if url.endswith("/v2/clock"):
+                return _json_response(_clock())
+            raise AssertionError(url)
+
+        printed = io.StringIO()
+        error = io.StringIO()
+        with mock.patch("signal_sim.paper.read_env", side_effect=env), mock.patch(
+            "signal_sim.runtime_env.read_env", side_effect=env
+        ), mock.patch(
+            "signal_sim.alpaca_paper.urllib.request.urlopen", side_effect=urlopen
+        ), redirect_stdout(printed), redirect_stderr(error):
+            code = cli.main(["rebalance", "--fixtures"])
+        self.assertEqual(code, 0)
+        payload = json.loads(printed.getvalue())
+        self.assertEqual(payload["submit_flag"], "1")
+        self.assertFalse(payload["submitted"])
+        self.assertTrue(all(method == "GET" for method in calls))
+        self.assertIn("refuses remote paper POSTs", error.getvalue())
+
+
+def _paper_keys_present():
+    return bool(os.environ.get("ALPACA_PAPER_API_KEY", "").strip()) and bool(
+        os.environ.get("ALPACA_PAPER_API_SECRET", "").strip()
+    )
+
+
+@unittest.skipUnless(_paper_keys_present(), "ALPACA_PAPER_API_KEY/SECRET not set")
+class RebalanceLiveReadTests(unittest.TestCase):
+    def test_live_paper_read_prints_tickets_without_posting(self):
+        client = paper_broker_client(paper_host())
+        for name in ("submit", "submit_order", "place_order", "submit_paper_order"):
+            self.assertFalse(hasattr(client, name), name)
+        report = proposed_rebalance(fixtures=FIXTURES, client=client)
+        self.assertEqual(report["mode"], "paper-rebalance-dry-run")
+        self.assertTrue(report["ok"])
+        self.assertFalse(report["submitted"])
+        self.assertEqual(report["order_post"], "disabled")
+        self.assertIsInstance(report["tickets"], list)
+        self.assertTrue(all(row["submitted"] is False for row in report["tickets"]))
+        dumped = json.dumps(report)
+        self.assertNotIn(os.environ["ALPACA_PAPER_API_KEY"], dumped)
+        self.assertNotIn(os.environ["ALPACA_PAPER_API_SECRET"], dumped)
+        self.assertNotIn("account_number", dumped)
+
+
+if __name__ == "__main__":
+    unittest.main()
