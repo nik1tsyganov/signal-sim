@@ -133,9 +133,18 @@ def _parser() -> argparse.ArgumentParser:
         "--out",
         help="write the JSON report here (default: artifacts dir or stdout only)",
     )
+    rails = commands.add_parser(
+        "rails",
+        help="local rails only: live host, temp KILL, research/vendor mark",
+    )
+    rails.add_argument(
+        "--fixtures",
+        action="store_true",
+        help="required; rails stay on local fixtures and do not place live calls",
+    )
     smoke = commands.add_parser(
         "smoke",
-        help="one frozen-params pass of rank/diagnose/intensity/drift/replay/walkforward/shadow",
+        help="one frozen-params pass of rails/rank/diagnose/intensity/drift/replay/walkforward/shadow",
     )
     smoke.add_argument(
         "--fixtures",
@@ -156,6 +165,7 @@ def main(argv: list[str] | None = None) -> int:
         "replay",
         "walkforward",
         "shadow",
+        "rails",
         "smoke",
     } and not args.fixtures:
         print(
@@ -289,6 +299,16 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(json.dumps(report, separators=(",", ":")))
         return 0
+    if args.command == "rails":
+        import tempfile
+
+        from .smoke import run_rails
+
+        ledger_dir = tempfile.mkdtemp(prefix="paper-rails-")
+        report = run_rails(ledger_dir=ledger_dir)
+        print(f"rails params_sha256={report.get('params_sha256')} ok={report.get('ok')}", file=sys.stderr)
+        print(json.dumps(report, separators=(",", ":")))
+        return 0 if report.get("ok") is True else 1
     if args.command == "smoke":
         import tempfile
 

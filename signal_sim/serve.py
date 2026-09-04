@@ -29,6 +29,7 @@ _FALLBACK = (
     b"GET /api/marks who can fill vs no_mark\n"
     b"GET /api/walkforward expanding folds and comparisons; does not place desk orders\n"
     b"GET /api/shadow frozen shadow-paper report; does not write artifacts or place desk orders\n"
+    b"GET /api/rails local rails only; no live HTTP; does not place desk orders\n"
     b"GET /api/smoke frozen-params operate pass; does not write artifacts or place desk orders\n"
     b"POST /api/replay default liquid sector book\n"
     b"POST /api/liquid same eight-name sector book\n"
@@ -92,6 +93,15 @@ class _DeskHandler(BaseHTTPRequestHandler):
             ledger_dir = tempfile.mkdtemp(prefix="desk-walkforward-")
             summary = run_fixture_walkforward(fixtures=_FIXTURES_PATH, ledger_dir=ledger_dir)
             self._send(json.dumps(summary, separators=(",", ":")).encode("utf-8"), "application/json")
+            return
+        if path == "/api/rails":
+            import tempfile
+
+            from .smoke import run_rails
+
+            ledger_dir = tempfile.mkdtemp(prefix="desk-rails-")
+            report = run_rails(ledger_dir=ledger_dir)
+            self._send(json.dumps(report, separators=(",", ":")).encode("utf-8"), "application/json")
             return
         if path == "/api/smoke":
             import tempfile

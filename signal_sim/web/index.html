@@ -122,7 +122,7 @@
         </section>
         <section id="params">
             <h2>Frozen params</h2>
-            <p>GET /api/params. Single source from fixtures/params.json. Same digest stamped on diagnose, drift, intensity, walkforward, shadow, and replay. Not fitted. Not searched.</p>
+            <p>GET /api/params. Single source from fixtures/params.json. Locked policy includes starting_cash, max_drawdown, max_gross_frac, max_name_frac, cost_bps, and decision_delay_hours. size_frac stays book-level. Same digest stamped on diagnose, drift, intensity, walkforward, shadow, rails, and replay. Not fitted. Not searched.</p>
             <div id="params-result">Loading params…</div>
         </section>
         <section id="diagnose">
@@ -150,9 +150,14 @@
             <p>GET /api/shadow. Frozen operate report of walkforward --fixtures. Declared params only. GET does not write artifacts and does not place desk orders. Not a search. Not a live result.</p>
             <div id="shadow-result">Loading shadow-paper…</div>
         </section>
+        <section id="rails">
+            <h2>Rails</h2>
+            <p>GET /api/rails. Local only: live host construct, temp KILL, research/vendor mark. No live HTTP. No repo-root KILL. GET does not place desk orders. See operate readiness for what must never be claimed.</p>
+            <div id="rails-result">Loading rails…</div>
+        </section>
         <section id="smoke">
             <h2>Smoke</h2>
-            <p>GET /api/smoke. One frozen-params pass of rank/diagnose/intensity/drift/replay/walkforward/shadow. GET does not write artifacts and does not place desk orders. Every PnL is fixture-mark.</p>
+            <p>GET /api/smoke. One frozen-params pass of rails/rank/diagnose/intensity/drift/replay/walkforward/shadow. Click only; not on page load. GET does not write artifacts and does not place desk orders. Every PnL is fixture-mark.</p>
             <div class="actions">
                 <button type="button" id="smoke-btn">Run smoke (read-only)</button>
             </div>
@@ -523,6 +528,26 @@
             }
         }
 
+        async function loadRails() {
+            const box = document.getElementById('rails-result');
+            try {
+                const response = await fetch('/api/rails');
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                const data = await response.json();
+                box.innerHTML = renderJson({
+                    mode: data.mode,
+                    ok: data.ok,
+                    params_sha256: data.params_sha256,
+                    note: data.note,
+                    rails: data.rails || {},
+                });
+            } catch (err) {
+                box.innerHTML = renderError('Rails failed', err);
+            }
+        }
+
         async function loadSmoke() {
             const box = document.getElementById('smoke-result');
             box.textContent = 'Running…';
@@ -553,6 +578,7 @@
             loadDrift();
             loadWalkforward();
             loadShadow();
+            loadRails();
             const replay = document.getElementById('replay-btn');
             const liquid = document.getElementById('liquid-btn');
             const path = document.getElementById('path-btn');

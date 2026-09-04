@@ -9,7 +9,7 @@ from pathlib import Path
 
 from signal_sim import cli
 from signal_sim.params import params_sha256
-from signal_sim.smoke import STEP_NAMES, run_smoke
+from signal_sim.smoke import STEP_NAMES, run_rails, run_smoke
 
 
 REPO = Path(__file__).resolve().parent.parent
@@ -21,6 +21,10 @@ class SmokeTests(unittest.TestCase):
         error = io.StringIO()
         with redirect_stdout(io.StringIO()), redirect_stderr(error):
             self.assertEqual(cli.main(["smoke"]), 2)
+        self.assertIn("requires --fixtures", error.getvalue())
+        error = io.StringIO()
+        with redirect_stdout(io.StringIO()), redirect_stderr(error):
+            self.assertEqual(cli.main(["rails"]), 2)
         self.assertIn("requires --fixtures", error.getvalue())
 
     def test_smoke_fixtures_runs_every_step_and_prints_digest(self):
@@ -68,6 +72,28 @@ class SmokeTests(unittest.TestCase):
         self.assertTrue((tmp / "rails-kill" / "KILL").exists())
         self.assertFalse((tmp / "rails-mark" / "KILL").exists())
         self.assertFalse((REPO / "KILL").exists())
+
+    def test_rails_fixtures_prints_local_refusals(self):
+        printed = io.StringIO()
+        error = io.StringIO()
+        with redirect_stdout(printed), redirect_stderr(error):
+            code = cli.main(["rails", "--fixtures"])
+        payload = json.loads(printed.getvalue())
+        self.assertEqual(code, 0)
+        self.assertEqual(payload["mode"], "local-paper-rails")
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["params_sha256"], params_sha256())
+        self.assertEqual(payload["rails"]["live_host"], "refused")
+        self.assertEqual(payload["rails"]["kill"], "refused")
+        self.assertEqual(payload["rails"]["research_mark"], "refused")
+        self.assertEqual(payload["rails"]["vendor_mark"], "refused")
+        self.assertFalse((REPO / "KILL").exists())
+        self.assertNotIn("yahoo", json.dumps(payload).lower())
+
+    def test_run_rails_helper_stamps_the_same_digest(self):
+        report = run_rails(ledger_dir=tempfile.mkdtemp())
+        self.assertTrue(report["ok"])
+        self.assertEqual(report["params_sha256"], params_sha256())
 
 
 if __name__ == "__main__":

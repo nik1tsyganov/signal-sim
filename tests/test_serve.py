@@ -178,6 +178,31 @@ class ServeTests(unittest.TestCase):
         self.assertEqual(payload["folds"][0]["comparisons"]["no_news"]["total_pnl"], 0)
         self.assertNotIn("sharpe", json.dumps(payload).lower())
 
+    def test_api_rails_matches_rails_fixtures_without_writing(self):
+        expected = io.StringIO()
+        with redirect_stdout(expected):
+            cli.main(["rails", "--fixtures"])
+        cli_payload = json.loads(expected.getvalue())
+
+        with patch.object(serve.safety, "PAPER_ONLY", True):
+            with serve._make_server(0) as server:
+                thread = threading.Thread(target=server.handle_request)
+                thread.start()
+                host, port = server.server_address
+                with urlopen(f"http://{host}:{port}/api/rails", timeout=5) as response:
+                    body = response.read()
+                    content_type = response.headers.get_content_type()
+                thread.join(timeout=5)
+        payload = json.loads(body)
+        self.assertEqual(content_type, "application/json")
+        self.assertEqual(payload["mode"], "local-paper-rails")
+        self.assertTrue(payload["ok"], payload.get("error"))
+        self.assertEqual(payload["params_sha256"], cli_payload["params_sha256"])
+        self.assertEqual(payload["rails"], cli_payload["rails"])
+        self.assertEqual(payload["rails"]["kill"], "refused")
+        self.assertNotIn("sharpe", json.dumps(payload).lower())
+        self.assertFalse((Path(__file__).resolve().parent.parent / "KILL").exists())
+
     def test_api_smoke_matches_smoke_fixtures_without_writing(self):
         expected = io.StringIO()
         with redirect_stdout(expected):
@@ -347,8 +372,10 @@ class ServeTests(unittest.TestCase):
         self.assertIn(b"/api/params", body)
         self.assertIn(b"/api/intensity", body)
         self.assertIn(b"/api/smoke", body)
+        self.assertIn(b"/api/rails", body)
         self.assertIn(b"Frozen params", body)
         self.assertIn(b"Run smoke", body)
+        self.assertIn(b"GET /api/rails", body)
         self.assertIn(b"params_sha256", body)
         self.assertIn(b"Drift targets", body)
         self.assertIn(b"Walk-forward", body)
@@ -386,6 +413,7 @@ class ServeTests(unittest.TestCase):
         self.assertIn(b"/api/params", body)
         self.assertIn(b"/api/intensity", body)
         self.assertIn(b"/api/smoke", body)
+        self.assertIn(b"/api/rails", body)
         self.assertIn(b"/api/replay", body)
         self.assertIn(b"/api/liquid", body)
         self.assertIn(b"/api/path", body)

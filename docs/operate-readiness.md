@@ -15,6 +15,7 @@ Without an owner-created broker account or a paid intel key, the repo can:
 - Replay the liquid sector mark book onto a local SQLite ledger (`replay --fixtures`, `POST /api/replay`).
 - Walk two expanding fixture-mark folds plus no-news / shuffled-news / news-only comparisons (`walkforward --fixtures`, `GET /api/walkforward`).
 - Freeze that harness as a shadow report (`shadow --fixtures`, `GET /api/shadow`).
+- Assert local rails without live calls (`rails --fixtures`, `GET /api/rails`).
 - Run one frozen-params pass of rails + rank + diagnose + intensity + drift + replay + walkforward + shadow (`smoke --fixtures`, `GET /api/smoke`).
 - Serve the same loop on loopback only (`serve`). The desk smoke button is click-only; it does not auto-run on page load.
 
@@ -27,6 +28,7 @@ Declared operate constants live in `fixtures/params.json`. Mark books may not ov
 From the repository root. On Windows the launcher is usually `python`; on Linux it is often `python3`. All of these require `--fixtures`.
 
 ```bash
+python3 -m signal_sim rails --fixtures
 python3 -m signal_sim smoke --fixtures
 python3 -m signal_sim replay --fixtures
 python3 -m signal_sim drift --fixtures
@@ -42,9 +44,9 @@ Desk (loopback only; default port 8765):
 python3 -m signal_sim serve
 ```
 
-Then `GET /api/params`, `GET /api/smoke`, `GET /api/drift`, `GET /api/walkforward`, `GET /api/shadow`, or `POST /api/replay`. `GET /api/replay` returns 405 and does not place orders.
+Then `GET /api/params`, `GET /api/rails`, `GET /api/smoke`, `GET /api/drift`, `GET /api/walkforward`, `GET /api/shadow`, or `POST /api/replay`. `GET /api/replay` returns 405 and does not place orders.
 
-`smoke --fixtures` and `GET /api/smoke` assert the local rails first (live host construct raises, a temp `KILL` refuses an order, a research/vendor mark refuses a fill) and then run the rest of the frozen-params pass. They do not place live calls and do not write the repo-root `KILL` file.
+`rails --fixtures` and `GET /api/rails` are the fast local check: live host construct raises, a temp `KILL` refuses an order, a research/vendor mark refuses a fill. `smoke --fixtures` and `GET /api/smoke` run that rails step first and then the rest of the frozen-params pass. They do not place live calls and do not write the repo-root `KILL` file. The desk loads rails on page load; smoke stays click-only.
 
 ## Locked policy vs book fields
 

@@ -112,6 +112,32 @@ def _assert_rails(*, ledger_dir: Path) -> dict[str, Any]:
     }
 
 
+RAILS_NOTE = (
+    "Local rails only. Live host construct, temp KILL, research/vendor mark. "
+    "No live HTTP. No repo-root KILL. Not a live result."
+)
+
+
+def run_rails(*, ledger_dir: str) -> dict[str, Any]:
+    stamp = operate_stamp()
+    report: dict[str, Any] = {
+        "mode": "local-paper-rails",
+        "note": RAILS_NOTE,
+        "params": stamp["params"],
+        "params_sha256": stamp["params_sha256"],
+        "ok": True,
+    }
+    try:
+        rails = _assert_rails(ledger_dir=Path(ledger_dir))
+        report["rails"] = rails
+        if rails.get("ok") is not True:
+            report["ok"] = False
+    except Exception as error:
+        report["ok"] = False
+        report["error"] = str(error)
+    return report
+
+
 def run_smoke(
     *,
     fixtures: Path,

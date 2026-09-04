@@ -32,6 +32,7 @@ All of these require `--fixtures`. Omitting that flag exits with status 2. Every
 - `drift --fixtures` — cluster-drift target book (not alpha)
 - `walkforward --fixtures` — two expanding folds plus comparisons
 - `shadow --fixtures` — frozen operate report of that harness (`GET /api/shadow` is the same JSON without writing artifacts)
+- `rails --fixtures` — local rails only: live-host construct, a temp `KILL`, and a research/vendor mark (`GET /api/rails` is the same JSON). No live HTTP. No repo-root `KILL`.
 - `smoke --fixtures` — one frozen-params pass of rails / rank / diagnose / intensity / drift / replay / walkforward / shadow (`GET /api/smoke` is the same JSON without writing artifacts). Rails assert live-host construct, a temp `KILL`, and a research/vendor mark without live calls.
 - `diagnose --fixtures` — Hawkes / clusters / intel / confirms (not a rank input)
 - `intensity --fixtures` — declared Hawkes intensity at the same `decision_at` cut (`GET /api/intensity` is the same JSON)
@@ -47,6 +48,7 @@ python3 -m signal_sim drift --fixtures
 python3 -m signal_sim diagnose --fixtures
 python3 -m signal_sim walkforward --fixtures
 python3 -m signal_sim shadow --fixtures
+python3 -m signal_sim rails --fixtures
 python3 -m signal_sim smoke --fixtures
 ```
 
@@ -89,6 +91,7 @@ curl -sS -X POST http://127.0.0.1:8765/api/replay
 Read-only desk diagnostics (same JSON as `diagnose --fixtures` and `drift --fixtures`):
 
 ```bash
+curl -sS http://127.0.0.1:8765/api/rails
 curl -sS http://127.0.0.1:8765/api/params
 curl -sS http://127.0.0.1:8765/api/diagnose
 curl -sS http://127.0.0.1:8765/api/intensity
@@ -110,7 +113,7 @@ Sector mark book (same loop as `replay --fixtures --marks fixtures/marks/liquid.
 curl -sS -X POST http://127.0.0.1:8765/api/liquid
 ```
 
-`GET /api/replay`, `GET /api/path`, and `GET /api/liquid` return 405 and do not place orders. `GET /api/walkforward` is the same fixture harness as `walkforward --fixtures` and does not place desk orders. `GET /api/shadow` is the same frozen report as `shadow --fixtures` without writing artifacts. `GET /api/params` is the frozen operate stamp. `GET /api/intensity` matches `intensity --fixtures`. `GET /api/smoke` is the same frozen-params operate pass as `smoke --fixtures` and does not write artifacts or place desk orders. The browser page at that loopback URL loads `GET /api/rank`, `GET /api/marks`, `GET /api/params`, `GET /api/diagnose`, `GET /api/intensity`, `GET /api/drift`, `GET /api/walkforward`, and `GET /api/shadow`, and has buttons for `POST /api/replay` (default liquid sector book), `POST /api/liquid` (same book), `POST /api/path`, and `GET /api/smoke`. The rank table labels default-fill vs `no_mark` before anyone posts. The Marks section lists the frozen universe, who can fill, `no_print` names that never ranked, and who is not in the rank cut. Diagnose shows Hawkes intensity and intel flags at `decision_at`. Intensity uses the same cut. Drift targets show the cluster-drift book plus insider/congress confirms and recorded intel flags. Bind is loopback only. Paper only.
+`GET /api/replay`, `GET /api/path`, and `GET /api/liquid` return 405 and do not place orders. `GET /api/walkforward` is the same fixture harness as `walkforward --fixtures` and does not place desk orders. `GET /api/shadow` is the same frozen report as `shadow --fixtures` without writing artifacts. `GET /api/params` is the frozen operate stamp. `GET /api/intensity` matches `intensity --fixtures`. `GET /api/rails` is the same local rails check as `rails --fixtures`. `GET /api/smoke` is the same frozen-params operate pass as `smoke --fixtures` and does not write artifacts or place desk orders. The browser page at that loopback URL loads `GET /api/rank`, `GET /api/marks`, `GET /api/params`, `GET /api/diagnose`, `GET /api/intensity`, `GET /api/drift`, `GET /api/walkforward`, `GET /api/shadow`, and `GET /api/rails`, and has buttons for `POST /api/replay` (default liquid sector book), `POST /api/liquid` (same book), `POST /api/path`, and `GET /api/smoke`. The rank table labels default-fill vs `no_mark` before anyone posts. The Marks section lists the frozen universe, who can fill, `no_print` names that never ranked, and who is not in the rank cut. Diagnose shows Hawkes intensity and intel flags at `decision_at`. Intensity uses the same cut. Drift targets show the cluster-drift book plus insider/congress confirms and recorded intel flags. Bind is loopback only. Paper only.
 
 ```powershell
 python -m signal_sim replay --fixtures
