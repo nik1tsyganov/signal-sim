@@ -1,8 +1,12 @@
-import unittest
-from unittest import mock
 import datetime
+import unittest
+from pathlib import Path
+from unittest import mock
 
-from signal_sim.sources.worldmonitor import live
+from signal_sim.sources.worldmonitor import live, map_recorded
+
+
+REPO = Path(__file__).resolve().parent.parent
 
 class TestWMExpand(unittest.TestCase):
     @mock.patch("signal_sim.sources.worldmonitor.urllib.request.urlopen")
@@ -98,6 +102,18 @@ class TestWMExpand(unittest.TestCase):
         
         events = live()
         self.assertEqual(len(events), 0)
+
+    def test_recorded_brief_maps_several_universe_names_without_http(self):
+        with mock.patch("signal_sim.sources.worldmonitor.urllib.request.urlopen") as urlopen:
+            events = map_recorded(
+                REPO / "fixtures" / "recorded" / "worldmonitor" / "us_intel_brief.json",
+                REPO / "fixtures" / "recorded" / "worldmonitor" / "chokepoint_status.json",
+                now="2026-09-02T10:15:00Z",
+            )
+        urlopen.assert_not_called()
+        tickers = {event.ticker for event in events}
+        self.assertTrue({"MSFT", "XOM"}.issubset(tickers))
+        self.assertGreaterEqual(len(tickers), 2)
 
 if __name__ == "__main__":
     unittest.main()

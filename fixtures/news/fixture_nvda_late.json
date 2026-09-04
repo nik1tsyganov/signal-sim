@@ -1,0 +1,14 @@
+{
+  "id": "fx-nvda-late",
+  "source": "fixture",
+  "kind": "news",
+  "ticker": "NVDA",
+  "entities": ["NVIDIA"],
+  "headline": "Post-exit fixture print so earlier decisions must ignore it",
+  "url": "https://example.invalid/fixture-nvda-late",
+  "occurred_at": "2026-09-04T13:50:00Z",
+  "filed_at": "2026-09-04T13:51:00Z",
+  "observed_at": "2026-09-04T14:00:00Z",
+  "confidence": 0.7,
+  "raw_ref": "fixture:nvda-late"
+}

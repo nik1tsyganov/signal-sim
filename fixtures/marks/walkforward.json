@@ -1,0 +1,43 @@
+{
+  "source": "fixture",
+  "note": "Two expanding fixture-mark folds. Embargo after fold 1 covers that fold's label horizon plus decision_delay. Not vendor bars. Per-fold PnL is fixture-mark and is not a parameter-search target.",
+  "starting_cash": 100000.0,
+  "size_frac": 0.1,
+  "max_drawdown": 0.2,
+  "max_gross_frac": 1.0,
+  "max_name_frac": 1.0,
+  "cost_bps": 0,
+  "decision_delay_hours": 1.0,
+  "folds": [
+    {
+      "name": "fold-1",
+      "decision_at": "2026-09-02T10:15:00Z",
+      "exit_at": "2026-09-02T18:00:00Z",
+      "marks": {
+        "NVDA": {"entry_px": 178.5, "exit_px": 179.0, "source": "fixture", "kind": "fixture_mark"},
+        "MSFT": {"entry_px": 42.25, "exit_px": 42.2, "source": "fixture", "kind": "fixture_mark"},
+        "XLE": {"entry_px": 90.0, "exit_px": 89.6, "source": "fixture", "kind": "fixture_mark"},
+        "XOM": {"entry_px": 33.0, "exit_px": 32.8, "source": "fixture", "kind": "fixture_mark"},
+        "DIS": {"entry_px": 55.5, "exit_px": 55.8, "source": "fixture", "kind": "fixture_mark"},
+        "NFLX": {"entry_px": 28.0, "exit_px": 28.1, "source": "fixture", "kind": "fixture_mark"},
+        "SPY": {"entry_px": 40.0, "exit_px": 40.0, "source": "fixture", "kind": "fixture_mark"},
+        "QQQ": {"entry_px": 36.0, "exit_px": 35.8, "source": "fixture", "kind": "fixture_mark"}
+      }
+    },
+    {
+      "name": "fold-2",
+      "decision_at": "2026-09-03T14:00:00Z",
+      "exit_at": "2026-09-03T21:00:00Z",
+      "marks": {
+        "NVDA": {"entry_px": 179.5, "exit_px": 180.0, "source": "fixture", "kind": "fixture_mark"},
+        "MSFT": {"entry_px": 42.1, "exit_px": 42.0, "source": "fixture", "kind": "fixture_mark"},
+        "XLE": {"entry_px": 89.2, "exit_px": 88.5, "source": "fixture", "kind": "fixture_mark"},
+        "XOM": {"entry_px": 32.6, "exit_px": 32.5, "source": "fixture", "kind": "fixture_mark"},
+        "DIS": {"entry_px": 55.6, "exit_px": 56.0, "source": "fixture", "kind": "fixture_mark"},
+        "NFLX": {"entry_px": 28.2, "exit_px": 28.4, "source": "fixture", "kind": "fixture_mark"},
+        "SPY": {"entry_px": 40.1, "exit_px": 39.8, "source": "fixture", "kind": "fixture_mark"},
+        "QQQ": {"entry_px": 35.6, "exit_px": 35.5, "source": "fixture", "kind": "fixture_mark"}
+      }
+    }
+  ]
+}

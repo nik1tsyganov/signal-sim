@@ -1,0 +1,14 @@
+[
+  {
+    "Amount": 1001,
+    "BioGuideID": "X000001",
+    "Description": "NVIDIA Corporation",
+    "House": "Representatives",
+    "Range": "$1,001 - $15,000",
+    "ReportDate": "2026-08-10",
+    "Representative": "Alex Example",
+    "Ticker": "NVDA",
+    "Transaction": "Purchase",
+    "TransactionDate": "2026-07-15"
+  }
+]

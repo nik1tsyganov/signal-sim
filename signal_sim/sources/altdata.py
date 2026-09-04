@@ -26,7 +26,7 @@ from signal_sim.events import Event
 from signal_sim.indicators import UNIVERSE
 from signal_sim.safety import assert_event_timestamps
 
-KINDS = ("congress_trade", "insider")
+KINDS = ("congress_trade", "insider", "gov_contract")
 TRANSACTIONS = ("purchase", "sale")
 REQUIRED_FIELDS = (
     "id",
@@ -381,6 +381,18 @@ _FETCHERS = {
     "govcontracts": _gov_contract_events,
     "quivernews": _news_events,
 }
+
+
+def map_recorded(dataset, path, now=None):
+    """Map a checked-in REST-shaped payload. No HTTP. Live stay stubbed without a key."""
+    mapper = _FETCHERS.get(dataset)
+    if mapper is None:
+        raise ValueError(f"unknown Quiver dataset: {dataset!r}")
+    with open(path, encoding="utf-8") as handle:
+        payload = json.load(handle)
+    if now is None:
+        now = datetime.now(timezone.utc)
+    return mapper(payload, now)
 
 
 def live(datasets=None):

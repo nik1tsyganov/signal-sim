@@ -34,6 +34,16 @@ def event(event_id, observed_at, *, kind="news", ticker="NVDA", occurred_at=None
 
 
 class HawkesIntensityTests(unittest.TestCase):
+    def test_declared_parameters_are_not_refit(self):
+        from signal_sim import hawkes
+
+        self.assertEqual(hawkes.BASELINE, 0.1)
+        self.assertEqual(hawkes.EXCITATION, 0.8)
+        self.assertEqual(hawkes.DECAY, 1.0)
+        self.assertLessEqual(hawkes.intensity_size_scale(0.05), 1.0)
+        self.assertEqual(hawkes.intensity_size_scale(0.1), 1.0)
+        self.assertLess(hawkes.intensity_size_scale(0.4), 1.0)
+
     def test_event_causes_a_finite_upward_intensity_jump(self):
         from signal_sim.hawkes import intensity_at
 
@@ -114,18 +124,128 @@ class HawkesCliTests(unittest.TestCase):
         ]
         output = io.StringIO()
 
-        with patch.object(
-            cli, "load_fixture_events", return_value=fixture_events
+        with patch(
+            "signal_sim.fixture_load.load_fixture_events", return_value=fixture_events
         ) as load, redirect_stdout(output):
             exit_code = cli.main(["intensity", "--fixtures"])
 
         payload = json.loads(output.getvalue())
+        intensities = payload["intensity"]
         self.assertEqual(exit_code, 0)
-        self.assertEqual(set(payload), {"NVDA", "XLE", "DIS"})
-        self.assertTrue(all(math.isfinite(value) for value in payload.values()))
-        self.assertGreater(payload["NVDA"], payload["XLE"])
-        self.assertEqual(payload["XLE"], payload["DIS"])
+        self.assertEqual(payload["mode"], "local-paper-intensity")
+        self.assertEqual(payload["cut"], "decision_at")
+        self.assertEqual(payload["decision_at"], "2026-09-02T10:15:00Z")
+        self.assertEqual(payload["stats"]["n_events_after_decision"], 1)
+        self.assertEqual(len(payload["params_sha256"]), 64)
+        self.assertTrue({"NVDA", "XLE", "DIS"}.issubset(set(intensities)))
+        self.assertGreaterEqual(len(intensities), 3)
+        self.assertTrue(all(math.isfinite(value) for value in intensities.values()))
+        self.assertGreater(intensities["NVDA"], intensities["XLE"])
+        self.assertEqual(intensities["XLE"], intensities["DIS"])
         load.assert_called_once()
+
+    def test_intensity_fixtures_excludes_prints_after_decision_at(self):
+        output = io.StringIO()
+        with redirect_stdout(output):
+            exit_code = cli.main(["intensity", "--fixtures"])
+        payload = json.loads(output.getvalue())
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(payload["cut"], "decision_at")
+        self.assertEqual(payload["decision_at"], "2026-09-02T10:15:00Z")
+        self.assertGreaterEqual(payload["stats"]["n_events_after_decision"], 1)
+        self.assertNotIn("sharpe", json.dumps(payload).lower())
+
+
+class DiagnoseCliTests(unittest.TestCase):
+    def test_diagnose_fixtures_prints_intensity_and_clusters(self):
+        output = io.StringIO()
+        with redirect_stdout(output):
+            exit_code = cli.main(["diagnose", "--fixtures"])
+        payload = json.loads(output.getvalue())
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(payload["mode"], "local-paper-diagnose")
+        self.assertIn("not a ranking input", payload["note"].lower())
+        self.assertIn("decision_at", payload["note"])
+        self.assertEqual(payload["cut"], "decision_at")
+        self.assertEqual(payload["when"], payload["decision_at"])
+        self.assertEqual(payload["decision_at"], "2026-09-02T10:15:00Z")
+        self.assertGreaterEqual(payload["stats"]["n_events_after_decision"], 1)
+        self.assertLess(payload["stats"]["n_events"], payload["stats"]["n_events"] + payload["stats"]["n_events_after_decision"])
+        self.assertTrue({"NVDA", "XLE", "DIS", "SPY"}.issubset(set(payload["intensity"])))
+        self.assertTrue(all(math.isfinite(value) for value in payload["intensity"].values()))
+        self.assertGreaterEqual(len(payload["online_clusters"]), 1)
+        self.assertTrue(math.isfinite(payload["hawkes_log_likelihood"]))
+        self.assertGreaterEqual(payload["stats"]["n_clusters"], 1)
+        self.assertIn("intel", payload)
+        self.assertGreaterEqual(payload["stats"]["n_intel"], 1)
+        self.assertNotIn("candidates", payload)
+        self.assertNotIn("sharpe", json.dumps(payload).lower())
+
+    def test_diagnose_does_not_change_rank_output(self):
+        before = io.StringIO()
+        with redirect_stdout(before):
+            self.assertEqual(cli.main(["rank", "--fixtures"]), 0)
+        diagnose = io.StringIO()
+        with redirect_stdout(diagnose):
+            self.assertEqual(cli.main(["diagnose", "--fixtures"]), 0)
+        after = io.StringIO()
+        with redirect_stdout(after):
+            self.assertEqual(cli.main(["rank", "--fixtures"]), 0)
+        self.assertEqual(json.loads(before.getvalue()), json.loads(after.getvalue()))
+        self.assertNotEqual(
+            json.loads(diagnose.getvalue()).get("mode"),
+            "local-paper-replay",
+        )
+
+    def test_mutated_intensity_does_not_change_rank_or_replay_fills(self):
+        import os
+        import shutil
+        import tempfile
+        from pathlib import Path
+
+        from signal_sim.cli import load_fixture_events
+        from signal_sim.diagnose import fixture_diagnostics
+        from signal_sim.indicators import rank_candidates
+        from signal_sim.sim import load_mark_book, run_fixture_replay
+
+        fixtures = Path(__file__).resolve().parent.parent / "fixtures"
+        events = load_fixture_events(fixtures)
+        decision_at = load_mark_book()["decision_at"]
+        rank_before = rank_candidates(events, window_end=decision_at)
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        first = run_fixture_replay(
+            fixtures=fixtures,
+            ledger_path=os.path.join(tmp, "before.sqlite"),
+            audit_path=os.path.join(tmp, "before.audit"),
+            kill_root=tmp,
+        )
+        fills_before = [(row["ticker"], row["side"], row["fill_px"]) for row in first["orders"]]
+
+        def inflated(_events, _when, **_kwargs):
+            return 99.0
+
+        with patch("signal_sim.hawkes.intensity_at", side_effect=inflated):
+            rank_after = rank_candidates(events, window_end=decision_at)
+            second = run_fixture_replay(
+                fixtures=fixtures,
+                ledger_path=os.path.join(tmp, "after.sqlite"),
+                audit_path=os.path.join(tmp, "after.audit"),
+                kill_root=tmp,
+            )
+            diagnose = fixture_diagnostics(events)
+
+        fills_after = [(row["ticker"], row["side"], row["fill_px"]) for row in second["orders"]]
+        self.assertEqual(rank_before, rank_after)
+        self.assertEqual(fills_before, fills_after)
+        self.assertEqual(
+            {(row[0], row[1]) for row in fills_before},
+            {("NVDA", "buy"), ("MSFT", "buy"), ("XLE", "buy"), ("XOM", "buy"),
+             ("DIS", "buy"), ("NFLX", "buy"), ("SPY", "buy"), ("QQQ", "buy")},
+        )
+        self.assertEqual({ticker: px for ticker, _side, px in fills_before}["NVDA"], 178.5)
+        self.assertTrue(all(value == 99.0 for value in diagnose["intensity"].values()))
+        self.assertNotIn("sharpe", json.dumps(diagnose).lower())
 
 
 if __name__ == "__main__":

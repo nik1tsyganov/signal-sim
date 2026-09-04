@@ -15,3 +15,7 @@ secrets/
 alpaca-keys.*
 ibkr-credentials.*
 
+paper-replay.sqlite
+paper-replay.sqlite.audit.jsonl
+paper-replay.sqlite.run.jsonl
+

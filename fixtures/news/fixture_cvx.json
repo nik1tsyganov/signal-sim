@@ -1,0 +1,14 @@
+{
+  "id": "fx-cvx-1",
+  "source": "fixture",
+  "kind": "news",
+  "ticker": "CVX",
+  "entities": ["Chevron"],
+  "headline": "Fixture energy print for the paper ledger",
+  "url": "https://example.invalid/fixture-cvx",
+  "occurred_at": "2026-09-02T10:02:00Z",
+  "filed_at": "2026-09-02T10:03:00Z",
+  "observed_at": "2026-09-02T10:09:00Z",
+  "confidence": 0.7,
+  "raw_ref": "fixture:cvx-1"
+}

@@ -1,0 +1,14 @@
+{
+  "id": "fx-nflx-path-2",
+  "source": "fixture",
+  "kind": "news",
+  "ticker": "NFLX",
+  "entities": ["Netflix"],
+  "headline": "Mid-path media print observed after the default decision",
+  "url": "https://example.invalid/fixture-nflx-path",
+  "occurred_at": "2026-09-02T17:10:00Z",
+  "filed_at": "2026-09-02T17:11:00Z",
+  "observed_at": "2026-09-02T17:20:00Z",
+  "confidence": 0.7,
+  "raw_ref": "fixture:nflx-path-2"
+}

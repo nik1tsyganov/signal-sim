@@ -98,10 +98,36 @@ class Event:
         normalized.setdefault("headline", "")
         normalized.setdefault("url", "")
         normalized.setdefault("confidence", 0.0)
+        if values.get("first_seen_at") is not None:
+            first_seen = _timestamp(values["first_seen_at"], "first_seen_at")
+            if "observed_at" in normalized and normalized["observed_at"] is not None:
+                observed = _timestamp(normalized["observed_at"], "observed_at")
+                if first_seen != observed:
+                    raise EventValidationError("first_seen_at must equal observed_at")
+            else:
+                normalized["observed_at"] = values["first_seen_at"]
+        if values.get("published_at") is not None:
+            published = _timestamp(values["published_at"], "published_at")
+            if "occurred_at" in normalized and normalized["occurred_at"] is not None:
+                occurred = _timestamp(normalized["occurred_at"], "occurred_at")
+                if published != occurred:
+                    raise EventValidationError("published_at must equal occurred_at")
+            else:
+                normalized["occurred_at"] = values["published_at"]
         missing = fields - normalized.keys()
         if missing:
             raise EventValidationError(f"missing event fields: {', '.join(sorted(missing))}")
         return cls(**normalized)
+
+    @property
+    def first_seen_at(self) -> datetime:
+        """Docs alias for observed_at. Never use occurred_at for ordering."""
+        return self.observed_at
+
+    @property
+    def published_at(self) -> datetime:
+        """Docs alias for occurred_at. Ordering and rank still use observed_at."""
+        return self.occurred_at
 
     def to_dict(self) -> dict[str, Any]:
         return {

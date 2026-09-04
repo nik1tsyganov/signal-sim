@@ -1,0 +1,48 @@
+name: test
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  unittest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Run unittest
+        run: python -m unittest discover -s tests -v
+      - name: Rank fixture events
+        run: python -m signal_sim rank --fixtures
+      - name: Hawkes intensity at latest fixture observed_at
+        run: python -m signal_sim intensity --fixtures
+      - name: Hawkes and cluster diagnostics
+        run: python -m signal_sim diagnose --fixtures
+      - name: Fixture mark map
+        run: python -m signal_sim marks --fixtures
+      - name: Fixture cluster-drift target book
+        run: python -m signal_sim drift --fixtures
+      - name: Fixture cluster-drift with intensity overlay
+        run: python -m signal_sim drift --fixtures --intensity
+      - name: Run fixture paper replay
+        run: python -m signal_sim replay --fixtures
+      - name: Run fixture paper replay from drift
+        run: python -m signal_sim replay --fixtures --drift
+      - name: Run fixture sector mark book alias
+        run: python -m signal_sim replay --fixtures --marks liquid
+      - name: Run fixture two-name mark book
+        run: python -m signal_sim replay --fixtures --marks two-name
+      - name: Run fixture three-step mark path
+        run: python -m signal_sim replay --fixtures --path
+      - name: Run fixture three-step drift path
+        run: python -m signal_sim replay --fixtures --path --drift
+      - name: Run fixture walk-forward folds
+        run: python -m signal_sim walkforward --fixtures
+      - name: Frozen shadow-paper walk-forward report
+        run: python -m signal_sim shadow --fixtures
+      - name: Local paper rails
+        run: python -m signal_sim rails --fixtures
+      - name: Frozen-params paper smoke
+        run: python -m signal_sim smoke --fixtures

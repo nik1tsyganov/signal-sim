@@ -1,0 +1,14 @@
+{
+  "id": "fx-msft-1",
+  "source": "fixture",
+  "kind": "news",
+  "ticker": "MSFT",
+  "entities": ["Microsoft"],
+  "headline": "Fixture tech print for the paper ledger",
+  "url": "https://example.invalid/fixture-msft",
+  "occurred_at": "2026-09-02T10:01:00Z",
+  "filed_at": "2026-09-02T10:02:00Z",
+  "observed_at": "2026-09-02T10:08:00Z",
+  "confidence": 0.7,
+  "raw_ref": "fixture:msft-1"
+}

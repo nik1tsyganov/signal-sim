@@ -1,0 +1,76 @@
+{
+  "source": "fixture",
+  "note": "Three-step fixture rebalance across tech/energy/media/ETF marks. AAPL is a same-run no_mark skip. Rankings are a test input. Not vendor bars.",
+  "starting_cash": 100000.0,
+  "max_drawdown": 0.2,
+  "max_gross_frac": 1.0,
+  "max_name_frac": 1.0,
+  "cost_bps": 0,
+  "decision_delay_hours": 1.0,
+  "steps": [
+    {
+      "decision_at": "2026-09-02T10:15:00Z",
+      "exit_at": "2026-09-02T18:00:00Z",
+      "size_frac": 0.1,
+      "candidates": [
+        {"ticker": "NVDA", "score": 3},
+        {"ticker": "XOM", "score": 1},
+        {"ticker": "DIS", "score": 1},
+        {"ticker": "QQQ", "score": 1},
+        {"ticker": "AAPL", "score": 1}
+      ],
+      "marks": {
+        "NVDA": {"entry_px": 178.5, "exit_px": 179.0, "source": "fixture", "kind": "fixture_mark"},
+        "MSFT": {"entry_px": 42.25, "exit_px": 42.2, "source": "fixture", "kind": "fixture_mark"},
+        "XLE": {"entry_px": 90.0, "exit_px": 89.6, "source": "fixture", "kind": "fixture_mark"},
+        "XOM": {"entry_px": 33.0, "exit_px": 32.8, "source": "fixture", "kind": "fixture_mark"},
+        "DIS": {"entry_px": 55.5, "exit_px": 55.8, "source": "fixture", "kind": "fixture_mark"},
+        "NFLX": {"entry_px": 28.0, "exit_px": 28.1, "source": "fixture", "kind": "fixture_mark"},
+        "SPY": {"entry_px": 40.0, "exit_px": 40.0, "source": "fixture", "kind": "fixture_mark"},
+        "QQQ": {"entry_px": 36.0, "exit_px": 35.8, "source": "fixture", "kind": "fixture_mark"}
+      }
+    },
+    {
+      "decision_at": "2026-09-02T18:00:00Z",
+      "exit_at": "2026-09-03T14:00:00Z",
+      "size_frac": 0.1,
+      "candidates": [
+        {"ticker": "NVDA", "score": 3},
+        {"ticker": "MSFT", "score": 1},
+        {"ticker": "NFLX", "score": 1},
+        {"ticker": "QQQ", "score": 1},
+        {"ticker": "AAPL", "score": 1}
+      ],
+      "marks": {
+        "NVDA": {"entry_px": 179.0, "exit_px": 179.5, "source": "fixture", "kind": "fixture_mark"},
+        "MSFT": {"entry_px": 42.2, "exit_px": 42.1, "source": "fixture", "kind": "fixture_mark"},
+        "XLE": {"entry_px": 89.6, "exit_px": 89.2, "source": "fixture", "kind": "fixture_mark"},
+        "XOM": {"entry_px": 32.8, "exit_px": 32.6, "source": "fixture", "kind": "fixture_mark"},
+        "DIS": {"entry_px": 55.8, "exit_px": 55.6, "source": "fixture", "kind": "fixture_mark"},
+        "NFLX": {"entry_px": 28.1, "exit_px": 28.2, "source": "fixture", "kind": "fixture_mark"},
+        "SPY": {"entry_px": 40.0, "exit_px": 40.1, "source": "fixture", "kind": "fixture_mark"},
+        "QQQ": {"entry_px": 35.8, "exit_px": 35.6, "source": "fixture", "kind": "fixture_mark"}
+      }
+    },
+    {
+      "decision_at": "2026-09-03T14:00:00Z",
+      "exit_at": "2026-09-03T21:00:00Z",
+      "size_frac": 0.1,
+      "candidates": [
+        {"ticker": "MSFT", "score": 1},
+        {"ticker": "SPY", "score": 1},
+        {"ticker": "AAPL", "score": 1}
+      ],
+      "marks": {
+        "NVDA": {"entry_px": 179.5, "exit_px": 180.0, "source": "fixture", "kind": "fixture_mark"},
+        "MSFT": {"entry_px": 42.1, "exit_px": 42.0, "source": "fixture", "kind": "fixture_mark"},
+        "XLE": {"entry_px": 89.2, "exit_px": 88.5, "source": "fixture", "kind": "fixture_mark"},
+        "XOM": {"entry_px": 32.6, "exit_px": 32.5, "source": "fixture", "kind": "fixture_mark"},
+        "DIS": {"entry_px": 55.6, "exit_px": 56.0, "source": "fixture", "kind": "fixture_mark"},
+        "NFLX": {"entry_px": 28.2, "exit_px": 28.4, "source": "fixture", "kind": "fixture_mark"},
+        "SPY": {"entry_px": 40.1, "exit_px": 39.8, "source": "fixture", "kind": "fixture_mark"},
+        "QQQ": {"entry_px": 35.6, "exit_px": 35.5, "source": "fixture", "kind": "fixture_mark"}
+      }
+    }
+  ]
+}

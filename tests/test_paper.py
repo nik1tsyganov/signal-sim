@@ -21,8 +21,11 @@ from unittest import mock
 
 from signal_sim.indicators import UNIVERSE
 from signal_sim.paper import (
+    AlpacaPaperStub,
     LiveEndpointError,
     OrderRefused,
+    ProvenanceMissing,
+    assert_fills_have_provenance,
     paper_broker_client,
     submit_paper_order,
 )
@@ -42,6 +45,7 @@ def good_proposal(**overrides):
         "confidence": 0.6,
         "rationale": "news breakout with insider confirm (fixture-derived)",
         "event_ids": ["ptr-test-1", "form4-test-1"],
+        "decision_at": "2026-09-02T10:15:00Z",
         "idempotency_key": "prop-0001",
     }
     values.update(overrides)
@@ -114,6 +118,27 @@ class SubmitPaperOrderTests(PaperOrderPathBase):
         self.assertEqual(orders[0]["idempotency_key"], "prop-0001")
         self.assertEqual(fills[0]["order_id"], result["order_id"])
         self.assertEqual(fills[0]["price"], 178.5)
+        self.assertEqual(fills[0]["cost"], 0.0)
+
+    def test_fill_persists_declared_fee(self):
+        result = self._submit(cost=2.5)
+        fills = self._rows("fills")
+        self.assertEqual(fills[0]["cost"], 2.5)
+        self.assertEqual(result["cost"], 2.5)
+
+    def test_explicit_filled_at_stamps_the_ledger_clock(self):
+        result = self._submit(filled_at="2026-09-02T11:15:00Z")
+        fills = self._rows("fills")
+        orders = self._rows("orders")
+        self.assertEqual(result["filled_at"], "2026-09-02T11:15:00Z")
+        self.assertEqual(fills[0]["filled_at"], "2026-09-02T11:15:00Z")
+        self.assertEqual(orders[0]["created_at"], "2026-09-02T11:15:00Z")
+
+    def test_naive_filled_at_is_refused(self):
+        with self.assertRaises(OrderRefused) as error:
+            self._submit(filled_at=datetime(2026, 9, 2, 11, 15))
+        self.assertIn("timezone-aware", str(error.exception))
+        self.assertEqual(self._rows("orders"), [])
 
     def test_audit_line_written_with_required_fields(self):
         self._submit()
@@ -126,8 +151,65 @@ class SubmitPaperOrderTests(PaperOrderPathBase):
         self.assertEqual(line["size_frac"], 0.25)
         self.assertEqual(line["verdict"], "approved")
         self.assertEqual(line["outcome"], "filled")
+        self.assertEqual(line["decision_at"], "2026-09-02T10:15:00Z")
+        self.assertEqual(line["event_ids"], ["ptr-test-1", "form4-test-1"])
+        self.assertEqual(len(line["event_id_hash"]), 64)
+        self.assertEqual(len(line["event_id_hashes"]), 2)
+        self.assertEqual(line["fill"]["fill_px"], 178.5)
+        self.assertTrue(line["fill"]["filled_at"])
+        self.assertTrue(line["fill"]["order_id"])
+        from signal_sim.params import params_sha256
+
+        self.assertEqual(line["params_sha256"], params_sha256())
+        self.assertEqual(len(line["params_sha256"]), 64)
         decision_at = datetime.fromisoformat(line["decision_at"])
         self.assertIsNotNone(decision_at.tzinfo)
+
+    def test_missing_decision_at_is_refused(self):
+        proposal = good_proposal()
+        del proposal["decision_at"]
+        self._assert_refused(proposal)
+        self.assertEqual(self._audit_lines()[-1]["outcome"], "refused")
+
+    def test_filled_at_before_decision_at_is_refused(self):
+        with self.assertRaises(OrderRefused) as error:
+            self._submit(filled_at="2026-09-02T10:00:00Z")
+        self.assertIn("filled_at must be after decision_at", str(error.exception))
+        self.assertEqual(self._rows("orders"), [])
+        self.assertEqual(self._rows("fills"), [])
+        self.assertEqual(self._audit_lines()[-1]["outcome"], "refused")
+        from signal_sim.params import params_sha256
+
+        self.assertEqual(self._audit_lines()[-1]["params_sha256"], params_sha256())
+
+    def test_audit_digest_mismatch_fails_closed(self):
+        self._submit(filled_at="2026-09-02T11:15:00Z")
+        lines = self._audit_lines()
+        lines[0]["params_sha256"] = "0" * 64
+        with open(self.audit, "w", encoding="utf-8") as handle:
+            handle.write(json.dumps(lines[0]) + "\n")
+        with self.assertRaises(ProvenanceMissing) as error:
+            assert_fills_have_provenance(self.ledger, self.audit)
+        self.assertIn("params_sha256", str(error.exception))
+
+    def test_fills_without_audit_fail_closed(self):
+        self._submit()
+        os.remove(self.audit)
+        with self.assertRaises(ProvenanceMissing) as error:
+            assert_fills_have_provenance(self.ledger, self.audit)
+        self.assertIn("no provenance record", str(error.exception))
+
+    def test_incomplete_audit_write_fails_closed(self):
+        def write_incomplete(path, _record):
+            with open(path, "a", encoding="utf-8") as handle:
+                handle.write('{"outcome":"filled"}\n')
+
+        with mock.patch("signal_sim.paper._append_audit", side_effect=write_incomplete):
+            with self.assertRaises(OrderRefused) as error:
+                self._submit()
+        self.assertIn("provenance", str(error.exception).lower())
+        self.assertEqual(self._rows("orders"), [])
+        self.assertEqual(self._rows("fills"), [])
 
     def test_default_audit_path_is_derived_from_ledger_path(self):
         submit_paper_order(
@@ -151,6 +233,11 @@ class SubmitPaperOrderTests(PaperOrderPathBase):
         with open(os.path.join(self.tmp, "KILL"), "w", encoding="utf-8") as f:
             f.write("stop")
         self._assert_refused()
+        self.assertEqual(self._audit_lines()[-1]["outcome"], "refused")
+
+    def test_unreadable_kill_check_refuses_order(self):
+        with mock.patch("signal_sim.safety.os.stat", side_effect=PermissionError("denied")):
+            self._assert_refused()
         self.assertEqual(self._audit_lines()[-1]["outcome"], "refused")
 
     def test_kill_switch_error_fails_closed(self):
@@ -192,6 +279,17 @@ class ValidatorTests(PaperOrderPathBase):
     def test_unknown_ticker_is_refused(self):
         self._assert_refused(good_proposal(ticker="TSLA"))
 
+    def test_vendor_or_research_mark_kind_is_refused(self):
+        banned = ("yah" + "oo", "sto" + "oq", "vendor", "research", "yfin" + "ance")
+        for kind in banned:
+            with self.subTest(kind=kind):
+                self._assert_refused(mark_kind=kind, mark_source="fixture")
+        for source in banned:
+            with self.subTest(source=source):
+                self._assert_refused(mark_kind="fixture_mark", mark_source=source)
+        self.assertTrue(all(line["outcome"] == "refused" for line in self._audit_lines()))
+        self.assertIn("fixture_mark", self._audit_lines()[-1]["verdict"])
+
     def test_bad_side_is_refused(self):
         self._assert_refused(good_proposal(side="short"))
 
@@ -204,6 +302,12 @@ class ValidatorTests(PaperOrderPathBase):
         for size_frac in bad_sizes:
             with self.subTest(size_frac=size_frac):
                 self._assert_refused(good_proposal(size_frac=size_frac))
+
+    def test_sell_size_frac_above_one_is_accepted_to_flatten(self):
+        result = self._submit(good_proposal(side="sell", size_frac=1.5, idempotency_key="sell-flat"))
+        self.assertEqual(result["status"], "filled")
+        self.assertEqual(result["size_frac"], 1.5)
+        self.assertEqual(result["side"], "sell")
 
     def test_missing_event_ids_is_refused_and_never_logged_filled(self):
         proposal = good_proposal()
@@ -252,6 +356,13 @@ class IdempotencyTests(PaperOrderPathBase):
         self.assertEqual(lines[1]["outcome"], "refused")
         self.assertEqual(lines[1]["idempotency_key"], "prop-0001")
 
+    def test_same_key_on_a_fresh_ledger_reuses_the_order_id(self):
+        first = self._submit(good_proposal(idempotency_key="stable-key"))
+        other = os.path.join(self.tmp, "ledger-b.sqlite")
+        second = self._submit(good_proposal(idempotency_key="stable-key"), ledger_path=other)
+        self.assertEqual(first["order_id"], second["order_id"])
+        self.assertEqual(len(first["order_id"]), 32)
+
 
 class SingleOrderPathTests(unittest.TestCase):
     def test_only_paper_py_inserts_order_rows(self):
@@ -298,9 +409,30 @@ class PaperBrokerClientTests(unittest.TestCase):
                     with self.assertRaises(LiveEndpointError):
                         paper_broker_client(host, port)
 
-    def test_paper_broker_host_is_still_refused_in_v0(self):
-        with self.assertRaises(ValueError):
-            paper_broker_client(PAPER_BROKER_HOST, 443)
+    def test_paper_broker_host_is_a_stub_and_never_opens_a_socket(self):
+        with mock.patch("socket.create_connection") as connect, mock.patch(
+            "urllib.request.urlopen"
+        ) as urlopen:
+            with self.assertRaises(NotImplementedError) as error:
+                paper_broker_client(PAPER_BROKER_HOST, 443)
+            self.assertIn("no verified key", str(error.exception))
+            connect.assert_not_called()
+            urlopen.assert_not_called()
+            with self.assertRaises(NotImplementedError):
+                AlpacaPaperStub()
+            connect.assert_not_called()
+            urlopen.assert_not_called()
+
+    def test_live_host_and_ports_never_open_a_socket(self):
+        with mock.patch("socket.create_connection") as connect, mock.patch(
+            "urllib.request.urlopen"
+        ) as urlopen:
+            with self.assertRaises(LiveEndpointError):
+                paper_broker_client(LIVE_BROKER_HOST, 443)
+            with self.assertRaises(LiveEndpointError):
+                paper_broker_client("gw.example.internal", IBKR_LIVE_PORTS[0])
+            connect.assert_not_called()
+            urlopen.assert_not_called()
 
     def test_ibkr_paper_port_is_still_refused_in_v0(self):
         with self.assertRaises(ValueError):

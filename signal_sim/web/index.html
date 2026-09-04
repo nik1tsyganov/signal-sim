@@ -86,6 +86,26 @@
             font-size: 0.85em;
             margin-right: 0.5rem;
         }
+        .actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            margin: 0.75rem 0;
+        }
+        button {
+            background: var(--border);
+            color: var(--text);
+            border: 1px solid var(--accent);
+            padding: 0.45rem 0.8rem;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        pre {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            padding: 0.75rem 1rem;
+            overflow: auto;
+        }
     </style>
 </head>
 <body>
@@ -95,6 +115,64 @@
         <div id="content">
             <p>Loading ranks...</p>
         </div>
+        <section id="marks">
+            <h2>Marks</h2>
+            <p>GET /api/marks. Frozen universe vs who can fill. Not a ranking input. no_print names have no checked-in print at decision_at. no_mark names ranked but have no fixture mark.</p>
+            <div id="marks-result">Loading marks…</div>
+        </section>
+        <section id="params">
+            <h2>Frozen params</h2>
+            <p>GET /api/params. Single source from fixtures/params.json. Locked policy includes starting_cash, max_drawdown, max_gross_frac, max_name_frac, cost_bps, and decision_delay_hours. size_frac stays book-level. Same digest stamped on diagnose, drift, intensity, walkforward, shadow, rails, and replay. Not fitted. Not searched.</p>
+            <div id="params-result">Loading params…</div>
+        </section>
+        <section id="diagnose">
+            <h2>Diagnose</h2>
+            <p>GET /api/diagnose. Hawkes intensity and clusters only. Cut at decision_at. Not a ranking input.</p>
+            <div id="diagnose-result">Loading diagnose…</div>
+        </section>
+        <section id="intensity">
+            <h2>Intensity</h2>
+            <p>GET /api/intensity. Declared Hawkes intensity at mark-book decision_at. Same window as diagnose. Not a fit. Not a ranking input.</p>
+            <div id="intensity-result">Loading intensity…</div>
+        </section>
+        <section id="drift">
+            <h2>Drift targets</h2>
+            <p>GET /api/drift. Fixture cluster-drift target book for the paper ledger. Not alpha. Not a ranking input.</p>
+            <div id="drift-result">Loading drift…</div>
+        </section>
+        <section id="walkforward">
+            <h2>Walk-forward</h2>
+            <p>GET /api/walkforward. Expanding fixture-mark folds plus no-news / shuffled-news / news-only. Not a search. GET does not place desk orders.</p>
+            <div id="walkforward-result">Loading walk-forward…</div>
+        </section>
+        <section id="shadow">
+            <h2>Shadow-paper</h2>
+            <p>GET /api/shadow. Frozen operate report of walkforward --fixtures. Declared params only. GET does not write artifacts and does not place desk orders. Not a search. Not a live result.</p>
+            <div id="shadow-result">Loading shadow-paper…</div>
+        </section>
+        <section id="rails">
+            <h2>Rails</h2>
+            <p>GET /api/rails. Local only: live host construct, temp KILL, research/vendor mark. No live HTTP. No repo-root KILL. GET does not place desk orders. See operate readiness for what must never be claimed.</p>
+            <div id="rails-result">Loading rails…</div>
+        </section>
+        <section id="smoke">
+            <h2>Smoke</h2>
+            <p>GET /api/smoke. One frozen-params pass of rails/rank/diagnose/intensity/drift/replay/walkforward/shadow. Click only; not on page load. GET does not write artifacts and does not place desk orders. Every PnL is fixture-mark.</p>
+            <div class="actions">
+                <button type="button" id="smoke-btn">Run smoke (read-only)</button>
+            </div>
+            <div id="smoke-result"></div>
+        </section>
+        <section id="paper">
+            <h2>Paper replay</h2>
+            <p>Fixture marks only. GET does not place orders. Default replay fills the liquid sector book (tech/energy/media/ETF). Unmarked ranked names are no_mark. Path walks the three-step ledger.</p>
+            <div class="actions">
+                <button type="button" id="replay-btn">Run default replay</button>
+                <button type="button" id="liquid-btn">Run sector liquid</button>
+                <button type="button" id="path-btn">Run three-step path</button>
+            </div>
+            <div id="replay-result"></div>
+        </section>
     </main>
     <script>
         async function loadRanks() {
@@ -105,6 +183,17 @@
                     throw new Error(`HTTP ${response.status}: ${response.statusText}`);
                 }
                 const data = await response.json();
+                let marks = { default_fillable: [], liquid_fillable: [] };
+                try {
+                    const markResponse = await fetch('/api/marks');
+                    if (markResponse.ok) {
+                        marks = await markResponse.json();
+                    }
+                } catch (_err) {
+                    marks = { default_fillable: [], liquid_fillable: [] };
+                }
+                const defaultFill = new Set(marks.default_fillable || []);
+                const liquidFill = new Set(marks.liquid_fillable || []);
                 
                 if (!Array.isArray(data) || data.length === 0) {
                     contentDiv.innerHTML = '<div class="empty">No candidates</div>';
@@ -117,6 +206,7 @@
                             <tr>
                                 <th>Symbol</th>
                                 <th>Score</th>
+                                <th>Marks</th>
                                 <th>Sources / Reasons</th>
                             </tr>
                         </thead>
@@ -134,13 +224,23 @@
                     if (row.insider_confirm) {
                         sources.push(`<span class="badge">Insider Confirm: ${row.insider_confirm}</span>`);
                     }
+                    if (row.gov_confirm) {
+                        sources.push(`<span class="badge">Gov Confirm: ${row.gov_confirm}</span>`);
+                    }
                     
                     const sourcesHtml = sources.length > 0 ? sources.join('') : '-';
+                    let markLabel = 'no_mark';
+                    if (defaultFill.has(row.ticker)) {
+                        markLabel = 'default fill';
+                    } else if (liquidFill.has(row.ticker)) {
+                        markLabel = 'liquid only';
+                    }
 
                     html += `
                         <tr>
                             <td><strong>${symbol}</strong></td>
                             <td>${score}</td>
+                            <td>${escapeHtml(markLabel)}</td>
                             <td>${sourcesHtml}</td>
                         </tr>
                     `;
@@ -166,7 +266,328 @@
                  .replace(/'/g, "&#039;");
         }
 
-        document.addEventListener('DOMContentLoaded', loadRanks);
+        function renderJson(value) {
+            return '<pre>' + escapeHtml(JSON.stringify(value, null, 2)) + '</pre>';
+        }
+
+        function renderError(label, err) {
+            return '<div class="error">' + label + ': ' + escapeHtml(err.message) + '</div>';
+        }
+
+        function renderPaperSummary(data) {
+            if (data.steps && data.steps.length) {
+                const history = data.position_history && data.position_history.length
+                    ? data.position_history
+                    : data.steps;
+                return {
+                    mode: data.mode,
+                    params_sha256: data.params_sha256,
+                    n_steps: data.steps.length,
+                    equity_curve: data.equity_curve || [],
+                    position_history: history.map((row, index) => ({
+                        step: row.step || index + 1,
+                        fill_at: row.fill_at,
+                        held: row.held || (row.positions || []).map((item) => item.ticker),
+                    })),
+                    steps: data.steps.map((step) => ({
+                        fill_at: step.fill_at,
+                        orders: (step.orders || []).map((row) => [row.ticker, row.side]),
+                        refusals: step.refusals || [],
+                        held: (step.positions || []).map((row) => row.ticker),
+                    })),
+                };
+            }
+            return {
+                mode: data.mode,
+                params_sha256: data.params_sha256,
+                orders: (data.orders || []).map((row) => row.ticker),
+                refusals: data.refusals || [],
+                held: (data.positions || []).map((row) => row.ticker),
+            };
+        }
+
+        async function postPaper(path) {
+            const box = document.getElementById('replay-result');
+            box.textContent = 'Running…';
+            try {
+                const response = await fetch(path, { method: 'POST' });
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                const data = await response.json();
+                box.innerHTML = renderJson(renderPaperSummary(data));
+            } catch (err) {
+                box.innerHTML = renderError('Replay failed', err);
+            }
+        }
+
+        async function loadMarks() {
+            const box = document.getElementById('marks-result');
+            try {
+                const markResponse = await fetch('/api/marks');
+                if (!markResponse.ok) {
+                    throw new Error(`HTTP ${markResponse.status}: ${markResponse.statusText}`);
+                }
+                const marks = await markResponse.json();
+                let ranked = [];
+                try {
+                    const rankResponse = await fetch('/api/rank');
+                    if (rankResponse.ok) {
+                        const rows = await rankResponse.json();
+                        if (Array.isArray(rows)) {
+                            ranked = rows.map((row) => row.ticker).filter(Boolean);
+                        }
+                    }
+                } catch (_err) {
+                    ranked = [];
+                }
+                const rankedSet = new Set(ranked);
+                const notInRankCut = (marks.universe || []).filter((ticker) => !rankedSet.has(ticker));
+                box.innerHTML = renderJson({
+                    universe: marks.universe || [],
+                    default_fillable: marks.default_fillable || [],
+                    liquid_fillable: marks.liquid_fillable || [],
+                    no_mark_default: marks.no_mark_default || [],
+                    no_mark_liquid: marks.no_mark_liquid || [],
+                    no_print: marks.no_print || [],
+                    no_print_reason: marks.no_print_reason || '',
+                    not_in_rank_cut: notInRankCut,
+                });
+            } catch (err) {
+                box.innerHTML = renderError('Marks failed', err);
+            }
+        }
+
+        async function loadDiagnose() {
+            const box = document.getElementById('diagnose-result');
+            try {
+                const response = await fetch('/api/diagnose');
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                const data = await response.json();
+                box.innerHTML = renderJson({
+                    mode: data.mode,
+                    note: data.note,
+                    params_sha256: data.params_sha256,
+                    when: data.when,
+                    decision_at: data.decision_at,
+                    cut: data.cut,
+                    n_clusters: (data.stats || {}).n_clusters,
+                    n_events_after_decision: (data.stats || {}).n_events_after_decision,
+                    n_intel: (data.stats || {}).n_intel,
+                    n_trendradar: (data.stats || {}).n_trendradar,
+                    n_filing_lags: (data.stats || {}).n_filing_lags,
+                    n_gov_confirm: (data.stats || {}).n_gov_confirm,
+                    intensity: data.intensity || {},
+                    intel: data.intel || {},
+                    trendradar: data.trendradar || {},
+                    confirms: data.confirms || {},
+                    filing_lags: data.filing_lags || {},
+                });
+            } catch (err) {
+                box.innerHTML = renderError('Diagnose failed', err);
+            }
+        }
+
+        async function loadDrift() {
+            const box = document.getElementById('drift-result');
+            try {
+                const response = await fetch('/api/drift');
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                const data = await response.json();
+                box.innerHTML = renderJson({
+                    mode: data.mode,
+                    note: data.note,
+                    params_sha256: data.params_sha256,
+                    decision_at: data.decision_at,
+                    horizon_hours: data.horizon_hours,
+                    intel: data.intel || {},
+                    trendradar: data.trendradar || {},
+                    confirms: data.confirms || {},
+                    filing_lags: data.filing_lags || {},
+                    targets: (data.targets || []).map((row) => ({
+                        ticker: row.ticker,
+                        target_frac: row.target_frac,
+                        horizon_hours: row.horizon_hours,
+                        insider_confirm: row.insider_confirm,
+                        congress_confirm: row.congress_confirm,
+                        gov_confirm: row.gov_confirm,
+                        insider_lag_hours: row.insider_lag_hours,
+                        congress_lag_hours: row.congress_lag_hours,
+                        intel_brief: row.intel_brief,
+                        wm_intel: row.wm_intel,
+                        chokepoint: row.chokepoint,
+                        trendradar: row.trendradar,
+                    })),
+                });
+            } catch (err) {
+                box.innerHTML = renderError('Drift failed', err);
+            }
+        }
+
+        async function loadShadow() {
+            const box = document.getElementById('shadow-result');
+            try {
+                const response = await fetch('/api/shadow');
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                const data = await response.json();
+                const folds = ((data.walkforward || {}).folds || []).map((fold) => ({
+                    fold: fold.fold,
+                    name: fold.name,
+                    decision_at: fold.decision_at,
+                    declared: fold.total_pnl,
+                    no_news: (fold.comparisons || {}).no_news && fold.comparisons.no_news.total_pnl,
+                    shuffled_news: (fold.comparisons || {}).shuffled_news && fold.comparisons.shuffled_news.total_pnl,
+                    news_only: (fold.comparisons || {}).news_only && fold.comparisons.news_only.total_pnl,
+                    pnl_note: fold.pnl_note,
+                }));
+                box.innerHTML = renderJson({
+                    mode: data.mode,
+                    note: data.note,
+                    params: data.params || {},
+                    params_sha256: data.params_sha256,
+                    n_folds: (data.walkforward || {}).n_folds,
+                    folds: folds,
+                });
+            } catch (err) {
+                box.innerHTML = renderError('Shadow-paper failed', err);
+            }
+        }
+
+        async function loadWalkforward() {
+            const box = document.getElementById('walkforward-result');
+            try {
+                const response = await fetch('/api/walkforward');
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                const data = await response.json();
+                const rows = (data.folds || []).map((fold) => ({
+                    fold: fold.fold,
+                    name: fold.name,
+                    decision_at: fold.decision_at,
+                    declared: fold.total_pnl,
+                    no_news: (fold.comparisons || {}).no_news && fold.comparisons.no_news.total_pnl,
+                    shuffled_news: (fold.comparisons || {}).shuffled_news && fold.comparisons.shuffled_news.total_pnl,
+                    news_only: (fold.comparisons || {}).news_only && fold.comparisons.news_only.total_pnl,
+                    pnl_note: fold.pnl_note,
+                }));
+                box.innerHTML = renderJson({
+                    mode: data.mode,
+                    note: data.note,
+                    params_sha256: data.params_sha256,
+                    n_folds: data.n_folds,
+                    folds: rows,
+                });
+            } catch (err) {
+                box.innerHTML = renderError('Walk-forward failed', err);
+            }
+        }
+
+        async function loadParams() {
+            const box = document.getElementById('params-result');
+            try {
+                const response = await fetch('/api/params');
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                const data = await response.json();
+                box.innerHTML = renderJson({
+                    params_sha256: data.params_sha256,
+                    params: data.params || {},
+                });
+            } catch (err) {
+                box.innerHTML = renderError('Params failed', err);
+            }
+        }
+
+        async function loadIntensity() {
+            const box = document.getElementById('intensity-result');
+            try {
+                const response = await fetch('/api/intensity');
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                const data = await response.json();
+                box.innerHTML = renderJson({
+                    mode: data.mode,
+                    note: data.note,
+                    cut: data.cut,
+                    decision_at: data.decision_at,
+                    params_sha256: data.params_sha256,
+                    n_events_after_decision: (data.stats || {}).n_events_after_decision,
+                    intensity: data.intensity || {},
+                });
+            } catch (err) {
+                box.innerHTML = renderError('Intensity failed', err);
+            }
+        }
+
+        async function loadRails() {
+            const box = document.getElementById('rails-result');
+            try {
+                const response = await fetch('/api/rails');
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                const data = await response.json();
+                box.innerHTML = renderJson({
+                    mode: data.mode,
+                    ok: data.ok,
+                    params_sha256: data.params_sha256,
+                    note: data.note,
+                    rails: data.rails || {},
+                });
+            } catch (err) {
+                box.innerHTML = renderError('Rails failed', err);
+            }
+        }
+
+        async function loadSmoke() {
+            const box = document.getElementById('smoke-result');
+            box.textContent = 'Running…';
+            try {
+                const response = await fetch('/api/smoke');
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                const data = await response.json();
+                box.innerHTML = renderJson({
+                    mode: data.mode,
+                    ok: data.ok,
+                    params_sha256: data.params_sha256,
+                    pnl_note: data.pnl_note,
+                    steps: data.steps || {},
+                });
+            } catch (err) {
+                box.innerHTML = renderError('Smoke failed', err);
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            loadRanks();
+            loadMarks();
+            loadParams();
+            loadDiagnose();
+            loadIntensity();
+            loadDrift();
+            loadWalkforward();
+            loadShadow();
+            loadRails();
+            const replay = document.getElementById('replay-btn');
+            const liquid = document.getElementById('liquid-btn');
+            const path = document.getElementById('path-btn');
+            const smoke = document.getElementById('smoke-btn');
+            if (replay) replay.addEventListener('click', () => postPaper('/api/replay'));
+            if (liquid) liquid.addEventListener('click', () => postPaper('/api/liquid'));
+            if (path) path.addEventListener('click', () => postPaper('/api/path'));
+            if (smoke) smoke.addEventListener('click', () => loadSmoke());
+        });
     </script>
 </body>
 </html>

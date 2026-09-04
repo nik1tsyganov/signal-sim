@@ -1,0 +1,14 @@
+{
+  "id": "fx-nflx-1",
+  "source": "fixture",
+  "kind": "news",
+  "ticker": "NFLX",
+  "entities": ["Netflix"],
+  "headline": "Fixture media print for the paper ledger",
+  "url": "https://example.invalid/fixture-nflx",
+  "occurred_at": "2026-09-02T10:03:00Z",
+  "filed_at": "2026-09-02T10:04:00Z",
+  "observed_at": "2026-09-02T10:11:00Z",
+  "confidence": 0.7,
+  "raw_ref": "fixture:nflx-1"
+}

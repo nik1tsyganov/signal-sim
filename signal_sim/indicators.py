@@ -2,12 +2,61 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime
+from pathlib import Path
 
 from .events import Event
 
 
-UNIVERSE = ("NVDA", "XLE", "DIS")
+_UNIVERSE_PATH = Path(__file__).resolve().parent.parent / "fixtures" / "universe.json"
+
+
+def load_universe(path: Path | None = None) -> tuple[str, ...]:
+    """Load the frozen ticker list. Tests may pass a smaller fixture file."""
+    raw = json.loads((path or _UNIVERSE_PATH).read_text(encoding="utf-8"))
+    tickers = raw.get("tickers")
+    if not isinstance(tickers, list) or not tickers:
+        raise ValueError("universe tickers must be a non-empty list")
+    names: list[str] = []
+    for ticker in tickers:
+        if not isinstance(ticker, str) or not ticker or not ticker.isascii() or not ticker.isupper():
+            raise ValueError(f"invalid universe ticker: {ticker!r}")
+        if ticker in names:
+            raise ValueError(f"duplicate universe ticker: {ticker!r}")
+        names.append(ticker)
+    return tuple(names)
+
+
+def load_sectors(path: Path | None = None) -> dict[str, tuple[str, ...]]:
+    """Load sector membership for the frozen universe."""
+    raw = json.loads((path or _UNIVERSE_PATH).read_text(encoding="utf-8"))
+    sectors = raw.get("sectors")
+    if not isinstance(sectors, dict) or not sectors:
+        raise ValueError("universe sectors must be a non-empty object")
+    universe = set(load_universe(path))
+    parsed: dict[str, tuple[str, ...]] = {}
+    seen: set[str] = set()
+    for name, tickers in sectors.items():
+        if not isinstance(name, str) or not name:
+            raise ValueError("sector names must be non-empty strings")
+        if not isinstance(tickers, list) or not tickers:
+            raise ValueError(f"sector {name!r} tickers must be a non-empty list")
+        names = tuple(str(ticker) for ticker in tickers)
+        if any(ticker not in universe for ticker in names):
+            raise ValueError(f"sector {name!r} contains a ticker outside the universe")
+        overlap = seen.intersection(names)
+        if overlap:
+            raise ValueError(f"duplicate sector ticker: {sorted(overlap)[0]!r}")
+        seen.update(names)
+        parsed[name] = names
+    if seen != universe:
+        raise ValueError("sector membership must cover the frozen universe")
+    return parsed
+
+
+UNIVERSE = load_universe()
+SECTORS = load_sectors()
 NEWS_KINDS = {"news", "intel_brief"}
 CONFIRM_KINDS = {"insider", "congress_trade"}
 GOV_CONFIRM_KINDS = {"gov_contract"}
@@ -31,14 +80,124 @@ def _filed_confirmation(
     )
 
 
+def intel_features(
+    events: list[Event],
+    when: datetime,
+    universe: tuple[str, ...] | None = None,
+) -> dict[str, dict[str, int]]:
+    """World Monitor / intel_brief flags at ``when``. Uses observed_at only."""
+    features: dict[str, dict[str, int]] = {}
+    for ticker in UNIVERSE if universe is None else universe:
+        briefs = [
+            event
+            for event in events
+            if event.kind == "intel_brief"
+            and event.ticker == ticker
+            and event.observed_at <= when
+        ]
+        if not briefs:
+            continue
+        features[ticker] = {
+            "intel_brief": 1,
+            "wm_intel": int(any(event.source == "worldmonitor" for event in briefs)),
+            "chokepoint": int(any("chokepoint" in event.raw_ref for event in briefs)),
+        }
+    return features
+
+
+def trendradar_features(
+    events: list[Event],
+    when: datetime,
+    universe: tuple[str, ...] | None = None,
+) -> dict[str, dict[str, int]]:
+    """TrendRadar fixture flags at ``when``. Uses observed_at only. No GPL client."""
+    features: dict[str, dict[str, int]] = {}
+    for ticker in UNIVERSE if universe is None else universe:
+        hits = [
+            event
+            for event in events
+            if event.source == "trendradar"
+            and event.ticker == ticker
+            and event.observed_at <= when
+        ]
+        if hits:
+            features[ticker] = {"trendradar": 1}
+    return features
+
+
+def filed_confirm_features(
+    events: list[Event],
+    when: datetime,
+    universe: tuple[str, ...] | None = None,
+) -> dict[str, dict[str, int]]:
+    """Insider/congress confirms at ``when``. Uses filed_at/observed_at, never trade date."""
+    features: dict[str, dict[str, int]] = {}
+    for ticker in UNIVERSE if universe is None else universe:
+        insider = _filed_confirmation(events, ticker, {"insider"}, when)
+        congress = _filed_confirmation(events, ticker, {"congress_trade"}, when)
+        gov = _filed_confirmation(events, ticker, {"gov_contract"}, when)
+        if insider or congress or gov:
+            features[ticker] = {
+                "insider_confirm": insider,
+                "congress_confirm": congress,
+                "gov_confirm": gov,
+            }
+    return features
+
+
+def _filed_lag_hours(
+    events: list[Event],
+    ticker: str,
+    kinds: set[str],
+    when: datetime,
+) -> float | None:
+    admitted = [
+        event
+        for event in events
+        if event.kind in kinds
+        and event.ticker == ticker
+        and event.filed_at is not None
+        and event.observed_at >= event.filed_at
+        and event.observed_at <= when
+    ]
+    if not admitted:
+        return None
+    latest = max(admitted, key=lambda event: event.observed_at)
+    return (latest.observed_at - latest.filed_at).total_seconds() / 3600.0
+
+
+def filed_lag_features(
+    events: list[Event],
+    when: datetime,
+    universe: tuple[str, ...] | None = None,
+) -> dict[str, dict[str, float]]:
+    """Hours from filed_at to observed_at on the latest admitted filing.
+
+    Feature-only. Never uses occurred_at / trade date. Does not change rank or size.
+    """
+    features: dict[str, dict[str, float]] = {}
+    for ticker in UNIVERSE if universe is None else universe:
+        insider = _filed_lag_hours(events, ticker, {"insider"}, when)
+        congress = _filed_lag_hours(events, ticker, {"congress_trade"}, when)
+        row: dict[str, float] = {}
+        if insider is not None:
+            row["insider_lag_hours"] = insider
+        if congress is not None:
+            row["congress_lag_hours"] = congress
+        if row:
+            features[ticker] = row
+    return features
+
+
 def rank_candidates(
     events: list[Event],
     window_start: datetime | None = None,
     window_end: datetime | None = None,
+    universe: tuple[str, ...] | None = None,
 ) -> list[dict[str, int | str]]:
     """Rank positive-score paper-trade candidates using observed time only."""
     rows = []
-    for ticker in UNIVERSE:
+    for ticker in UNIVERSE if universe is None else universe:
         news_breakout = sum(
             event.kind in NEWS_KINDS
             and event.ticker == ticker

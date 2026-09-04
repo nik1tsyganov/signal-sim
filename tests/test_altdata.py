@@ -122,6 +122,13 @@ class AltDataLoaderTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             load_events(self._dir_with_event(event))
 
+    def test_gov_contract_fixture_loads(self):
+        events = load_events(self._fixture_dir("gov_nvda.json"))
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0]["kind"], "gov_contract")
+        self.assertEqual(events[0]["ticker"], "NVDA")
+        self.assertEqual(events[0]["rank_at"], events[0]["filed_at"])
+
     def test_missing_dir_loads_nothing(self):
         self.assertEqual(load_events(os.path.join(REPO_ROOT, "no-such-dir")), [])
 

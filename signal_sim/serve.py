@@ -9,9 +9,9 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from . import safety
-from .cli import load_fixture_events
-from .indicators import rank_candidates
-from .store import EventStore
+from .cli import rank_fixture_events
+from .fixture_load import load_fixture_events
+from .diagnose import fixture_diagnostics
 
 
 DEFAULT_PORT = 8765
@@ -19,14 +19,27 @@ _LOOPBACK = ".".join(str(part) for part in (127, 0, 0, 1))
 _PACKAGE_ROOT = Path(__file__).resolve().parent
 _FIXTURES_PATH = _PACKAGE_ROOT.parent / "fixtures"
 INDEX_PATH = _PACKAGE_ROOT / "web" / "index.html"
-_FALLBACK = b"PAPER ONLY\nOpen /api/rank to view ranked fixture events.\n"
+_FALLBACK = (
+    b"PAPER ONLY\n"
+    b"GET /api/rank ranked fixture events at decision_at\n"
+    b"GET /api/diagnose Hawkes and clusters; not a ranking input\n"
+    b"GET /api/drift cluster-drift target book; not a ranking input\n"
+    b"GET /api/intensity declared Hawkes intensity at decision_at\n"
+    b"GET /api/params frozen operate constants from fixtures/params.json\n"
+    b"GET /api/marks who can fill vs no_mark\n"
+    b"GET /api/walkforward expanding folds and comparisons; does not place desk orders\n"
+    b"GET /api/shadow frozen shadow-paper report; does not write artifacts or place desk orders\n"
+    b"GET /api/rails local rails only; no live HTTP; does not place desk orders\n"
+    b"GET /api/smoke frozen-params operate pass; does not write artifacts or place desk orders\n"
+    b"POST /api/replay default liquid sector book\n"
+    b"POST /api/liquid same eight-name sector book\n"
+    b"POST /api/path three-step path\n"
+    b"GET on replay/liquid/path returns 405 and does not place orders\n"
+)
 
 
 def _ranked_fixtures() -> list[dict[str, int | str]]:
-    events = load_fixture_events(_FIXTURES_PATH)
-    with EventStore() as store:
-        store.add_many(events)
-        return rank_candidates(store.all())
+    return rank_fixture_events(_FIXTURES_PATH)
 
 
 class _DeskHandler(BaseHTTPRequestHandler):
@@ -43,6 +56,97 @@ class _DeskHandler(BaseHTTPRequestHandler):
             body = json.dumps(_ranked_fixtures(), separators=(",", ":")).encode("utf-8")
             self._send(body, "application/json")
             return
+        if path == "/api/diagnose":
+            events = load_fixture_events(_FIXTURES_PATH)
+            body = json.dumps(fixture_diagnostics(events), separators=(",", ":")).encode("utf-8")
+            self._send(body, "application/json")
+            return
+        if path == "/api/intensity":
+            from .hawkes import fixture_intensity
+
+            body = json.dumps(fixture_intensity(_FIXTURES_PATH), separators=(",", ":")).encode("utf-8")
+            self._send(body, "application/json")
+            return
+        if path == "/api/params":
+            from .params import operate_stamp
+
+            body = json.dumps(operate_stamp(), separators=(",", ":")).encode("utf-8")
+            self._send(body, "application/json")
+            return
+        if path == "/api/drift":
+            from .drift import fixture_drift_book
+
+            body = json.dumps(fixture_drift_book(_FIXTURES_PATH), separators=(",", ":")).encode("utf-8")
+            self._send(body, "application/json")
+            return
+        if path == "/api/marks":
+            from .sim import fixture_mark_map
+
+            body = json.dumps(fixture_mark_map(), separators=(",", ":")).encode("utf-8")
+            self._send(body, "application/json")
+            return
+        if path == "/api/walkforward":
+            import tempfile
+
+            from .walkforward import run_fixture_walkforward
+
+            ledger_dir = tempfile.mkdtemp(prefix="desk-walkforward-")
+            summary = run_fixture_walkforward(fixtures=_FIXTURES_PATH, ledger_dir=ledger_dir)
+            self._send(json.dumps(summary, separators=(",", ":")).encode("utf-8"), "application/json")
+            return
+        if path == "/api/rails":
+            import tempfile
+
+            from .smoke import run_rails
+
+            ledger_dir = tempfile.mkdtemp(prefix="desk-rails-")
+            report = run_rails(ledger_dir=ledger_dir)
+            self._send(json.dumps(report, separators=(",", ":")).encode("utf-8"), "application/json")
+            return
+        if path == "/api/smoke":
+            import tempfile
+
+            from .smoke import run_smoke
+
+            ledger_dir = tempfile.mkdtemp(prefix="desk-smoke-")
+            report = run_smoke(
+                fixtures=_FIXTURES_PATH,
+                ledger_dir=ledger_dir,
+                write_artifact=False,
+            )
+            self._send(json.dumps(report, separators=(",", ":")).encode("utf-8"), "application/json")
+            return
+        if path == "/api/shadow":
+            import tempfile
+
+            from .shadow import run_shadow_report
+
+            ledger_dir = tempfile.mkdtemp(prefix="desk-shadow-")
+            report = run_shadow_report(
+                fixtures=_FIXTURES_PATH,
+                ledger_dir=ledger_dir,
+                write_artifact=False,
+            )
+            self._send(json.dumps(report, separators=(",", ":")).encode("utf-8"), "application/json")
+            return
+        if path == "/api/replay":
+            body = json.dumps(
+                {"error": "POST /api/replay to run the paper replay; GET does not place orders"}
+            ).encode("utf-8")
+            self._send(body, "application/json", 405)
+            return
+        if path == "/api/path":
+            body = json.dumps(
+                {"error": "POST /api/path to run the paper path; GET does not place orders"}
+            ).encode("utf-8")
+            self._send(body, "application/json", 405)
+            return
+        if path == "/api/liquid":
+            body = json.dumps(
+                {"error": "POST /api/liquid to run the sector mark book; GET does not place orders"}
+            ).encode("utf-8")
+            self._send(body, "application/json", 405)
+            return
         if path == "/":
             if INDEX_PATH.is_file():
                 self._send(INDEX_PATH.read_bytes(), "text/html")
@@ -51,14 +155,56 @@ class _DeskHandler(BaseHTTPRequestHandler):
             return
         self._send(b"Not found\n", "text/plain", 404)
 
+    def do_POST(self) -> None:
+        path = urlsplit(self.path).path
+        import tempfile
+
+        if path == "/api/replay":
+            from .sim import run_fixture_replay
+
+            ledger = tempfile.NamedTemporaryFile(
+                prefix="desk-replay-", suffix=".sqlite", delete=False
+            ).name
+            summary = run_fixture_replay(fixtures=_FIXTURES_PATH, ledger_path=ledger)
+            self._send(json.dumps(summary, separators=(",", ":")).encode("utf-8"), "application/json")
+            return
+        if path == "/api/path":
+            from .sim import run_fixture_path
+
+            ledger = tempfile.NamedTemporaryFile(
+                prefix="desk-path-", suffix=".sqlite", delete=False
+            ).name
+            summary = run_fixture_path(fixtures=_FIXTURES_PATH, ledger_path=ledger)
+            self._send(json.dumps(summary, separators=(",", ":")).encode("utf-8"), "application/json")
+            return
+        if path == "/api/liquid":
+            from .sim import run_fixture_replay
+
+            ledger = tempfile.NamedTemporaryFile(
+                prefix="desk-liquid-", suffix=".sqlite", delete=False
+            ).name
+            summary = run_fixture_replay(
+                fixtures=_FIXTURES_PATH,
+                ledger_path=ledger,
+                mark_book_path=_FIXTURES_PATH / "marks" / "liquid.json",
+            )
+            self._send(json.dumps(summary, separators=(",", ":")).encode("utf-8"), "application/json")
+            return
+        self._send(b"Not found\n", "text/plain", 404)
+
     def log_message(self, format: str, *args: object) -> None:
         return
+
+
+class _DeskServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
+    daemon_threads = True
+    allow_reuse_address = True
 
 
 def _make_server(port: int = DEFAULT_PORT) -> socketserver.TCPServer:
     if safety.PAPER_ONLY is not True or safety.kill_switch_ok() is not True:
         raise RuntimeError("paper-only safety checks failed; server refused")
-    return socketserver.TCPServer((_LOOPBACK, port), _DeskHandler)
+    return _DeskServer((_LOOPBACK, port), _DeskHandler)
 
 
 def serve(port: int = DEFAULT_PORT) -> None:

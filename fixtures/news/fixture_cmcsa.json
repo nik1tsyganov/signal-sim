@@ -1,0 +1,14 @@
+{
+  "id": "fx-cmcsa-1",
+  "source": "fixture",
+  "kind": "news",
+  "ticker": "CMCSA",
+  "entities": ["Comcast"],
+  "headline": "Fixture media print for the paper ledger",
+  "url": "https://example.invalid/fixture-cmcsa",
+  "occurred_at": "2026-09-02T10:04:00Z",
+  "filed_at": "2026-09-02T10:05:00Z",
+  "observed_at": "2026-09-02T10:11:00Z",
+  "confidence": 0.7,
+  "raw_ref": "fixture:cmcsa-1"
+}

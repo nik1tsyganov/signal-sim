@@ -37,17 +37,27 @@ class EventStore:
         values["entities"] = json.dumps(values["entities"], separators=(",", ":"))
         columns = tuple(values)
         placeholders = ", ".join("?" for _ in columns)
-        updates = ", ".join(f"{column}=excluded.{column}" for column in columns if column != "id")
-        self.connection.execute(
-            f"INSERT INTO events ({', '.join(columns)}) VALUES ({placeholders}) "
-            f"ON CONFLICT(id) DO UPDATE SET {updates}",
-            tuple(values[column] for column in columns),
-        )
+        try:
+            self.connection.execute(
+                f"INSERT INTO events ({', '.join(columns)}) VALUES ({placeholders})",
+                tuple(values[column] for column in columns),
+            )
+        except sqlite3.IntegrityError as error:
+            raise ValueError(f"duplicate event id: {event.id}") from error
         self.connection.commit()
 
     def add_many(self, events: list[Event]) -> None:
         for event in events:
             self.add(event)
+
+    def amend(self, event: Event, *, supersedes: str) -> None:
+        """Insert a new immutable event. Never mutates the superseded row (docs R4)."""
+        if event.id == supersedes:
+            raise ValueError("amendment must use a new event id")
+        found = self.connection.execute("SELECT 1 FROM events WHERE id = ?", (supersedes,)).fetchone()
+        if found is None:
+            raise ValueError(f"unknown event id: {supersedes}")
+        self.add(event)
 
     def all(self) -> list[Event]:
         cursor = self.connection.execute(

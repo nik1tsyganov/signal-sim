@@ -1,0 +1,14 @@
+{
+  "id": "fx-msft-path-2",
+  "source": "fixture",
+  "kind": "news",
+  "ticker": "MSFT",
+  "entities": ["Microsoft"],
+  "headline": "Mid-path tech print observed after the default decision",
+  "url": "https://example.invalid/fixture-msft-path",
+  "occurred_at": "2026-09-02T16:50:00Z",
+  "filed_at": "2026-09-02T16:51:00Z",
+  "observed_at": "2026-09-02T17:00:00Z",
+  "confidence": 0.7,
+  "raw_ref": "fixture:msft-path-2"
+}
