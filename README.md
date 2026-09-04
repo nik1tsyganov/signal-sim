@@ -8,7 +8,7 @@ Start with [the paper-trading and quant research](docs/paper-trading-and-quant.m
 
 The initial execution target is a local simulated ledger. Alpaca paper is the preferred later broker adapter for cash equities and ETFs. IBKR remains a later option when broader instruments justify its desktop gateway and account requirements.
 
-This repository must not connect to live money. It contains no live trading engine and no credentials. With owner paper keys, it can read an Alpaca paper account, pull live intel, write a daily research book (`research --live`), and print a position-aware paper rebalance that buys and sells. Local fills stay on the ledger. Remote Alpaca paper POSTs stay off unless `SIGNAL_SIM_ALPACA_PAPER_SUBMIT=1` and an explicit `paper-submit` / `--submit-paper` flag. Weekday commands: [daily ops](docs/daily-ops.md).
+This repository must not connect to live money. It contains no live trading engine and no credentials. With owner paper keys, it can read an Alpaca paper account, pull live intel, write a daily research book (`research --live`), and print a position-aware paper rebalance that buys and sells. Local fills stay on the ledger. Remote Alpaca paper POSTs and DELETEs stay off unless `SIGNAL_SIM_ALPACA_PAPER_SUBMIT=1` and an explicit `paper-submit` / `--submit-paper` / `paper-cancel` flag. Weekday commands: [daily ops](docs/daily-ops.md).
 
 There is no third-party install step. The package uses the Python standard library. From a repo checkout, `pip install -e .` makes `python -m signal_sim` work without a `PYTHONPATH` hack. Do not add Yahoo, Stooq, or broker SDKs. On Windows the launcher is usually `python`; on Linux it is often `python3`.
 
@@ -39,6 +39,7 @@ All of these require `--fixtures`. Omitting that flag exits with status 2. Every
 - `diagnose --fixtures` — Hawkes / clusters / intel / confirms (not a rank input)
 - `intensity --fixtures` — declared Hawkes intensity at the same `decision_at` cut (`GET /api/intensity` is the same JSON)
 - `research --live` — weekday intel book (expanded universe + proposed targets) written to `docs/research/YYYY-MM-DD.json`. Drives `rebalance --fixtures --live`. See [daily ops](docs/daily-ops.md).
+- `paper-cancel` — gated paper-host DELETE of one order UUID or `--open --limit <n>` working orders. Same rails as submit. Flag `0` never DELETEs. Cancel the 11 oversized 2026-09-04 orders before the next `--submit-paper`.
 
 `rank`, `intensity`, and `marks` also require `--fixtures`. Those commands read checked-in files under `fixtures/`. `rank --fixtures`, `intensity --fixtures`, `diagnose --fixtures`, and `GET /api/rank` cut at the default mark-book `decision_at`, the same window replay uses. Prints first seen after that decision do not change the rank or the intensity. Every operate JSON (diagnose, drift, intensity, walkforward, shadow, replay) carries `params` plus `params_sha256` from `fixtures/params.json`. `GET /api/params` is that stamp alone. Each R8 audit line cites the same digest; a fill whose provenance digest does not match the manifest fails closed. `filled_at` must be after `decision_at`. There is no live-money broker and no vendor-bar execution mark. Constructing a live Alpaca host or IBKR live ports raises. The Alpaca paper host without keys is still a stub (`NotImplementedError`) and never opens a socket. With `ALPACA_PAPER_API_KEY` and `ALPACA_PAPER_API_SECRET`, `paper-account` is a read-only paper smoke. `feeds --live` pulls Quiver and World Monitor counts when those keys are set. Local fills still require `fixture_mark` on the ledger. Remote paper POSTs need `SIGNAL_SIM_ALPACA_PAPER_SUBMIT=1` plus `paper-submit` or `--submit-paper`. A present or unreadable `KILL` file refuses `submit_paper_order`. Tests fail if known GPL/AGPL source trees or verbatim TrendRadar/WorldMonitor README copies appear in the repo.
 
@@ -155,6 +156,7 @@ python3 -m signal_sim rebalance --fixtures
 python3 -m signal_sim rebalance --fixtures --apply-local --ledger paper-rebalance.sqlite
 python3 -m signal_sim ledger --ledger paper-rebalance.sqlite --fixtures
 python3 -m signal_sim paper-submit --symbol SPY --qty 1
+python3 -m signal_sim paper-cancel --open --limit 1
 python3 -m signal_sim rebalance --fixtures --submit-paper --limit 1
 python3 -m signal_sim paper-performance --write
 ```

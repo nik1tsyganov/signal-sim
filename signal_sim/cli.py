@@ -254,6 +254,22 @@ def _parser() -> argparse.ArgumentParser:
         "--client-order-id",
         help="idempotency key (max 48 chars; default is a stable paper-submit key)",
     )
+    paper_cancel = commands.add_parser(
+        "paper-cancel",
+        help="DELETE Alpaca paper orders (requires flag=1, paper host, keys)",
+    )
+    paper_cancel.add_argument("--order-id", help="one paper order UUID to cancel")
+    paper_cancel.add_argument(
+        "--open",
+        action="store_true",
+        help="cancel open paper orders (uses --limit; default 1)",
+    )
+    paper_cancel.add_argument(
+        "--limit",
+        type=int,
+        default=1,
+        help="max open orders to DELETE with --open (default 1; no all-flag)",
+    )
     ledger = commands.add_parser(
         "ledger",
         aliases=["paper-ledger"],
@@ -689,6 +705,56 @@ def main(argv: list[str] | None = None) -> int:
             "note": (
                 "Alpaca paper POST only. Not live money. Kill by setting "
                 "SIGNAL_SIM_ALPACA_PAPER_SUBMIT=0."
+            ),
+        }
+        print(json.dumps(report, separators=(",", ":")))
+        return 0 if report.get("ok") is True else 1
+    if args.command == "paper-cancel":
+        missing = missing_paper_keys()
+        if missing:
+            print("paper-cancel missing env: " + ", ".join(missing), file=sys.stderr)
+            return 2
+        order_id = getattr(args, "order_id", None)
+        cancel_open = bool(getattr(args, "open", False))
+        if (order_id in (None, "")) == (not cancel_open):
+            print("paper-cancel requires exactly one of --order-id or --open", file=sys.stderr)
+            return 2
+        try:
+            require_paper_submit(explicit=True)
+            client = paper_broker_client(paper_host())
+            if cancel_open:
+                result = client.cancel_open_paper_orders(
+                    explicit=True,
+                    limit=int(getattr(args, "limit", 1)),
+                )
+            else:
+                cancelled = client.cancel_paper_order(order_id, explicit=True)
+                result = {
+                    "cancelled": [cancelled],
+                    "errors": [],
+                    "n_cancelled": 1,
+                    "n_errors": 0,
+                }
+        except (PaperSubmitRefused, LiveEndpointError, ValueError, RuntimeError, NotImplementedError) as error:
+            print(str(error), file=sys.stderr)
+            return 2
+        report = {
+            "mode": "alpaca-paper-cancel",
+            "ok": result.get("n_errors", 0) == 0,
+            "submitted": False,
+            "cancelled": True,
+            "order_post": "disabled",
+            "order_delete": "paper",
+            "submit_flag": paper_submit_flag(),
+            "n_cancelled": result.get("n_cancelled"),
+            "n_errors": result.get("n_errors"),
+            "orders": result.get("cancelled"),
+            "errors": result.get("errors"),
+            "runtime_env": runtime_env_status(),
+            "note": (
+                "Alpaca paper DELETE only. Not live money. Not a submit. "
+                "Kill by setting SIGNAL_SIM_ALPACA_PAPER_SUBMIT=0. "
+                "Reprint rebalance --fixtures --live before the next submit."
             ),
         }
         print(json.dumps(report, separators=(",", ":")))

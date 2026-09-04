@@ -17,6 +17,7 @@ import math
 import urllib.error
 import urllib.parse
 import urllib.request
+import uuid
 from typing import Any
 
 from .indicators import UNIVERSE
@@ -135,6 +136,15 @@ def sanitize_order(raw: Any) -> dict[str, Any]:
     return {field: raw.get(field) for field in _ORDER_FIELDS}
 
 
+def _paper_order_id(value: Any) -> str:
+    text = str(value or "").strip()
+    try:
+        uuid.UUID(text)
+    except (ValueError, AttributeError, TypeError):
+        raise ValueError("paper cancel: order id must be a UUID") from None
+    return text
+
+
 def sanitize_fill(raw: Any) -> dict[str, Any]:
     if not isinstance(raw, dict):
         return {}
@@ -205,7 +215,7 @@ class AlpacaPaperClient:
             request.add_header("Content-Type", "application/json")
         try:
             with urllib.request.urlopen(request, timeout=15) as response:
-                payload = json.loads(response.read().decode("utf-8"))
+                raw_body = response.read().decode("utf-8")
         except urllib.error.HTTPError as error:
             code = error.code
             detail = ""
@@ -227,6 +237,12 @@ class AlpacaPaperClient:
             raise RuntimeError(f"{label} HTTP {code} for {path}{detail}") from None
         except urllib.error.URLError:
             raise RuntimeError(f"{label} request failed for {path}") from None
+        if not raw_body.strip():
+            if method == "DELETE":
+                return {}
+            raise RuntimeError(f"{label} returned empty body for {path}")
+        try:
+            payload = json.loads(raw_body)
         except json.JSONDecodeError:
             raise RuntimeError(f"{label} returned non-JSON for {path}") from None
         return payload
@@ -523,6 +539,54 @@ class AlpacaPaperClient:
             **sanitize_order(raw),
             "submitted": True,
             "duplicate": False,
+        }
+
+    def cancel_paper_order(self, order_id: Any, *, explicit: bool) -> dict[str, Any]:
+        """DELETE /v2/orders/{id} on the paper host only after the hard rails pass."""
+        from .paper import require_paper_submit
+
+        require_paper_submit(explicit=explicit)
+        if not self._paper_host_ok():
+            raise ValueError(f"paper broker host refused: {self._base_url!r}")
+        oid = _paper_order_id(order_id)
+        path = f"/v2/orders/{oid}"
+        raw = self._request_json(
+            f"{self._base_url}{path}",
+            path,
+            "paper cancel",
+            method="DELETE",
+        )
+        sanitized = sanitize_order(raw) if isinstance(raw, dict) else {}
+        return {
+            **sanitized,
+            "id": sanitized.get("id") or oid,
+            "cancelled": True,
+            "submitted": False,
+        }
+
+    def cancel_open_paper_orders(self, *, explicit: bool, limit: int = 1) -> dict[str, Any]:
+        """DELETE up to ``limit`` open paper orders. Default limit 1. No all-flag."""
+        from .paper import require_paper_submit
+
+        require_paper_submit(explicit=explicit)
+        if not self._paper_host_ok():
+            raise ValueError(f"paper broker host refused: {self._base_url!r}")
+        if not isinstance(limit, int) or limit < 1:
+            raise ValueError("paper cancel --limit must be >= 1")
+        open_orders = self.orders(status="open", limit=limit)
+        cancelled: list[dict[str, Any]] = []
+        errors: list[dict[str, str]] = []
+        for row in open_orders[:limit]:
+            oid = row.get("id")
+            try:
+                cancelled.append(self.cancel_paper_order(oid, explicit=explicit))
+            except (RuntimeError, ValueError) as error:
+                errors.append({"id": str(oid or ""), "error": str(error)})
+        return {
+            "cancelled": cancelled,
+            "errors": errors,
+            "n_cancelled": len(cancelled),
+            "n_errors": len(errors),
         }
 
     def read_smoke(self, proposal: dict[str, Any] | None = None) -> dict[str, Any]:

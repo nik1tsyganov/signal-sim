@@ -24,9 +24,21 @@ Loads today's research artifact when present (otherwise computes the same book).
 
 Print-only. No POST.
 
-If paper orders from earlier in the day are still open, **do not spray another full-book submit**. Wait for fills, then rerun the print. The position-aware diff will only ticket what is still off-target.
+If paper orders from earlier in the day are still open, **do not spray another full-book submit**. Wait for fills or cancel them, then rerun the print. The position-aware diff will only ticket what is still off-target.
 
-**2026-09-04 print smoke (this PR):** clock closed (08:21 ET; next open 09:30 ET). Positions `n=0`. **11 open paper orders** still working (`accepted`/`new`, `filled_qty=0`), including oversized fixture-priced QQQ ~278 and SPY ~250 from earlier today plus the one-share SPY. Those working orders have reserved most paper buying power (~$412 left). `research --live` wrote `docs/research/2026-09-04.json` (27-name operating universe; new intel names in the rank: ABT, AMAT, HD, …). Print-only `rebalance --fixtures --live` sized the grown book from paper IEX last trades (SPY ~$773 → ~13 shares, not the fixture $40 → ~250). **No `--submit-paper` in this PR.** Next submit waits for those 11 to fill or cancel, then uses the position-aware diff.
+**2026-09-04 print smoke (this PR):** clock closed (08:21 ET; next open 09:30 ET). Positions `n=0`. **11 open paper orders** still working (`accepted`/`new`, `filled_qty=0`), including oversized fixture-priced QQQ ~278 and SPY ~250 from earlier today plus the one-share SPY. Those working orders have reserved most paper buying power (~$412 left). `research --live` wrote `docs/research/2026-09-04.json` (27-name operating universe; new intel names in the rank: ABT, AMAT, HD, …). Print-only `rebalance --fixtures --live` sized the grown book from paper IEX last trades (SPY ~$773 → ~13 shares, not the fixture $40 → ~250). **No `--submit-paper` and no `paper-cancel` against those 11 in this PR.** Next submit waits for those 11 to fill or be canceled, then uses the position-aware diff.
+
+## Cancel open paper orders before the next submit
+
+Do not `--submit-paper` while the 11 oversized orders are still working. List them with `paper-performance` (read-only). Cancel on the paper host only when you mean to, with the same rails as submit (`SIGNAL_SIM_ALPACA_PAPER_SUBMIT=1`, paper-api host, keys, explicit CLI):
+
+```bash
+python3 -m signal_sim paper-performance
+python3 -m signal_sim paper-cancel --order-id <uuid>
+python3 -m signal_sim paper-cancel --open --limit 11
+```
+
+`--open` uses `--limit` (default 1). There is no `--all`. Flag `0` never DELETEs. A non-paper host is refused. After cancel (or fill), reprint `rebalance --fixtures --live` before any new `--submit-paper`. You can also cancel in the Alpaca paper UI.
 
 ## Submit (paper host, flag=1, explicit)
 
