@@ -25,6 +25,7 @@ _FALLBACK = (
     b"GET /api/diagnose Hawkes and clusters; not a ranking input\n"
     b"GET /api/drift cluster-drift target book; not a ranking input\n"
     b"GET /api/marks who can fill vs no_mark\n"
+    b"GET /api/walkforward expanding folds and comparisons; does not place desk orders\n"
     b"POST /api/replay default liquid sector book\n"
     b"POST /api/liquid same eight-name sector book\n"
     b"POST /api/path three-step path\n"
@@ -66,6 +67,15 @@ class _DeskHandler(BaseHTTPRequestHandler):
 
             body = json.dumps(fixture_mark_map(), separators=(",", ":")).encode("utf-8")
             self._send(body, "application/json")
+            return
+        if path == "/api/walkforward":
+            import tempfile
+
+            from .walkforward import run_fixture_walkforward
+
+            ledger_dir = tempfile.mkdtemp(prefix="desk-walkforward-")
+            summary = run_fixture_walkforward(fixtures=_FIXTURES_PATH, ledger_dir=ledger_dir)
+            self._send(json.dumps(summary, separators=(",", ":")).encode("utf-8"), "application/json")
             return
         if path == "/api/replay":
             body = json.dumps(

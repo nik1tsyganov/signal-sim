@@ -40,3 +40,5 @@ jobs:
         run: python -m signal_sim replay --fixtures --path --drift
       - name: Run fixture walk-forward folds
         run: python -m signal_sim walkforward --fixtures
+      - name: Frozen shadow-paper walk-forward report
+        run: python -m signal_sim shadow --fixtures

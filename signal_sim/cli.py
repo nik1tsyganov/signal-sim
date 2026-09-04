@@ -120,6 +120,19 @@ def _parser() -> argparse.ArgumentParser:
         action="store_true",
         help="load local fixture events and marks (required; the only supported input)",
     )
+    shadow = commands.add_parser(
+        "shadow",
+        help="frozen shadow-paper walk-forward report (not a param search)",
+    )
+    shadow.add_argument(
+        "--fixtures",
+        action="store_true",
+        help="load local fixture events and marks (required; the only supported input)",
+    )
+    shadow.add_argument(
+        "--out",
+        help="write the JSON report here (default: artifacts dir or stdout only)",
+    )
     return parser
 
 
@@ -133,6 +146,7 @@ def main(argv: list[str] | None = None) -> int:
         "drift",
         "replay",
         "walkforward",
+        "shadow",
     } and not args.fixtures:
         print(
             f"{args.command} requires --fixtures; only local fixture events are supported",
@@ -259,6 +273,20 @@ def main(argv: list[str] | None = None) -> int:
                     file=sys.stderr,
                 )
         print(json.dumps(summary, separators=(",", ":")))
+        return 0
+    if args.command == "shadow":
+        import tempfile
+        from .shadow import run_shadow_report
+
+        fixtures = Path(__file__).resolve().parent.parent / "fixtures"
+        ledger_dir = tempfile.mkdtemp(prefix="paper-shadow-")
+        out_path = Path(args.out) if args.out else None
+        report = run_shadow_report(
+            fixtures=fixtures,
+            ledger_dir=ledger_dir,
+            out_path=out_path,
+        )
+        print(json.dumps(report, separators=(",", ":")))
         return 0
     return 2
 

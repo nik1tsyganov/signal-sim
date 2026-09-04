@@ -26,7 +26,7 @@ python3 -m unittest discover -s tests -v
 
 ## Operate (paper only)
 
-`rank`, `intensity`, `diagnose`, `marks`, `drift`, `walkforward`, and `replay` require `--fixtures`. Omitting that flag exits with status 2. Those commands read checked-in files under `fixtures/`. `rank --fixtures` and `GET /api/rank` cut at the default mark-book `decision_at`, the same window replay uses. Prints first seen after that decision do not change the rank. There is no live broker, no vendor bars, and no Quiver live path. Every `total_pnl` / `ending_equity` figure from these commands is **fixture-mark PnL**, not a live or vendor-bar result.
+`rank`, `intensity`, `diagnose`, `marks`, `drift`, `walkforward`, `shadow`, and `replay` require `--fixtures`. Omitting that flag exits with status 2. Those commands read checked-in files under `fixtures/`. `rank --fixtures` and `GET /api/rank` cut at the default mark-book `decision_at`, the same window replay uses. Prints first seen after that decision do not change the rank. There is no live broker, no vendor bars, and no Quiver live path. Every `total_pnl` / `ending_equity` figure from these commands is **fixture-mark PnL**, not a live or vendor-bar result.
 
 Every name in `fixtures/universe.json` either has a real fixture mark or cannot fill. Default `replay --fixtures` sizes the liquid sector book in `fixtures/marks/liquid.json`: tagged `fixture_mark` rows for NVDA/MSFT (tech), XLE/XOM (energy), DIS/NFLX (media), and SPY/QQQ (ETF). `--marks liquid` is the same book. `--marks two-name` (or `fixtures/marks/universe.json`) is the older NVDA/XLE book. Other ranked names are refused with `no_mark`. That skip is honest: the allocator does not invent a 100.0 fill. AAPL, CVX, CMCSA, and XLK have checked-in fixture news so each sector gap can enter the rank cut; they still have no fixture mark. AMZN, GOOGL, and META have no checked-in print at `decision_at` and are listed as `no_print` by `marks --fixtures` — they cannot rank until a fixture print exists. These are research fixtures, not Yahoo/Stooq/vendor bars. Prints are admitted on `observed_at` / `first_seen_at` only; `occurred_at` and congress trade dates do not fill.
 
@@ -36,6 +36,7 @@ python3 -m signal_sim replay --fixtures --drift
 python3 -m signal_sim drift --fixtures
 python3 -m signal_sim diagnose --fixtures
 python3 -m signal_sim walkforward --fixtures
+python3 -m signal_sim shadow --fixtures
 ```
 
 Also:
@@ -56,6 +57,10 @@ python3 -m signal_sim replay --fixtures --drift --intensity
 
 `walkforward --fixtures` runs two expanding fixture-mark folds with a purge/embargo that covers each fold's label horizon plus `decision_delay_hours`. Each fold reports its own fixture-mark PnL for the declared drift stub, plus no-news, shuffled-news, and news-only comparisons on the same clocks. Those numbers are not a search target and are not combined into a fitted score.
 
+`shadow --fixtures` is the frozen operate path for that same harness. It writes `shadow-paper-walkforward.json` under `$SIGNAL_SIM_ARTIFACTS`, `/opt/cursor/artifacts`, or a repo `artifacts/` directory when one of those exists; otherwise it prints the report to stdout only. Params in the report are declared constants. Do not search them.
+
+Recorded World Monitor JSON under `fixtures/recorded/worldmonitor/` attaches as `intel_brief` / `wm_intel` / `chokepoint` flags on the drift book and diagnose. Admission is `observed_at` only. Live World Monitor still raises without a key and does not open HTTP. Rank is unchanged.
+
 `--path` walks `fixtures/marks/path.json`: three fixture steps on one ledger across the sector mark set (open NVDA/XOM/DIS/QQQ → rotate in MSFT/NFLX → hold MSFT/SPY). AAPL is `no_mark` on every step. Rankings on that path are a test input. Marks stay fixtures. Ordering is `observed_at` / `decision_at`. This is not a market and not a live result. After the run, `account` and `positions` are the latest snapshot (last step). `account_history` keeps one row per step; those `ending_equity` values match `equity_curve`. `position_history` keeps the held book per step so a mid-path open and later reduce/close stay visible. `<ledger>.run.jsonl` still appends each step JSON.
 
 Desk (same paper loop as `replay --fixtures`):
@@ -75,6 +80,7 @@ Read-only desk diagnostics (same JSON as `diagnose --fixtures` and `drift --fixt
 ```bash
 curl -sS http://127.0.0.1:8765/api/diagnose
 curl -sS http://127.0.0.1:8765/api/drift
+curl -sS http://127.0.0.1:8765/api/walkforward
 ```
 
 Three-step paper path (same loop as `replay --fixtures --path`):
@@ -89,7 +95,7 @@ Sector mark book (same loop as `replay --fixtures --marks fixtures/marks/liquid.
 curl -sS -X POST http://127.0.0.1:8765/api/liquid
 ```
 
-`GET /api/replay`, `GET /api/path`, and `GET /api/liquid` return 405 and do not place orders. The browser page at that loopback URL loads `GET /api/rank`, `GET /api/marks`, `GET /api/diagnose`, and `GET /api/drift`, and has buttons for `POST /api/replay` (default liquid sector book), `POST /api/liquid` (same book), and `POST /api/path`. The rank table labels default-fill vs `no_mark` before anyone posts. The Marks section lists the frozen universe, who can fill, `no_print` names that never ranked, and who is not in the rank cut. Diagnose shows Hawkes intensity at `decision_at`. Drift targets show the cluster-drift book plus insider/congress confirms (filed_at/observed_at only). Bind is loopback only. Paper only.
+`GET /api/replay`, `GET /api/path`, and `GET /api/liquid` return 405 and do not place orders. `GET /api/walkforward` is the same fixture harness as `walkforward --fixtures` and does not place desk orders. The browser page at that loopback URL loads `GET /api/rank`, `GET /api/marks`, `GET /api/diagnose`, `GET /api/drift`, and `GET /api/walkforward`, and has buttons for `POST /api/replay` (default liquid sector book), `POST /api/liquid` (same book), and `POST /api/path`. The rank table labels default-fill vs `no_mark` before anyone posts. The Marks section lists the frozen universe, who can fill, `no_print` names that never ranked, and who is not in the rank cut. Diagnose shows Hawkes intensity and intel flags at `decision_at`. Drift targets show the cluster-drift book plus insider/congress confirms and recorded intel flags. Bind is loopback only. Paper only.
 
 ```powershell
 python -m signal_sim replay --fixtures

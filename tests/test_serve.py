@@ -134,6 +134,21 @@ class ServeTests(unittest.TestCase):
         self.assertEqual(nvda["congress_confirm"], 1)
         self.assertNotIn("sharpe", json.dumps(payload).lower())
 
+    def test_api_walkforward_matches_walkforward_fixtures(self):
+        expected = io.StringIO()
+        with redirect_stdout(expected):
+            cli.main(["walkforward", "--fixtures"])
+
+        body, content_type = self.request("/api/walkforward")
+
+        self.assertEqual(json.loads(body), json.loads(expected.getvalue()))
+        self.assertEqual(content_type, "application/json")
+        payload = json.loads(body)
+        self.assertEqual(payload["mode"], "local-paper-walkforward")
+        self.assertEqual(payload["n_folds"], 2)
+        self.assertEqual(payload["folds"][0]["comparisons"]["no_news"]["total_pnl"], 0)
+        self.assertNotIn("sharpe", json.dumps(payload).lower())
+
     def test_get_api_path_does_not_place_orders(self):
         with patch.object(serve.safety, "PAPER_ONLY", True), patch.object(
             serve.safety, "kill_switch_ok", return_value=True
@@ -247,8 +262,11 @@ class ServeTests(unittest.TestCase):
         self.assertIn(b"/api/diagnose", body)
         self.assertIn(b"/api/marks", body)
         self.assertIn(b"/api/drift", body)
+        self.assertIn(b"/api/walkforward", body)
         self.assertIn(b"Drift targets", body)
+        self.assertIn(b"Walk-forward", body)
         self.assertIn(b"insider_confirm", body)
+        self.assertIn(b"intel_brief", body)
         self.assertIn(b"intensity", body)
         self.assertIn(b"no_mark", body)
         self.assertIn(b"data.steps", body)
@@ -269,6 +287,7 @@ class ServeTests(unittest.TestCase):
         self.assertIn(b"/api/diagnose", body)
         self.assertIn(b"/api/marks", body)
         self.assertIn(b"/api/drift", body)
+        self.assertIn(b"/api/walkforward", body)
         self.assertIn(b"/api/replay", body)
         self.assertIn(b"/api/liquid", body)
         self.assertIn(b"/api/path", body)

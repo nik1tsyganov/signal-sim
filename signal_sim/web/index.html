@@ -130,6 +130,11 @@
             <p>GET /api/drift. Fixture cluster-drift target book for the paper ledger. Not alpha. Not a ranking input.</p>
             <div id="drift-result">Loading drift…</div>
         </section>
+        <section id="walkforward">
+            <h2>Walk-forward</h2>
+            <p>GET /api/walkforward. Expanding fixture-mark folds plus no-news / shuffled-news / news-only. Not a search. GET does not place desk orders.</p>
+            <div id="walkforward-result">Loading walk-forward…</div>
+        </section>
         <section id="paper">
             <h2>Paper replay</h2>
             <p>Fixture marks only. GET does not place orders. Default replay fills the liquid sector book (tech/energy/media/ETF). Unmarked ranked names are no_mark. Path walks the three-step ledger.</p>
@@ -331,7 +336,9 @@
                     cut: data.cut,
                     n_clusters: (data.stats || {}).n_clusters,
                     n_events_after_decision: (data.stats || {}).n_events_after_decision,
+                    n_intel: (data.stats || {}).n_intel,
                     intensity: data.intensity || {},
+                    intel: data.intel || {},
                 }, null, 2))}</pre>`;
             } catch (err) {
                 box.innerHTML = `<div class="error">Diagnose failed: ${escapeHtml(err.message)}</div>`;
@@ -351,16 +358,49 @@
                     note: data.note,
                     decision_at: data.decision_at,
                     horizon_hours: data.horizon_hours,
+                    intel: data.intel || {},
                     targets: (data.targets || []).map((row) => ({
                         ticker: row.ticker,
                         target_frac: row.target_frac,
                         horizon_hours: row.horizon_hours,
                         insider_confirm: row.insider_confirm,
                         congress_confirm: row.congress_confirm,
+                        intel_brief: row.intel_brief,
+                        wm_intel: row.wm_intel,
+                        chokepoint: row.chokepoint,
                     })),
                 }, null, 2))}</pre>`;
             } catch (err) {
                 box.innerHTML = `<div class="error">Drift failed: ${escapeHtml(err.message)}</div>`;
+            }
+        }
+
+        async function loadWalkforward() {
+            const box = document.getElementById('walkforward-result');
+            try {
+                const response = await fetch('/api/walkforward');
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                const data = await response.json();
+                const rows = (data.folds || []).map((fold) => ({
+                    fold: fold.fold,
+                    name: fold.name,
+                    decision_at: fold.decision_at,
+                    declared: fold.total_pnl,
+                    no_news: (fold.comparisons || {}).no_news && fold.comparisons.no_news.total_pnl,
+                    shuffled_news: (fold.comparisons || {}).shuffled_news && fold.comparisons.shuffled_news.total_pnl,
+                    news_only: (fold.comparisons || {}).news_only && fold.comparisons.news_only.total_pnl,
+                    pnl_note: fold.pnl_note,
+                }));
+                box.innerHTML = `<pre>${escapeHtml(JSON.stringify({
+                    mode: data.mode,
+                    note: data.note,
+                    n_folds: data.n_folds,
+                    folds: rows,
+                }, null, 2))}</pre>`;
+            } catch (err) {
+                box.innerHTML = `<div class="error">Walk-forward failed: ${escapeHtml(err.message)}</div>`;
             }
         }
 
@@ -369,6 +409,7 @@
             loadMarks();
             loadDiagnose();
             loadDrift();
+            loadWalkforward();
             const replay = document.getElementById('replay-btn');
             const liquid = document.getElementById('liquid-btn');
             const path = document.getElementById('path-btn');
