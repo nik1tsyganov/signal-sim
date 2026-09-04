@@ -1,7 +1,7 @@
 {
   "account": {
     "account_blocked": false,
-    "buying_power": "412.23",
+    "buying_power": "400000",
     "cash": "100000",
     "currency": "USD",
     "equity": "100000",
@@ -12,30 +12,19 @@
     "is_open": false,
     "next_close": "2026-09-04T16:00:00-04:00",
     "next_open": "2026-09-04T09:30:00-04:00",
-    "timestamp": "2026-09-04T08:21:18.945245741-04:00"
+    "timestamp": "2026-09-04T08:35:20.180006237-04:00"
   },
   "date": "2026-09-04",
   "mode": "paper-performance",
   "note": "Sanitized Alpaca paper snapshot. Not alpha. Not live money. Wait for open orders to fill before another full-book submit.",
   "ok": true,
   "open_orders": {
-    "n": 11,
-    "symbols": [
-      "AAPL",
-      "CMCSA",
-      "CVX",
-      "DIS",
-      "NFLX",
-      "NVDA",
-      "QQQ",
-      "SPY",
-      "XLE",
-      "XOM"
-    ]
+    "n": 0,
+    "symbols": []
   },
   "positions": {
     "n": 0,
     "symbols": {}
   },
-  "written_at": "2026-09-04T12:21:18.955804Z"
+  "written_at": "2026-09-04T12:35:20.191643Z"
 }
