@@ -1,0 +1,47 @@
+{
+  "note": "Frozen two-step fixture series for conviction vs equal-weight top-K. Forward-only fixture marks. Not vendor bars. Not fitted. Not alpha. Embargo after step 1 covers that step's label horizon plus decision_delay_hours.",
+  "starting_cash": 100000.0,
+  "decision_delay_hours": 1.0,
+  "steps": [
+    {
+      "date": "2026-09-02",
+      "decision_at": "2026-09-02T10:15:00Z",
+      "exit_at": "2026-09-02T18:00:00Z",
+      "rank": [
+        {"ticker": "NVDA", "score": 12.0},
+        {"ticker": "XLE", "score": 6.0},
+        {"ticker": "MSFT", "score": 3.0}
+      ],
+      "marks": {
+        "NVDA": {"entry_px": 178.5, "exit_px": 180.0, "source": "fixture", "kind": "fixture_mark"},
+        "MSFT": {"entry_px": 42.25, "exit_px": 42.0, "source": "fixture", "kind": "fixture_mark"},
+        "XLE": {"entry_px": 90.0, "exit_px": 88.5, "source": "fixture", "kind": "fixture_mark"},
+        "XOM": {"entry_px": 33.0, "exit_px": 32.5, "source": "fixture", "kind": "fixture_mark"},
+        "DIS": {"entry_px": 55.5, "exit_px": 56.0, "source": "fixture", "kind": "fixture_mark"},
+        "NFLX": {"entry_px": 28.0, "exit_px": 28.4, "source": "fixture", "kind": "fixture_mark"},
+        "SPY": {"entry_px": 40.0, "exit_px": 39.5, "source": "fixture", "kind": "fixture_mark"},
+        "QQQ": {"entry_px": 36.0, "exit_px": 35.5, "source": "fixture", "kind": "fixture_mark"}
+      }
+    },
+    {
+      "date": "2026-09-03",
+      "decision_at": "2026-09-03T14:00:00Z",
+      "exit_at": "2026-09-03T21:00:00Z",
+      "rank": [
+        {"ticker": "NVDA", "score": 9.0},
+        {"ticker": "MSFT", "score": 8.0},
+        {"ticker": "XLE", "score": 3.0}
+      ],
+      "marks": {
+        "NVDA": {"entry_px": 180.0, "exit_px": 181.0, "source": "fixture", "kind": "fixture_mark"},
+        "MSFT": {"entry_px": 42.0, "exit_px": 42.2, "source": "fixture", "kind": "fixture_mark"},
+        "XLE": {"entry_px": 88.5, "exit_px": 88.0, "source": "fixture", "kind": "fixture_mark"},
+        "XOM": {"entry_px": 32.5, "exit_px": 32.4, "source": "fixture", "kind": "fixture_mark"},
+        "DIS": {"entry_px": 56.0, "exit_px": 56.1, "source": "fixture", "kind": "fixture_mark"},
+        "NFLX": {"entry_px": 28.4, "exit_px": 28.5, "source": "fixture", "kind": "fixture_mark"},
+        "SPY": {"entry_px": 39.5, "exit_px": 39.4, "source": "fixture", "kind": "fixture_mark"},
+        "QQQ": {"entry_px": 35.5, "exit_px": 35.4, "source": "fixture", "kind": "fixture_mark"}
+      }
+    }
+  ]
+}

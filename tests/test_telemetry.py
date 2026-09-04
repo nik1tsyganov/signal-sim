@@ -81,8 +81,38 @@ class TelemetryPackTests(unittest.TestCase):
         self.assertIn("NFLX", {row["ticker"] for row in pack["book"]})
         self.assertFalse(pack["sentiment"]["llm"])
         self.assertEqual(pack["mark_kinds"]["fixture"], ["NVDA"])
+        self.assertNotIn("decision_verdict", pack)
         dumped = json.dumps(pack)
         self.assertNotIn("headline", dumped.lower())
+
+        (root / "docs" / "decision").mkdir(parents=True)
+        (root / "docs" / "decision" / "2026-09-04.json").write_text(
+            json.dumps({"verdict": "HOLD", "recommend_submit": False, "reasons": ["open orders"]}),
+            encoding="utf-8",
+        )
+        (root / "docs" / "baseline").mkdir(parents=True)
+        (root / "docs" / "baseline" / "2026-09-04.json").write_text(
+            json.dumps(
+                {
+                    "equity_delta_conviction": 12.5,
+                    "equity_delta_equal": 4.0,
+                    "delta_conviction_minus_equal": 8.5,
+                }
+            ),
+            encoding="utf-8",
+        )
+        cited = build_telemetry_pack(
+            root=root,
+            when=datetime(2026, 9, 4, 16, 0, tzinfo=timezone.utc),
+            research=research,
+            performance=performance,
+            prior_performance=prior,
+            rebalance=rebalance,
+        )
+        self.assertEqual(cited["decision_verdict"], "HOLD")
+        self.assertFalse(cited["recommend_submit"])
+        self.assertAlmostEqual(cited["equity_delta_conviction"], 12.5)
+        self.assertAlmostEqual(cited["equity_delta_equal"], 4.0)
 
     def test_write_and_cli_are_read_only(self):
         tmp = Path(tempfile.mkdtemp())

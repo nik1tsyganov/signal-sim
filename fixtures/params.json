@@ -31,5 +31,13 @@
     "w_sent": 0.5,
     "quiver_count_ref": 20,
     "sentiment_cap_n": 20
+  },
+  "go_nogo": {
+    "note": "Declared daily go/no-go thresholds. Not fitted. Not searched. Not alpha. Paper only. trim_band is conviction.trim_band.",
+    "min_quiver_n": 1,
+    "min_worldmonitor_n": 1,
+    "soft_dd": 0.05,
+    "hard_dd": 0.2,
+    "hard_dd_blocks": false
   }
 }

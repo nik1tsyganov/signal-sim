@@ -2,6 +2,12 @@
 
 What landed in the paper operate loop. This is not a live trading log. Every PnL number the loop prints is **fixture-mark PnL**, not alpha.
 
+## Unreleased — daily go/no-go + walk-forward vs equal-weight
+
+- **Go/no-go:** `python3 -m signal_sim go-nogo` (alias `decision-check`) reads today's research book plus the latest paper snapshot and writes `docs/decision/YYYY-MM-DD.json`. Verdict `TRADE` | `HOLD` | `WAIT_OPEN` | `NO_GO`. Declared thresholds in `fixtures/params.json` `go_nogo` (not fitted; `trim_band` reused from conviction). `--live` fail-closes on missing intel keys. `rebalance --submit-paper` refuses `NO_GO`/`HOLD`/`WAIT_OPEN` unless `--force-submit` (owner override; still paper rails). Daily ops: research → go-nogo → print rebalance → submit only if `recommend_submit`.
+- **Baseline compare:** `python3 -m signal_sim baseline-compare --fixtures` walk-forwards conviction `target_frac` vs equal-weight top-K on frozen fixture marks (`fixtures/baseline/series.json`). Forward-only; embargo between steps. Writes `docs/baseline/YYYY-MM-DD.json` with `--write`. Live research history is thin; the fixture smoke proves the comparator. Telemetry cites `equity_delta_conviction` / `equity_delta_equal` when both artifacts exist. Not alpha. Not fitted. Not a live trading path.
+- **Docs:** [daily-ops.md](docs/daily-ops.md). Paper only. Flag-gated submit unchanged.
+
 ## Unreleased — cash reserve, declared exits, cheap sentiment, telemetry
 
 - **Cash reserve:** research-live sizes with one declared lever `max_gross_invest=0.80`: `target_frac_i = min(max_name_frac, max_gross_invest * score'_i / Σ_K)`. No post-hoc shrink of every name. Locked replay `max_gross_frac` stays 1.0 (same pattern as locked `max_name_frac`). Stamped on `fixtures/params.json` `conviction` and on the research artifact (`cash_reserve_frac`). Not fitted. Not alpha.

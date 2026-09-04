@@ -135,3 +135,7 @@ and an NVDA add to the name cap. All 14 filled. Reprint `n_tickets=0`.
   tone does not default to +1.
 
 This is still **not fitted / not alpha** until walkforward says otherwise.
+
+## Walk-forward vs equal-weight (evaluation only)
+
+`python3 -m signal_sim baseline-compare --fixtures` marks the conviction `target_frac` book and a naive equal-weight top-K book on the same frozen fixture series (`fixtures/baseline/series.json`). Same `max_gross_invest` / `max_name_frac`. Forward-only marks; embargo between steps. The 2026-09-04 equal-weight freeze remains the A/B composition snapshot; live dated research is still one day, so the comparator ships a fixture smoke until the daily series accumulates. Not a submit path. Not alpha.

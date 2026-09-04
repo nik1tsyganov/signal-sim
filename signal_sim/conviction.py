@@ -300,6 +300,65 @@ def conviction_targets(
     return targets, skipped
 
 
+def equal_weight_targets(
+    rows: list[dict[str, Any]],
+    *,
+    horizon_hours: float,
+    max_gross_invest: float | None = None,
+    max_gross_frac: float | None = None,
+    max_name_frac: float = CONVICTION_MAX_NAME_FRAC,
+    top_k: int = CONVICTION_TOP_K,
+    min_score: float = CONVICTION_MIN_SCORE,
+) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
+    """Naive equal top-K under the same paper caps. Not fitted. Not alpha."""
+    if horizon_hours <= 0:
+        raise ValueError("horizon_hours must be positive")
+    if max_gross_invest is None:
+        max_gross_invest = (
+            float(max_gross_frac) if max_gross_frac is not None else CONVICTION_MAX_GROSS_INVEST
+        )
+    if max_gross_invest <= 0:
+        raise ValueError("max_gross_invest must be positive")
+    if max_name_frac <= 0:
+        raise ValueError("max_name_frac must be positive")
+    if top_k < 1:
+        raise ValueError("top_k must be a positive integer")
+    skipped: list[dict[str, str]] = []
+    eligible: list[dict[str, Any]] = []
+    for row in rows:
+        ticker = str(row["ticker"])
+        score = _finite(row.get("score"))
+        if score is None or score < float(min_score):
+            skipped.append({"ticker": ticker, "reason": "below_min_score"})
+            continue
+        eligible.append(row)
+    eligible.sort(key=lambda item: (-float(item["score"]), str(item["ticker"])))
+    kept = eligible[:top_k]
+    for row in eligible[top_k:]:
+        skipped.append({"ticker": str(row["ticker"]), "reason": "outside_top_k"})
+    n_kept = len(kept)
+    targets: list[dict[str, Any]] = []
+    if n_kept == 0:
+        return targets, skipped
+    frac = min(float(max_name_frac), float(max_gross_invest) / float(n_kept))
+    gross = 0.0
+    for row in kept:
+        ticker = str(row["ticker"])
+        if frac <= _EPS:
+            skipped.append({"ticker": ticker, "reason": "non_positive_target"})
+            continue
+        if gross + frac - max_gross_invest > _EPS:
+            skipped.append({"ticker": ticker, "reason": "gross_frac_cap"})
+            continue
+        target = dict(row)
+        target["target_frac"] = frac
+        target["side"] = str(row.get("side") or "buy")
+        target["horizon_hours"] = float(row.get("horizon_hours") or horizon_hours)
+        targets.append(target)
+        gross += frac
+    return targets, skipped
+
+
 def paper_name_cap(locked_max_name_frac: float) -> float:
     """Paper research guard. Locked replay max_name_frac may stay 1.0."""
     return min(float(locked_max_name_frac), float(CONVICTION_MAX_NAME_FRAC))

@@ -60,6 +60,18 @@ CONVICTION_W_RECENCY = float(_CONVICTION.get("w_recency", 2.0))
 CONVICTION_W_SENT = float(_CONVICTION.get("w_sent", 0.5))
 CONVICTION_QUIVER_COUNT_REF = float(_CONVICTION.get("quiver_count_ref", 20))
 CONVICTION_SENTIMENT_CAP_N = int(_CONVICTION.get("sentiment_cap_n", 20))
+_GO_NOGO = _PARAMS.get("go_nogo")
+if not isinstance(_GO_NOGO, dict):
+    _GO_NOGO = {}
+GO_NOGO_NOTE = str(
+    _GO_NOGO.get("note")
+    or "Declared daily go/no-go thresholds. Not fitted. Not searched. Not alpha."
+)
+GO_NOGO_MIN_QUIVER_N = int(_GO_NOGO.get("min_quiver_n", 1))
+GO_NOGO_MIN_WORLDMONITOR_N = int(_GO_NOGO.get("min_worldmonitor_n", 1))
+GO_NOGO_SOFT_DD = float(_GO_NOGO.get("soft_dd", 0.05))
+GO_NOGO_HARD_DD = float(_GO_NOGO.get("hard_dd", MAX_DRAWDOWN))
+GO_NOGO_HARD_DD_BLOCKS = bool(_GO_NOGO.get("hard_dd_blocks", False))
 
 
 def frozen_operate_params() -> dict[str, Any]:
@@ -121,4 +133,18 @@ def conviction_params() -> dict[str, Any]:
             "+ 2.0*(intel_brief+wm_intel+chokepoint) + 2.0*exp(-lag_h/half_life_hours) "
             "+ 0.5*sent_term"
         ),
+    }
+
+
+def go_nogo_params() -> dict[str, Any]:
+    """Declared daily go/no-go thresholds. Not in the locked digest."""
+    return {
+        "note": GO_NOGO_NOTE,
+        "min_quiver_n": GO_NOGO_MIN_QUIVER_N,
+        "min_worldmonitor_n": GO_NOGO_MIN_WORLDMONITOR_N,
+        "soft_dd": GO_NOGO_SOFT_DD,
+        "hard_dd": GO_NOGO_HARD_DD,
+        "hard_dd_blocks": GO_NOGO_HARD_DD_BLOCKS,
+        "trim_band": CONVICTION_TRIM_BAND,
+        "starting_cash": STARTING_CASH,
     }

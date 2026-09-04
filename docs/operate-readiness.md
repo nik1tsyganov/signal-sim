@@ -37,7 +37,9 @@ With owner keys on a local machine (never committed):
 - **Alpaca paper submit (off by default):** `python3 -m signal_sim paper-submit --symbol SPY --qty 1` or `python3 -m signal_sim rebalance --fixtures --submit-paper` (default `--limit 1`, smallest notional first) POST to the paper host only when `SIGNAL_SIM_ALPACA_PAPER_SUBMIT=1`, the resolved base URL is the paper host, keys are present, and the CLI flag is explicit. There is no `--all`; pass a `--limit` high enough to cover the print-only ticket count. `--fixtures --live --submit-paper` is supported (live intensity, then paper POST). Live hosts and any other base URL are refused. Sells and leftover closes POST as well as buys. This is paper only. It is not live-money trading. If earlier paper orders are still open, print the book and wait or cancel; do not spray another full-book submit.
 - **Alpaca paper cancel (off by default):** `python3 -m signal_sim paper-cancel --order-id <uuid>` or `paper-cancel --open --limit <n>` DELETE on the paper host under the same rails as submit. Default `--limit` is 1. No `--all`. Flag `0` never DELETEs. Cancel or wait out working orders before the next `--submit-paper`. The 2026-09-04 cancel of 11 working day orders is in [paper order cancel](paper-order-cancel.md).
 - **Paper performance snapshot:** `python3 -m signal_sim paper-performance` (alias `paper-snapshot`) GETs paper account equity/cash, positions, clock, open orders, recent orders, and fill activities. It does not POST. `--write` records a dated JSON under `docs/performance/YYYY-MM-DD.json`. This is paper tracking, not alpha.
-- **Daily telemetry pack:** `python3 -m signal_sim telemetry --write` is the morning-brief cite for paper PnL vs yesterday and which score'/feed/sell reasons moved the book. Writes `docs/telemetry/YYYY-MM-DD.json`. Read-only. Same-day artifacts only. Not alpha.
+- **Daily telemetry pack:** `python3 -m signal_sim telemetry --write` is the morning-brief cite for paper PnL vs yesterday and which score'/feed/sell reasons moved the book. Writes `docs/telemetry/YYYY-MM-DD.json`. Cites go/no-go and baseline deltas when those artifacts exist. Read-only. Same-day artifacts only. Not alpha.
+- **Daily go/no-go:** `python3 -m signal_sim go-nogo` writes `docs/decision/YYYY-MM-DD.json` from today's research plus the latest paper snapshot. Declared thresholds only. `--live` fail-closes without intel keys. `rebalance --submit-paper` refuses a non-`TRADE` verdict unless `--force-submit` (owner override; still paper rails).
+- **Baseline compare:** `python3 -m signal_sim baseline-compare --fixtures` is an evaluation helper, not a submit path. Fixture-mark walk-forward of conviction vs equal-weight top-K. Not alpha. Not fitted.
 
 Fills go through `submit_paper_order` only. A fill must be `kind=fixture_mark` and `source=fixture`. Research or vendor mark kinds refuse. Constructing a live Alpaca host or IBKR live ports raises and does not open a socket. A present or unreadable `KILL` file refuses the order. Every fill writes an R8 provenance line that cites `params_sha256`. The local ledger fill gate is unchanged: Alpaca paper reads do not become execution marks.
 
@@ -87,6 +89,8 @@ python3 -m signal_sim rebalance --fixtures --apply-local --ledger paper-rebalanc
 python3 -m signal_sim ledger --ledger paper-rebalance.sqlite --fixtures
 python3 -m signal_sim paper-performance --write
 python3 -m signal_sim telemetry --write
+python3 -m signal_sim go-nogo
+python3 -m signal_sim baseline-compare --fixtures
 python3 -m signal_sim paper-submit --symbol SPY --qty 1
 python3 -m signal_sim paper-cancel --order-id <uuid>
 python3 -m signal_sim paper-cancel --open --limit 1
@@ -159,7 +163,7 @@ Tests may mutate a parsed book in memory. That does not change the checked-in ma
 
 Adding a key to `frozen_operate_params()` changes `params_sha256`. Do not retune any of these to move fixture-mark PnL.
 
-Research-live score' weights live under `conviction` in the same manifest. They are **not** locked policy and are **not** in the operate digest. Paper research caps each name at `conviction.max_name_frac` (0.20). See [research-conviction.md](research-conviction.md). Not fitted. Not alpha.
+Research-live score' weights live under `conviction` in the same manifest. Daily go/no-go thresholds live under `go_nogo`. They are **not** locked policy and are **not** in the operate digest. Paper research caps each name at `conviction.max_name_frac` (0.20). See [research-conviction.md](research-conviction.md). Not fitted. Not alpha.
 
 ## Blocked on the owner
 
@@ -190,6 +194,8 @@ There is no TrendRadar live client and no GPL/AGPL vendoring.
 - `paper-cancel` is an Alpaca **paper** DELETE. It is not live money and not permission to cancel on a live host. Flag `0` never DELETEs.
 - `ledger --ledger` is a read of that local simulated book. Fixture-mark MTM is plumbing, not alpha.
 - `paper-performance` / `paper-snapshot` is a read of the Alpaca **paper** account. Equity, cash, and fills in that JSON are paper tracking, not alpha and not live money.
+- `go-nogo` is a declared paper checklist. It is not alpha and not permission to trade live. `--force-submit` is still paper-only.
+- `baseline-compare --fixtures` is fixture-mark PnL of two books. It is not alpha, not a fit, and not a live trading path.
 - The desk is paper-only and loopback-only. It is not a production broker UI.
 
 See [the changelog](../CHANGELOG.md), [paper trading and quant research](paper-trading-and-quant.md), and [alternative data and safety](alt-data-and-safety.md).
