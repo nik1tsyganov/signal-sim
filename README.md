@@ -54,7 +54,7 @@ python3 -m signal_sim replay --fixtures --drift --intensity
 
 `--path --drift` walks the same liquid mark path, but sizes each step from cluster drift at that step's `decision_at`. Mid-path fixture prints (after the default 10:15Z cut) can add or reduce names across sectors. `position_history` keeps the held book per step. Default `--path` still uses the checked-in candidate list. PnL on both paths is fixture-mark PnL.
 
-`walkforward --fixtures` runs two expanding fixture-mark folds with a purge/embargo that covers each fold's label horizon plus `decision_delay_hours`. Each fold reports its own fixture-mark PnL. Those numbers are not a search target and are not combined into a fitted score.
+`walkforward --fixtures` runs two expanding fixture-mark folds with a purge/embargo that covers each fold's label horizon plus `decision_delay_hours`. Each fold reports its own fixture-mark PnL for the declared drift stub, plus no-news, shuffled-news, and news-only comparisons on the same clocks. Those numbers are not a search target and are not combined into a fitted score.
 
 `--path` walks `fixtures/marks/path.json`: three fixture steps on one ledger across the sector mark set (open NVDA/XOM/DIS/QQQ → rotate in MSFT/NFLX → hold MSFT/SPY). AAPL is `no_mark` on every step. Rankings on that path are a test input. Marks stay fixtures. Ordering is `observed_at` / `decision_at`. This is not a market and not a live result. After the run, `account` and `positions` are the latest snapshot (last step). `account_history` keeps one row per step; those `ending_equity` values match `equity_curve`. `position_history` keeps the held book per step so a mid-path open and later reduce/close stay visible. `<ledger>.run.jsonl` still appends each step JSON.
 

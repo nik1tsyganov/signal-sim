@@ -13,11 +13,15 @@ from pathlib import Path
 from signal_sim import cli
 from signal_sim.events import Event
 from signal_sim.fixture_load import load_fixture_events
+from signal_sim.indicators import NEWS_KINDS
 from signal_sim.walkforward import (
+    PLACEBO_SEED,
     assert_no_future_prints,
     fold_events,
     load_walkforward_folds,
     run_fixture_walkforward,
+    shuffle_news_clocks,
+    variant_events,
 )
 
 
@@ -144,6 +148,59 @@ class WalkForwardTests(unittest.TestCase):
         self.assertTrue(all("pnl_note" in row for row in payload["folds"]))
         self.assertNotIn("combined_pnl", payload)
         self.assertNotIn("sharpe", json.dumps(payload).lower())
+        first = payload["folds"][0]
+        self.assertEqual(set(first["comparisons"]), {"no_news", "shuffled_news", "news_only"})
+        self.assertEqual(first["comparisons"]["no_news"]["n_orders"], 0)
+        self.assertEqual(first["comparisons"]["no_news"]["total_pnl"], 0)
+        self.assertEqual(first["comparisons"]["news_only"]["total_pnl"], first["total_pnl"])
+
+
+class WalkForwardComparisonTests(unittest.TestCase):
+    def test_shuffle_keeps_timestamp_bag_and_stays_inside_the_fold(self):
+        decision = datetime(2026, 9, 2, 10, 15, tzinfo=UTC)
+        admitted = fold_events(load_fixture_events(FIXTURES), decision)
+        shuffled = shuffle_news_clocks(admitted, seed=PLACEBO_SEED)
+        assert_no_future_prints(shuffled, decision)
+        original_clocks = sorted(
+            event.observed_at for event in admitted if event.kind in NEWS_KINDS
+        )
+        shuffled_clocks = sorted(
+            event.observed_at for event in shuffled if event.kind in NEWS_KINDS
+        )
+        self.assertEqual(original_clocks, shuffled_clocks)
+        original_pairs = {
+            (event.id, event.observed_at) for event in admitted if event.kind in NEWS_KINDS
+        }
+        shuffled_pairs = {
+            (event.id, event.observed_at) for event in shuffled if event.kind in NEWS_KINDS
+        }
+        self.assertNotEqual(original_pairs, shuffled_pairs)
+
+    def test_no_news_has_no_cluster_targets_and_news_only_matches_declared_pnl(self):
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        summary = run_fixture_walkforward(fixtures=FIXTURES, ledger_dir=tmp)
+        self.assertEqual(summary["placebo_seed"], PLACEBO_SEED)
+        self.assertIn("not a search", summary["comparison_note"].lower())
+        rendered = json.dumps(summary).lower()
+        self.assertNotIn("sharpe", rendered)
+        self.assertNotIn("best_variant", rendered)
+        self.assertNotIn("functional", rendered)
+        for fold in summary["folds"]:
+            nonews = fold["comparisons"]["no_news"]
+            news_only = fold["comparisons"]["news_only"]
+            shuffled = fold["comparisons"]["shuffled_news"]
+            self.assertEqual(nonews["n_orders"], 0)
+            self.assertEqual(nonews["total_pnl"], 0)
+            self.assertTrue(all(event_id for event_id in nonews["event_ids"]))
+            self.assertEqual(news_only["total_pnl"], fold["total_pnl"])
+            self.assertEqual(news_only["n_orders"], fold["n_orders"])
+            self.assertIn("fixture-mark", shuffled["pnl_note"])
+            self.assertNotIn("fx-nvda-late", shuffled["event_ids"])
+
+    def test_variant_events_reject_unknown_names(self):
+        with self.assertRaisesRegex(ValueError, "unknown walk-forward comparison"):
+            variant_events([], "fit_for_pnl", seed=PLACEBO_SEED)
 
 
 def math_isfinite(value):

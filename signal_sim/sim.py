@@ -476,10 +476,11 @@ def run_fixture_replay(
     mark_book_path: Path | None = None,
     candidates: list[dict[str, Any]] | None = None,
     universe: tuple[str, ...] | None = None,
+    events: list[Event] | None = None,
 ) -> dict[str, Any]:
     """Rank fixture events, rebalance through submit_paper_order, mark to fixture exits."""
     book = mark_book if mark_book is not None else load_mark_book(mark_book_path)
-    all_events = load_fixture_events(fixtures)
+    all_events = events if events is not None else load_fixture_events(fixtures)
     events = _events_at(all_events, book["decision_at"])
     if candidates is None:
         book_candidates = book.get("candidates")

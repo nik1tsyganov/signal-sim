@@ -247,10 +247,17 @@ def main(argv: list[str] | None = None) -> int:
         summary = run_fixture_walkforward(fixtures=fixtures, ledger_dir=ledger_dir)
         for row in summary["folds"]:
             print(
-                f"fold {row['fold']} {row['name']}: fixture-mark total_pnl={row['total_pnl']} "
+                f"fold {row['fold']} {row['name']} declared: fixture-mark total_pnl={row['total_pnl']} "
                 f"n_events={row['n_events']} n_orders={row['n_orders']}",
                 file=sys.stderr,
             )
+            for name, comparison in row.get("comparisons", {}).items():
+                print(
+                    f"fold {row['fold']} {row['name']} {name}: fixture-mark "
+                    f"total_pnl={comparison['total_pnl']} "
+                    f"n_events={comparison['n_events']} n_orders={comparison['n_orders']}",
+                    file=sys.stderr,
+                )
         print(json.dumps(summary, separators=(",", ":")))
         return 0
     return 2

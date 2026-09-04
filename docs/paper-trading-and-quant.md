@@ -115,7 +115,7 @@ Use expanding or rolling walk-forward evaluation. Fit only on the past. Select p
 
 Purge samples whose return-label intervals overlap a test interval. Add an embargo after each test interval. The embargo must cover the label horizon and the measured news-processing delay. This prevents a training row from using returns or cluster information that belong to the test period.
 
-The checked-in fixture harness is `walkforward --fixtures`: two expanding `decision_at` windows, a purge/embargo that covers each fold's label horizon plus `decision_delay_hours`, and per-fold fixture-mark PnL. It does not search parameters or combine folds into a fitted score. A later print in an earlier fold fails closed. Jump-diffusion stays documentation-only until honest intraday bars exist.
+The checked-in fixture harness is `walkforward --fixtures`: two expanding `decision_at` windows, a purge/embargo that covers each fold's label horizon plus `decision_delay_hours`, and per-fold fixture-mark PnL. It also reports no-news, shuffled-news, and news-only ablation on those same folds. It does not search parameters or combine folds into a fitted score. A later print in an earlier fold fails closed. Jump-diffusion stays documentation-only until honest intraday bars exist.
 
 The data gate is strict:
 
