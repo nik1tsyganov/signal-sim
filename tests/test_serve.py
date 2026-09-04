@@ -184,9 +184,8 @@ class ServeTests(unittest.TestCase):
             cli.main(["smoke", "--fixtures"])
         cli_payload = json.loads(expected.getvalue())
 
-        with patch.object(serve.safety, "PAPER_ONLY", True), patch.object(
-            serve.safety, "kill_switch_ok", return_value=True
-        ):
+        # Real kill_switch_ok: stubbing it True would hide the rails KILL check.
+        with patch.object(serve.safety, "PAPER_ONLY", True):
             with serve._make_server(0) as server:
                 thread = threading.Thread(target=server.handle_request)
                 thread.start()
@@ -198,11 +197,14 @@ class ServeTests(unittest.TestCase):
         payload = json.loads(body)
         self.assertEqual(content_type, "application/json")
         self.assertEqual(payload["mode"], "local-paper-smoke")
-        self.assertTrue(payload["ok"])
+        self.assertTrue(payload["ok"], payload.get("error"))
         self.assertEqual(payload["params_sha256"], cli_payload["params_sha256"])
         self.assertEqual(set(payload["steps"]), set(cli_payload["steps"]))
+        self.assertIn("rails", payload["steps"])
+        self.assertEqual(payload["steps"]["rails"]["kill"], "refused")
         self.assertIn("fixture-mark", payload["pnl_note"].lower())
         self.assertNotIn("sharpe", json.dumps(payload).lower())
+        self.assertFalse((Path(__file__).resolve().parent.parent / "KILL").exists())
 
     def test_api_shadow_matches_shadow_fixtures_without_writing(self):
         expected = io.StringIO()
