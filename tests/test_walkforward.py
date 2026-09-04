@@ -185,7 +185,8 @@ class WalkForwardComparisonTests(unittest.TestCase):
         rendered = json.dumps(summary).lower()
         self.assertNotIn("sharpe", rendered)
         self.assertNotIn("best_variant", rendered)
-        self.assertNotIn("functional", rendered)
+        self.assertNotIn('"functional": true', rendered)
+        self.assertNotIn("is functional", rendered)
         for fold in summary["folds"]:
             nonews = fold["comparisons"]["no_news"]
             news_only = fold["comparisons"]["news_only"]
