@@ -292,7 +292,11 @@ EQUAL_WEIGHT_2026_09_04 = (
 
 
 def score_features_from_research_artifact(raw: dict[str, Any]) -> list[dict[str, Any]]:
-    """Rebuild score' inputs from a checked-in equal-weight research JSON."""
+    """Rebuild score' inputs from a checked-in research JSON.
+
+    Prefer the frozen equal-weight snapshot for the historical A/B. Live dated
+    artifacts may already carry conviction ``proposed_book`` targets.
+    """
     rank = {str(row["ticker"]): row for row in raw.get("rank") or [] if isinstance(row, dict)}
     confirms = (raw.get("diagnose") or {}).get("confirms") or {}
     quiver = ((raw.get("feeds") or {}).get("quiver") or {}).get("tickers") or {}
@@ -350,19 +354,24 @@ def compare_equal_weight_book(
     raw: dict[str, Any],
     *,
     horizon_hours: float = 34.75,
+    before: tuple[str, ...] | None = None,
 ) -> dict[str, Any]:
-    """Print-only A/B versus the equal-weight 2026-09-04 book. No broker POST."""
-    before = [str(row["ticker"]) for row in (raw.get("proposed_book") or {}).get("targets") or []]
-    if not before:
-        before = list(EQUAL_WEIGHT_2026_09_04)
+    """Print-only A/B versus the frozen equal-weight 2026-09-04 book. No broker POST.
+
+    ``before`` is the historical equal-weight stub, not ``raw["proposed_book"]``.
+    Live ``research --live`` writes today's conviction book to the dated ops
+    artifact; keep the equal-weight baseline in
+    ``docs/research/2026-09-04-equal-weight.json``.
+    """
+    baseline = list(before if before is not None else EQUAL_WEIGHT_2026_09_04)
     rows = score_features_from_research_artifact(raw)
     targets, skipped = conviction_targets(rows, horizon_hours=horizon_hours)
     after = [row["ticker"] for row in targets]
     return {
-        "before": before,
+        "before": baseline,
         "after": after,
-        "enter": [ticker for ticker in after if ticker not in set(before)],
-        "exit": [ticker for ticker in before if ticker not in set(after)],
+        "enter": [ticker for ticker in after if ticker not in set(baseline)],
+        "exit": [ticker for ticker in baseline if ticker not in set(after)],
         "targets": targets,
         "skipped": skipped,
         "nvda_frac": next((row["target_frac"] for row in targets if row["ticker"] == "NVDA"), None),

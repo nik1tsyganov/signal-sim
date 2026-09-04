@@ -62,8 +62,10 @@ today's conviction names are already held.
 ## 2026-09-04 equal-weight vs score'
 
 The A/B below was computed against the **pre-submit** equal-weight artifact
-(XLE/MSFT/NFLX/NVDA/AAPL/CMCSA/CVX/DIS/SPY/XOM at 0.10). The checked-in
-[2026-09-04.json](research/2026-09-04.json) is now the live conviction book
+(XLE/MSFT/NFLX/NVDA/AAPL/CMCSA/CVX/DIS/SPY/XOM at 0.10). That snapshot is
+frozen at [2026-09-04-equal-weight.json](research/2026-09-04-equal-weight.json)
+and is the only "before" the score' A/B test reads. The dated ops file
+[2026-09-04.json](research/2026-09-04.json) stays the live conviction book
 written by `research --live` before the authorized paper submit.
 
 | | Equal-weight stub (held / proposed) | score' conviction |
