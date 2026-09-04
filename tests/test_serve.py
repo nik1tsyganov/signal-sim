@@ -267,6 +267,7 @@ class ServeTests(unittest.TestCase):
         self.assertIn(b"Walk-forward", body)
         self.assertIn(b"insider_confirm", body)
         self.assertIn(b"intel_brief", body)
+        self.assertIn(b"trendradar", body)
         self.assertIn(b"intensity", body)
         self.assertIn(b"no_mark", body)
         self.assertIn(b"data.steps", body)
