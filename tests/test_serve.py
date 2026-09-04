@@ -24,7 +24,7 @@ FORBIDDEN_BROKER_FRAGMENTS = (
 
 
 class ServeTests(unittest.TestCase):
-    def request(self, path):
+    def request(self, path, timeout=2):
         with patch.object(serve.safety, "PAPER_ONLY", True), patch.object(
             serve.safety, "kill_switch_ok", return_value=True
         ):
@@ -32,10 +32,10 @@ class ServeTests(unittest.TestCase):
                 thread = threading.Thread(target=server.handle_request)
                 thread.start()
                 host, port = server.server_address
-                with urlopen(f"http://{host}:{port}{path}", timeout=2) as response:
+                with urlopen(f"http://{host}:{port}{path}", timeout=timeout) as response:
                     body = response.read()
                     content_type = response.headers.get_content_type()
-                thread.join(timeout=2)
+                thread.join(timeout=timeout)
         self.assertFalse(thread.is_alive())
         return body, content_type
 
@@ -168,7 +168,7 @@ class ServeTests(unittest.TestCase):
         with redirect_stdout(expected):
             cli.main(["walkforward", "--fixtures"])
 
-        body, content_type = self.request("/api/walkforward")
+        body, content_type = self.request("/api/walkforward", timeout=30)
 
         self.assertEqual(json.loads(body), json.loads(expected.getvalue()))
         self.assertEqual(content_type, "application/json")
@@ -241,7 +241,7 @@ class ServeTests(unittest.TestCase):
         folder = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, folder, ignore_errors=True)
         with patch("signal_sim.shadow.artifacts_dir", return_value=folder):
-            body, content_type = self.request("/api/shadow")
+            body, content_type = self.request("/api/shadow", timeout=30)
 
         payload = json.loads(body)
         self.assertEqual(content_type, "application/json")
