@@ -1,8 +1,10 @@
-"""Print-only paper rebalance dry-run. HTTP is mocked unless paper keys exist."""
+"""Paper rebalance dry-run and optional local-ledger apply. HTTP is mocked unless paper keys exist."""
 
 import io
 import json
 import os
+import sqlite3
+import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
@@ -13,8 +15,12 @@ from signal_sim.drift import fixture_drift_book
 from signal_sim.paper import paper_broker_client, paper_host
 from signal_sim.events import Event
 from signal_sim.rebalance import (
+    APPLY_GATE,
+    PAPER_MARK_SKIP,
     SIGNAL_DRIFT,
     allocation_base,
+    apply_local_rebalance,
+    local_apply_failure,
     paper_held,
     plan_rebalance_tickets,
     proposed_rebalance,
@@ -163,7 +169,9 @@ class RebalancePlannerTests(unittest.TestCase):
         self.assertEqual(report["signal"], SIGNAL_DRIFT)
         self.assertTrue(report["ok"])
         self.assertFalse(report["submitted"])
+        self.assertFalse(report["local_applied"])
         self.assertEqual(report["order_post"], "disabled")
+        self.assertEqual(report["apply_gate"], APPLY_GATE)
         self.assertIn("not alpha", report["note"].lower())
         self.assertEqual(report["decision_at"], "2026-09-02T10:15:00Z")
         self.assertTrue(report["printed_at"].endswith("Z"))
@@ -311,14 +319,26 @@ class RebalancePlannerTests(unittest.TestCase):
                 proposed_rebalance(fixtures=FIXTURES)
         urlopen.assert_not_called()
 
-    def test_does_not_import_an_order_path(self):
+    def test_planner_does_not_submit(self):
         import inspect
 
-        source = inspect.getsource(__import__("signal_sim.rebalance", fromlist=["proposed_rebalance"]))
-        lowered = source.lower()
-        self.assertNotIn("submit_paper_order(", lowered)
+        planner = inspect.getsource(proposed_rebalance)
+        self.assertNotIn("submit_paper_order(", planner)
+        module = inspect.getsource(
+            __import__("signal_sim.rebalance", fromlist=["proposed_rebalance"])
+        )
+        lowered = module.lower()
         self.assertNotIn("urlopen", lowered)
         self.assertNotIn("insert into orders", lowered)
+        self.assertIn("submit_paper_order(", inspect.getsource(apply_local_rebalance))
+        with mock.patch("signal_sim.rebalance.submit_paper_order") as submit:
+            proposed_rebalance(
+                fixtures=FIXTURES,
+                account=_empty_account(),
+                positions=[],
+                clock=_clock(),
+            )
+        submit.assert_not_called()
 
     def test_fixture_mark_wins_over_paper_last_trade(self):
         book = load_mark_book()
@@ -457,7 +477,128 @@ class RebalancePlannerTests(unittest.TestCase):
         self.assertNotIn("example.invalid", dumped)
         self.assertNotIn("raw-pii-ref", dumped)
         self.assertFalse(live["submitted"])
+        self.assertFalse(live["local_applied"])
         self.assertEqual(live["order_post"], "disabled")
+
+
+class RebalanceApplyLocalTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.ledger = str(Path(self.tmp) / "apply.sqlite")
+
+    def _fills(self):
+        if not os.path.exists(self.ledger):
+            return []
+        connection = sqlite3.connect(self.ledger)
+        try:
+            return connection.execute(
+                "SELECT o.ticker, o.side, f.price FROM orders o "
+                "JOIN fills f ON f.order_id = o.order_id ORDER BY o.ticker"
+            ).fetchall()
+        except sqlite3.OperationalError:
+            return []
+        finally:
+            connection.close()
+
+    def test_apply_local_writes_fixture_fills_only(self):
+        book = load_mark_book()
+        report = proposed_rebalance(
+            fixtures=FIXTURES,
+            account=_empty_account(),
+            positions=[],
+            clock=_clock(),
+            client=_FakeMarkClient(
+                {
+                    "AAPL": {
+                        "entry_px": 220.5,
+                        "kind": "last_trade",
+                        "source": "alpaca_paper_data",
+                    }
+                }
+            ),
+        )
+        self.assertIn("AAPL", {row["symbol"] for row in report["tickets"]})
+        applied = apply_local_rebalance(
+            report,
+            ledger_path=self.ledger,
+            fixtures=FIXTURES,
+            kill_root=self.tmp,
+        )
+        self.assertEqual(applied["mode"], "paper-rebalance-apply-local")
+        self.assertTrue(applied["local_applied"])
+        self.assertFalse(applied["submitted"])
+        self.assertEqual(applied["order_post"], "disabled")
+        self.assertEqual(applied["apply_gate"], APPLY_GATE)
+        self.assertGreater(applied["n_applied"], 0)
+        fills = {ticker: (side, price) for ticker, side, price in self._fills()}
+        self.assertEqual(len(fills), applied["n_applied"])
+        self.assertNotIn("AAPL", fills)
+        self.assertIn("NVDA", fills)
+        self.assertAlmostEqual(fills["NVDA"][1], book["marks"]["NVDA"]["entry_px"])
+        aapl_skip = next(row for row in applied["apply_skipped"] if row["ticker"] == "AAPL")
+        self.assertEqual(aapl_skip["reason"], PAPER_MARK_SKIP)
+        aapl_ticket = next(row for row in applied["tickets"] if row["symbol"] == "AAPL")
+        self.assertFalse(aapl_ticket["submitted"])
+        self.assertFalse(aapl_ticket["local_filled"])
+        nvda_ticket = next(row for row in applied["tickets"] if row["symbol"] == "NVDA")
+        self.assertFalse(nvda_ticket["submitted"])
+        self.assertTrue(nvda_ticket["local_filled"])
+
+    def test_print_only_does_not_write_ledger(self):
+        report = proposed_rebalance(
+            fixtures=FIXTURES,
+            account=_empty_account(),
+            positions=[],
+            clock=_clock(),
+        )
+        self.assertFalse(report["local_applied"])
+        self.assertFalse(os.path.exists(self.ledger))
+        self.assertEqual(self._fills(), [])
+        self.assertTrue(report["tickets"])
+
+    def test_paper_mark_gate_is_explicit(self):
+        self.assertEqual(
+            local_apply_failure(
+                {
+                    "mark_kind": "last_trade",
+                    "mark_source": "alpaca_paper_data",
+                }
+            ),
+            PAPER_MARK_SKIP,
+        )
+        self.assertEqual(
+            local_apply_failure({"mark_kind": "fixture_mark", "mark_source": "fixture"}),
+            None,
+        )
+        self.assertEqual(
+            local_apply_failure({"mark_kind": "fixture_mark"}),
+            "execution mark must be fixture_mark",
+        )
+
+    def test_missing_mark_labels_do_not_default_to_fixture_fills(self):
+        report = proposed_rebalance(
+            fixtures=FIXTURES,
+            account=_empty_account(),
+            positions=[],
+            clock=_clock(),
+        )
+        report = dict(report)
+        report["tickets"] = [
+            {
+                **report["tickets"][0],
+                "mark_kind": "",
+                "mark_source": "",
+            }
+        ]
+        applied = apply_local_rebalance(
+            report,
+            ledger_path=self.ledger,
+            fixtures=FIXTURES,
+            kill_root=self.tmp,
+        )
+        self.assertEqual(applied["n_applied"], 0)
+        self.assertEqual(self._fills(), [])
+        self.assertEqual(applied["apply_skipped"][0]["reason"], "execution mark must be fixture_mark")
 
 
 class RebalanceCliTests(unittest.TestCase):
@@ -634,6 +775,104 @@ class RebalanceCliTests(unittest.TestCase):
         self.assertTrue(all(method == "GET" for _url, method in calls))
         self.assertIn("refuses remote paper POSTs", error.getvalue())
 
+    def test_apply_local_requires_ledger(self):
+        error = io.StringIO()
+        with mock.patch("signal_sim.paper.read_env", side_effect=_env), redirect_stdout(
+            io.StringIO()
+        ), redirect_stderr(error):
+            code = cli.main(["rebalance", "--fixtures", "--apply-local"])
+        self.assertEqual(code, 2)
+        self.assertIn("requires --ledger", error.getvalue())
+
+    def test_print_only_cli_does_not_write_ledger(self):
+        tmp = tempfile.mkdtemp()
+        ledger = str(Path(tmp) / "print-only.sqlite")
+        calls = []
+        printed = io.StringIO()
+        with mock.patch("signal_sim.paper.read_env", side_effect=_env), mock.patch(
+            "signal_sim.alpaca_paper.urllib.request.urlopen",
+            side_effect=_paper_urlopen(calls),
+        ), redirect_stdout(printed), redirect_stderr(io.StringIO()):
+            code = cli.main(["rebalance", "--fixtures", "--ledger", ledger])
+        self.assertEqual(code, 0)
+        payload = json.loads(printed.getvalue())
+        self.assertFalse(payload["local_applied"])
+        self.assertFalse(payload["submitted"])
+        self.assertFalse(os.path.exists(ledger))
+        self.assertTrue(all(method == "GET" for _url, method in calls))
+        self.assertTrue(all("/v2/orders" not in url for url, _method in calls))
+
+    def test_apply_local_cli_writes_ledger_without_posting(self):
+        tmp = tempfile.mkdtemp()
+        ledger = str(Path(tmp) / "apply-local.sqlite")
+        calls = []
+        printed = io.StringIO()
+        error = io.StringIO()
+        with mock.patch("signal_sim.paper.read_env", side_effect=_env), mock.patch(
+            "signal_sim.alpaca_paper.urllib.request.urlopen",
+            side_effect=_paper_urlopen(
+                calls,
+                trades={"AAPL": {"p": 220.5, "t": "2026-09-04T16:00:00Z"}},
+            ),
+        ), redirect_stdout(printed), redirect_stderr(error):
+            code = cli.main(
+                ["rebalance", "--fixtures", "--apply-local", "--ledger", ledger]
+            )
+        self.assertEqual(code, 0)
+        payload = json.loads(printed.getvalue())
+        self.assertEqual(payload["mode"], "paper-rebalance-apply-local")
+        self.assertTrue(payload["local_applied"])
+        self.assertFalse(payload["submitted"])
+        self.assertEqual(payload["order_post"], "disabled")
+        self.assertGreater(payload["n_applied"], 0)
+        self.assertTrue(os.path.exists(ledger))
+        connection = sqlite3.connect(ledger)
+        try:
+            n_fills = connection.execute("SELECT COUNT(*) FROM fills").fetchone()[0]
+            tickers = {
+                row[0]
+                for row in connection.execute("SELECT ticker FROM orders").fetchall()
+            }
+        finally:
+            connection.close()
+        self.assertEqual(n_fills, payload["n_applied"])
+        self.assertNotIn("AAPL", tickers)
+        self.assertIn("NVDA", tickers)
+        self.assertTrue(all(method == "GET" for _url, method in calls))
+        self.assertTrue(all("/v2/orders" not in url for url, _method in calls))
+        self.assertNotIn("paper-secret", printed.getvalue() + error.getvalue())
+
+    def test_apply_local_submit_flag_still_does_not_post(self):
+        tmp = tempfile.mkdtemp()
+        ledger = str(Path(tmp) / "apply-flag.sqlite")
+        calls = []
+
+        def env(name):
+            if name == "SIGNAL_SIM_ALPACA_PAPER_SUBMIT":
+                return "1"
+            return _env(name)
+
+        printed = io.StringIO()
+        error = io.StringIO()
+        with mock.patch("signal_sim.paper.read_env", side_effect=env), mock.patch(
+            "signal_sim.runtime_env.read_env", side_effect=env
+        ), mock.patch(
+            "signal_sim.alpaca_paper.urllib.request.urlopen",
+            side_effect=_paper_urlopen(calls),
+        ), redirect_stdout(printed), redirect_stderr(error):
+            code = cli.main(
+                ["rebalance", "--fixtures", "--apply-local", "--ledger", ledger]
+            )
+        self.assertEqual(code, 0)
+        payload = json.loads(printed.getvalue())
+        self.assertEqual(payload["submit_flag"], "1")
+        self.assertTrue(payload["local_applied"])
+        self.assertFalse(payload["submitted"])
+        self.assertTrue(all(method == "GET" for _url, method in calls))
+        self.assertTrue(all("/v2/orders" not in url for url, _method in calls))
+        self.assertIn("refuses remote paper POSTs", error.getvalue())
+        self.assertIn("local ledger", error.getvalue())
+
 
 def _paper_keys_present():
     return bool(os.environ.get("ALPACA_PAPER_API_KEY", "").strip()) and bool(
@@ -651,6 +890,7 @@ class RebalanceLiveReadTests(unittest.TestCase):
         self.assertEqual(report["mode"], "paper-rebalance-dry-run")
         self.assertTrue(report["ok"])
         self.assertFalse(report["submitted"])
+        self.assertFalse(report["local_applied"])
         self.assertEqual(report["order_post"], "disabled")
         self.assertIsInstance(report["tickets"], list)
         self.assertTrue(all(row["submitted"] is False for row in report["tickets"]))

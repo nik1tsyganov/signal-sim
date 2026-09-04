@@ -1,8 +1,10 @@
-"""Print-only paper rebalance tickets.
+"""Paper rebalance tickets: print-only by default, optional local-ledger apply.
 
 Reads a paper account snapshot and the existing fixture / cluster-drift
-target book, then prints intended tickets. It does not POST to a broker,
-does not call submit_paper_order, and does not invent a new alpha.
+target book, then prints intended tickets. Default is print-only: it does
+not POST to a broker and does not write the local ledger. ``--apply-local``
+records fixture-mark tickets through submit_paper_order. Paper IEX sizing
+marks never become fills. No remote paper POST.
 """
 
 from __future__ import annotations
@@ -22,8 +24,13 @@ from .live_feeds import (
     live_events_for_intensity,
     summarize_feed,
 )
-from .paper import execution_mark_failure
-from .params import COST_BPS, operate_stamp
+from .paper import (
+    OrderRefused,
+    assert_fills_have_provenance,
+    execution_mark_failure,
+    submit_paper_order,
+)
+from .params import COST_BPS, DECISION_DELAY_HOURS, operate_stamp
 from .sizer import size_targets
 from .sim import load_mark_book, resolve_mark_book_path
 from .store import EventStore
@@ -32,9 +39,19 @@ NOTE = (
     "Print-only dry-run. Fixture or cluster-drift target book versus paper "
     "positions. Not alpha. Not a broker fill. Qty prefers fixture entry_px, "
     "then a paper IEX last trade or snapshot latestTrade. Never invents a "
-    "price. Names still unmarked stay skipped. No remote paper POST."
+    "price. Names still unmarked stay skipped. No remote paper POST. "
+    "Local apply requires --apply-local and mark_source=fixture."
 )
+APPLY_NOTE = (
+    "Local ledger apply of the same dry-run tickets. Only tickets sized from "
+    "mark_kind=fixture_mark and mark_source=fixture are recorded through "
+    "submit_paper_order. Paper IEX last-trade or snapshot marks may size "
+    "qty but are not execution marks and are not applied. Not a broker fill. "
+    "No remote paper POST."
+)
+APPLY_GATE = "mark_kind=fixture_mark and mark_source=fixture"
 PAPER_SIZING_SOURCE = "alpaca_paper_data"
+PAPER_MARK_SKIP = "paper_mark_not_execution"
 SIGNAL_DRIFT = "cluster-drift-stub"
 SIGNAL_RANK = "rank-candidates"
 _ACCOUNT_FIELDS = (
@@ -226,6 +243,25 @@ def resolve_sizing_marks(
             continue
         resolved[ticker] = {"entry_px": px, "kind": kind, "source": source}
     return resolved
+
+
+def local_apply_failure(ticket: dict[str, Any]) -> str | None:
+    """Refuse a local fill unless the ticket carries an explicit fixture mark.
+
+    Missing labels do not default to fixture_mark. Paper IEX sizing marks
+    return paper_mark_not_execution so they cannot be claimed as fills.
+    """
+    kind = ticket.get("mark_kind")
+    source = ticket.get("mark_source")
+    if not isinstance(kind, str) or not kind.strip():
+        return "execution mark must be fixture_mark"
+    if not isinstance(source, str) or not source.strip():
+        return "execution mark must be fixture_mark"
+    kind_text = kind.strip().lower()
+    source_text = source.strip().lower()
+    if source_text == PAPER_SIZING_SOURCE or kind_text in {"last_trade", "snapshot"}:
+        return PAPER_MARK_SKIP
+    return execution_mark_failure(kind_text, source_text)
 
 
 def _intensity_cut(events: list[Event]) -> datetime:
@@ -525,6 +561,8 @@ def proposed_rebalance(
         },
         "order_post": "disabled",
         "submitted": False,
+        "local_applied": False,
+        "apply_gate": APPLY_GATE,
         "ok": True,
     }
     if apply_intensity:
@@ -534,3 +572,139 @@ def proposed_rebalance(
     if live_summary is not None:
         report["live_intel"] = live_summary
     return report
+
+
+def _apply_event_ids(
+    ticker: str,
+    events: list[Event],
+    decision_at: str,
+) -> list[str]:
+    ids = [event.id for event in events if event.ticker == ticker]
+    if ids:
+        return ids
+    return [f"rebalance-apply:{decision_at}:{ticker}"]
+
+
+def _apply_filled_at(decision_at: str) -> str:
+    parsed = datetime.fromisoformat(decision_at.replace("Z", "+00:00"))
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        raise ValueError("decision_at must be a timezone-aware timestamp")
+    filled = parsed + timedelta(hours=DECISION_DELAY_HOURS)
+    return filled.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def apply_local_rebalance(
+    report: dict[str, Any],
+    *,
+    ledger_path: str | Path,
+    fixtures: Path | None = None,
+    audit_path: str | None = None,
+    kill_root: str | None = None,
+    filled_at: str | None = None,
+) -> dict[str, Any]:
+    """Record dry-run tickets on the local ledger. Fixture marks only.
+
+    Computes nothing new: the caller must pass the same report as print-only
+    dry-run. Paper-mark-sized tickets are skipped. submit_paper_order is the
+    only write path. This never POSTs to a broker.
+    """
+    if not isinstance(report, dict):
+        raise ValueError("rebalance report is required")
+    tickets = report.get("tickets")
+    if not isinstance(tickets, list):
+        raise ValueError("rebalance report tickets are required")
+    decision_at = report.get("decision_at")
+    if not isinstance(decision_at, str) or not decision_at:
+        raise ValueError("rebalance report decision_at is required")
+    allocation = _finite_number(report.get("allocation"))
+    if allocation is None or allocation <= 0:
+        raise ValueError("rebalance report allocation must be a positive number")
+    params = report.get("params") if isinstance(report.get("params"), dict) else {}
+    cost_bps = _finite_number(params.get("cost_bps"))
+    if cost_bps is None:
+        cost_bps = float(COST_BPS)
+    root = fixtures if fixtures is not None else Path(__file__).resolve().parent.parent / "fixtures"
+    parsed_decision = datetime.fromisoformat(decision_at.replace("Z", "+00:00"))
+    if parsed_decision.tzinfo is None or parsed_decision.utcoffset() is None:
+        raise ValueError("rebalance report decision_at must be timezone-aware")
+    events = [
+        event for event in load_fixture_events(root) if event.observed_at <= parsed_decision
+    ]
+    ledger = str(ledger_path)
+    effective_audit = audit_path if audit_path is not None else ledger + ".audit.jsonl"
+    fill_stamp = filled_at if filled_at is not None else _apply_filled_at(decision_at)
+
+    applied: list[dict[str, Any]] = []
+    apply_skipped: list[dict[str, str]] = []
+    written: list[dict[str, Any]] = []
+    ok = True
+
+    for ticket in tickets:
+        row = dict(ticket) if isinstance(ticket, dict) else {}
+        ticker = str(row.get("symbol") or "")
+        skip_reason = local_apply_failure(row)
+        if skip_reason is not None:
+            apply_skipped.append({"ticker": ticker or "unknown", "reason": skip_reason})
+            row["submitted"] = False
+            row["local_filled"] = False
+            written.append(row)
+            continue
+        payload = row.get("payload") if isinstance(row.get("payload"), dict) else {}
+        idempotency_key = payload.get("client_order_id")
+        if not isinstance(idempotency_key, str) or not idempotency_key:
+            idempotency_key = f"rebalance:{decision_at}:{ticker}:{row.get('side')}:{row.get('action')}"
+        cost = allocation * float(row["size_frac"]) * cost_bps / 10000.0
+        try:
+            filled = submit_paper_order(
+                {
+                    "ticker": ticker,
+                    "side": row["side"],
+                    "size_frac": float(row["size_frac"]),
+                    "event_ids": _apply_event_ids(ticker, events, decision_at),
+                    "decision_at": decision_at,
+                    "idempotency_key": idempotency_key,
+                },
+                ledger_path=ledger,
+                mark_px=float(row["mark_px"]),
+                audit_path=effective_audit,
+                kill_root=kill_root,
+                cost=cost,
+                filled_at=fill_stamp,
+                mark_kind=row.get("mark_kind"),
+                mark_source=row.get("mark_source"),
+            )
+        except OrderRefused as error:
+            reason = str(error)
+            apply_skipped.append({"ticker": ticker, "reason": reason})
+            row["submitted"] = False
+            row["local_filled"] = False
+            written.append(row)
+            lowered = reason.lower()
+            if "duplicate idempotency_key" not in lowered:
+                ok = False
+            continue
+        applied.append(filled)
+        row["submitted"] = False
+        row["local_filled"] = True
+        row["order_id"] = filled["order_id"]
+        written.append(row)
+
+    if applied:
+        assert_fills_have_provenance(ledger, effective_audit)
+
+    out = dict(report)
+    out["mode"] = "paper-rebalance-apply-local"
+    out["note"] = APPLY_NOTE
+    out["tickets"] = written
+    out["order_post"] = "disabled"
+    out["submitted"] = False
+    out["local_applied"] = True
+    out["apply_gate"] = APPLY_GATE
+    out["applied"] = applied
+    out["apply_skipped"] = apply_skipped
+    out["n_applied"] = len(applied)
+    out["n_apply_skipped"] = len(apply_skipped)
+    out["ledger_path"] = ledger
+    out["audit_path"] = effective_audit
+    out["ok"] = ok
+    return out
