@@ -7,7 +7,7 @@ What landed in the paper operate loop. This is not a live trading log. Every PnL
 - **score':** research-live ranks with the declared Math Eng formula (un-lumped congress vs insider, `log1p` news, quiver-count term, World Monitor flags, filing-lag recency). Weights are in `fixtures/params.json` `conviction`. Not fitted. Not alpha. Fixture `rank_candidates` is unchanged.
 - **Conviction book:** top 10 by score' share `max_gross_frac` in proportion to score', capped at paper `max_name_frac=0.20`. Research artifacts stamp `target_frac` per name. Equal-weight `0.1` is the old stub.
 - **Tighter sells:** `--live` rebalance closes leftovers, closes score' below `min_score`, and trims when held exceeds target by more than `trim_band=0.02`. Print-only default. `--submit-paper` still flag-gated. Do not spray another full-book submit over today's 10 held names.
-- **Note:** [research-conviction.md](docs/research-conviction.md). 2026-09-04 print-only A/B vs the equal-weight 10: enter GOOGL/HD/ABT/AMAT/UNH/AMZN; exit NFLX/CMCSA/CVX/DIS/SPY/XOM; NVDA highest frac (~0.18). No `--submit-paper` in this change.
+- **Note:** [research-conviction.md](docs/research-conviction.md). 2026-09-04 print-only A/B vs the equal-weight 10: enter GOOGL/HD/ABT/AMAT/UNH/AMZN; exit NFLX/CMCSA/CVX/DIS/SPY/XOM; NVDA highest frac (~0.18 artifact / 0.20 live with lags). No `--submit-paper` in this change. The checked-in `docs/research/2026-09-04.json` stays the equal-weight before snapshot.
 
 ## Unreleased — daily research + live sizing + buy/sell
 

@@ -77,6 +77,14 @@ old targets. `rec_term=0` on that file (no lags stamped). Not a live rerun.
 Intel-only names (HD, ABT, AMAT, …) enter on congress count + quiver term
 instead of being skipped `gross_frac_cap` behind mega-cap news.
 
+Print-only `research --live` on 2026-09-04 (temp out; did **not** overwrite
+the equal-weight artifact; **no** `--submit-paper`) produced the same enter/exit
+set. Live filing lags lifted NVDA score' to ~13.3 so `target_frac` hit the
+0.20 name cap. Against the held equal-weight 10, the print-only rebalance
+diff is leftover **closes** on NFLX/CMCSA/CVX/DIS/SPY/XOM, a **trim** on XLE,
+and **opens** on GOOGL/HD/ABT/AMAT/UNH/AMZN. Do not submit that book while
+those 10 names are already held.
+
 ## Deviations from Math Eng (none on the formula)
 
 - Locked replay `max_name_frac` stays 1.0. Paper guard is `conviction.max_name_frac=0.20`.
