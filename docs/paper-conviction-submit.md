@@ -48,7 +48,7 @@ python3 -m signal_sim paper-performance --write
 
 ## Research (overwrote today's artifact)
 
-`research --live` at `2026-09-04T14:40:00Z` wrote [2026-09-04.json](research/2026-09-04.json). This **replaced** the equal-weight stub (`target_frac=0.1` on XLE/MSFT/NFLX/NVDA/AAPL/CMCSA/CVX/DIS/SPY/XOM). The new book is conviction-weighted. Not an equal-weight stub.
+`research --live` at `2026-09-04T14:40:00Z` wrote [2026-09-04.json](research/2026-09-04.json). This **replaced** the equal-weight stub (`target_frac=0.1` on XLE/MSFT/NFLX/NVDA/AAPL/CMCSA/CVX/DIS/SPY/XOM). The new book is conviction-weighted. Not an equal-weight stub. The pre-overwrite equal-weight book is frozen at [2026-09-04-equal-weight.json](research/2026-09-04-equal-weight.json) for the score' A/B test only.
 
 | Ticker | score' | target_frac |
 |---|---:|---:|

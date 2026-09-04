@@ -30,6 +30,7 @@ from signal_sim.research import run_research
 REPO = Path(__file__).resolve().parent.parent
 FIXTURES = REPO / "fixtures"
 ARTIFACT = REPO / "docs" / "research" / "2026-09-04.json"
+EQUAL_WEIGHT_ARTIFACT = REPO / "docs" / "research" / "2026-09-04-equal-weight.json"
 UTC = timezone.utc
 
 
@@ -138,9 +139,13 @@ class ConvictionSizerTests(unittest.TestCase):
 
 class ArtifactABTests(unittest.TestCase):
     def test_score_prime_on_2026_09_04_features_matches_illustrative_book(self):
-        raw = json.loads(ARTIFACT.read_text(encoding="utf-8"))
+        raw = json.loads(EQUAL_WEIGHT_ARTIFACT.read_text(encoding="utf-8"))
         comparison = compare_equal_weight_book(raw)
         self.assertEqual(tuple(comparison["before"]), EQUAL_WEIGHT_2026_09_04)
+        self.assertEqual(
+            [row["ticker"] for row in raw["proposed_book"]["targets"]],
+            list(EQUAL_WEIGHT_2026_09_04),
+        )
         self.assertEqual(
             set(comparison["enter"]),
             {"GOOGL", "HD", "ABT", "AMAT", "UNH", "AMZN"},
@@ -156,8 +161,22 @@ class ArtifactABTests(unittest.TestCase):
         self.assertGreater(nvda["target_frac"], 0.1)
         self.assertTrue(all(row["target_frac"] <= 0.2 + 1e-12 for row in comparison["targets"]))
 
-    def test_artifact_reconstruction_unlumps_congress(self):
+    def test_live_ops_artifact_stays_conviction_book(self):
         raw = json.loads(ARTIFACT.read_text(encoding="utf-8"))
+        live_names = tuple(row["ticker"] for row in raw["proposed_book"]["targets"])
+        self.assertEqual(
+            live_names,
+            ("NVDA", "XLE", "MSFT", "AAPL", "GOOGL", "HD", "ABT", "AMAT", "UNH", "AMZN"),
+        )
+        comparison = compare_equal_weight_book(raw)
+        self.assertEqual(tuple(comparison["before"]), EQUAL_WEIGHT_2026_09_04)
+        self.assertEqual(
+            set(comparison["enter"]),
+            {"GOOGL", "HD", "ABT", "AMAT", "UNH", "AMZN"},
+        )
+
+    def test_artifact_reconstruction_unlumps_congress(self):
+        raw = json.loads(EQUAL_WEIGHT_ARTIFACT.read_text(encoding="utf-8"))
         rows = {row["ticker"]: row for row in score_features_from_research_artifact(raw)}
         self.assertEqual(rows["HD"]["congress_confirm"], 1)
         self.assertEqual(rows["HD"]["insider_confirm"], 0)
