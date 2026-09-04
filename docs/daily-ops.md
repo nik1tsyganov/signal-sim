@@ -26,11 +26,13 @@ Print-only. No POST.
 
 If paper orders from earlier in the day are still open, **do not spray another full-book submit**. Wait for fills or cancel them, then rerun the print. The position-aware diff will only ticket what is still off-target.
 
-**2026-09-04 print smoke (this PR):** clock closed (08:21 ET; next open 09:30 ET). Positions `n=0`. **11 open paper orders** still working (`accepted`/`new`, `filled_qty=0`), including oversized fixture-priced QQQ ~278 and SPY ~250 from earlier today plus the one-share SPY. Those working orders have reserved most paper buying power (~$412 left). `research --live` wrote `docs/research/2026-09-04.json` (27-name operating universe; new intel names in the rank: ABT, AMAT, HD, …). Print-only `rebalance --fixtures --live` sized the grown book from paper IEX last trades (SPY ~$773 → ~13 shares, not the fixture $40 → ~250). **No `--submit-paper` and no `paper-cancel` against those 11 in this PR.** Next submit waits for those 11 to fill or be canceled, then uses the position-aware diff.
+**2026-09-04 print smoke (PR 12):** clock closed (08:21 ET; next open 09:30 ET). Positions `n=0`. **11 open paper orders** still working (`accepted`/`new`, `filled_qty=0`), including oversized fixture-priced QQQ ~278 and SPY ~250 plus the one-share SPY. Those working orders reserved most paper buying power. Print-only live sizing used paper IEX last trades (SPY ~$773 → ~13 shares, not fixture $40 → ~250). No `--submit-paper` in that PR.
+
+**2026-09-04 cancel (follow-up):** [paper order cancel](paper-order-cancel.md) DELETEd all 11 via `paper-cancel --open --limit 11`. Read-back `canceled` / `filled_qty=0`. Open list empty. Buying power `$400000`. Reprint `research --live` + print-only `rebalance --fixtures --live` (live-sized SPY ~13 @ ~$771). **No new `--submit-paper`.** Next submit waits for the open, then uses the position-aware diff.
 
 ## Cancel open paper orders before the next submit
 
-Do not `--submit-paper` while the 11 oversized orders are still working. List them with `paper-performance` (read-only). Cancel on the paper host only when you mean to, with the same rails as submit (`SIGNAL_SIM_ALPACA_PAPER_SUBMIT=1`, paper-api host, keys, explicit CLI):
+Do not `--submit-paper` while leftover day orders are still working. List them with `paper-performance` (read-only). Cancel on the paper host only when you mean to, with the same rails as submit (`SIGNAL_SIM_ALPACA_PAPER_SUBMIT=1`, paper-api host, keys, explicit CLI):
 
 ```bash
 python3 -m signal_sim paper-performance
