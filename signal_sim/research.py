@@ -8,7 +8,7 @@ URLs, or raw payload fields. Paper only. Not alpha. Not live money.
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -212,13 +212,8 @@ def run_research(
     repo = root.parent if root.name == "fixtures" else root
     resolved = resolve_mark_book_path(mark_book_path) if mark_book_path else None
     book = load_mark_book(resolved)
-    cut = when if when is not None else _utc_now()
-    if cut.tzinfo is None or cut.utcoffset() is None:
-        raise ValueError("research cut must be timezone-aware")
-
-    fixture_events = [
-        event for event in load_fixture_events(root) if event.observed_at <= cut
-    ]
+    requested = when
+    now = _utc_now()
     allowed = allowlist if allowlist is not None else load_liquid_allowlist()
     quiver: list[Any] = []
     world: list[Any] = []
@@ -233,6 +228,20 @@ def run_research(
             quiver = list(live_quiver)
             world = list(live_world)
         extra = strategy_events(quiver, world, universe=allowed)
+    cut = requested if requested is not None else now
+    if cut.tzinfo is None or cut.utcoffset() is None:
+        raise ValueError("research cut must be timezone-aware")
+    if requested is None:
+        latest = cut
+        for event in extra:
+            if event.observed_at > latest:
+                latest = event.observed_at
+        if latest > cut:
+            cut = latest + timedelta(microseconds=1)
+
+    fixture_events = [
+        event for event in load_fixture_events(root) if event.observed_at <= cut
+    ]
 
     universe_info = expand_operating_universe(extra, fixture=UNIVERSE, allowlist=allowed)
     operating = tuple(universe_info["operating"])

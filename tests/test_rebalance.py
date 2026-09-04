@@ -820,6 +820,7 @@ class RebalanceCliTests(unittest.TestCase):
 
         printed = io.StringIO()
         error = io.StringIO()
+        missing = Path(tempfile.mkdtemp()) / "no-research.json"
         with mock.patch("signal_sim.paper.read_env", side_effect=env), mock.patch(
             "signal_sim.live_feeds.read_env", side_effect=env
         ), mock.patch(
@@ -827,6 +828,8 @@ class RebalanceCliTests(unittest.TestCase):
             return_value=[{"ticker": "NVDA", "person": "Rep. Hidden"}],
         ), mock.patch(
             "signal_sim.sources.worldmonitor.live", return_value=[_live_event("XLE", "wm-xle")]
+        ), mock.patch(
+            "signal_sim.research.research_artifact_path", return_value=missing
         ), mock.patch(
             "signal_sim.alpaca_paper.urllib.request.urlopen",
             side_effect=_paper_urlopen(calls),

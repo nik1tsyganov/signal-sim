@@ -99,6 +99,35 @@ class ResearchArtifactTests(unittest.TestCase):
         loaded = load_research_artifact(out)
         self.assertEqual(loaded["proposed_book"]["n_targets"], report["proposed_book"]["n_targets"])
 
+    def test_live_events_ahead_of_clock_still_rank(self):
+        later = datetime(2099, 1, 1, tzinfo=timezone.utc)
+        report = run_research(
+            fixtures=FIXTURES,
+            live_events=[
+                Event.from_dict(
+                    {
+                        "id": "future-abt",
+                        "source": "quiver",
+                        "kind": "congress_trade",
+                        "ticker": "ABT",
+                        "entities": ["ABT"],
+                        "headline": "",
+                        "url": "",
+                        "occurred_at": "2099-01-01T00:00:00Z",
+                        "filed_at": "2099-01-01T00:00:00Z",
+                        "observed_at": "2099-01-01T00:00:00Z",
+                        "confidence": 1.0,
+                        "raw_ref": "live:abt",
+                    }
+                )
+            ],
+        )
+        self.assertGreaterEqual(
+            datetime.fromisoformat(report["research_at"].replace("Z", "+00:00")), later
+        )
+        self.assertIn("ABT", {row["ticker"] for row in report["rank"]})
+        self.assertIn("ABT", report["universe"]["operating"])
+
     def test_rebalance_live_uses_research_targets(self):
         research = run_research(
             fixtures=FIXTURES,

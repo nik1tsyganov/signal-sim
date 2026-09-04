@@ -24,7 +24,9 @@ Loads today's research artifact when present (otherwise computes the same book).
 
 Print-only. No POST.
 
-If 11 (or any) paper orders from earlier in the day are still open, **do not spray another full-book submit**. Wait for fills, then rerun the print. The position-aware diff will only ticket what is still off-target.
+If paper orders from earlier in the day are still open, **do not spray another full-book submit**. Wait for fills, then rerun the print. The position-aware diff will only ticket what is still off-target.
+
+**2026-09-04 print smoke (this PR):** clock closed (08:21 ET; next open 09:30 ET). Positions `n=0`. **11 open paper orders** still working (`accepted`/`new`, `filled_qty=0`), including oversized fixture-priced QQQ ~278 and SPY ~250 from earlier today plus the one-share SPY. Those working orders have reserved most paper buying power (~$412 left). `research --live` wrote `docs/research/2026-09-04.json` (27-name operating universe; new intel names in the rank: ABT, AMAT, HD, …). Print-only `rebalance --fixtures --live` sized the grown book from paper IEX last trades (SPY ~$773 → ~13 shares, not the fixture $40 → ~250). **No `--submit-paper` in this PR.** Next submit waits for those 11 to fill or cancel, then uses the position-aware diff.
 
 ## Submit (paper host, flag=1, explicit)
 
