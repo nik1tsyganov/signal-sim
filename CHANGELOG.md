@@ -2,6 +2,10 @@
 
 What landed in the paper operate loop. This is not a live trading log. Every PnL number the loop prints is **fixture-mark PnL**, not alpha.
 
+## Unreleased — paper submit smoke
+
+- **Recorded one-share paper POST:** [paper submit smoke](docs/paper-submit-smoke.md) runs `paper-account`, then `paper-submit --symbol SPY --qty 1` once, on `main` after PR 9. Cite: order `d7629fcb-ba1a-4c8d-a732-63b0f61cf12a`, `client_order_id=ps:SPY:buy:q:1`, immediate status `pending_new`, read-back `new`, `filled_qty=0`. Clock was closed. Full rebalance book was not submitted. Paper host only.
+
 ## Unreleased — Alpaca paper submit (flag-gated)
 
 - **Guarded paper POST:** remote `/v2/orders` POSTs run only when **all** of these hold: `SIGNAL_SIM_ALPACA_PAPER_SUBMIT=1`, resolved base URL is the paper host (`paper-api.alpaca.markets`), paper keys are present, and an explicit CLI flag (`rebalance --fixtures --submit-paper` or `paper-submit`). Print-only remains the default. `--apply-local` stays local-ledger only and cannot be combined with `--submit-paper`.

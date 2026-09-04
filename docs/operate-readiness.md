@@ -98,6 +98,8 @@ A 2026-09-04 Cloud Runtime Secrets pass (presence only; no secret values) is rec
 
 A 2026-09-04 local book smoke (print-only, then `--apply-local` onto `/tmp/signal-sim-paper.sqlite`) is recorded in [local book smoke](local-book-smoke.md). Morning-brief cite, **not alpha**: print-only `n_tickets=10` / `n_skipped=2`; apply `n_applied=7` / `n_apply_skipped=3` (`paper_mark_not_execution`); fixture-mark MTM `total_pnl=-265.07`. Local book state: `python3 -m signal_sim ledger --ledger /tmp/signal-sim-paper.sqlite --fixtures`. Submit stayed `0`. No `/v2/orders` POST. Do not apply-local a `--live` paper-mark ticket as a fill.
 
+A 2026-09-04 one-share paper POST (`paper-submit --symbol SPY --qty 1` once, flag exactly `1`, host `paper-api.alpaca.markets`) is recorded in [paper submit smoke](paper-submit-smoke.md). Cite: order `d7629fcb-ba1a-4c8d-a732-63b0f61cf12a`, status `pending_new` then `new`, `filled_qty=0`, clock closed. The full rebalance book was not submitted. Not a fill and not alpha.
+
 ## Cursor Cloud Runtime Secrets
 
 Cloud agents do not read a repo `.env`. Paper keys belong in **Dashboard Runtime Secrets** on a saved environment.
