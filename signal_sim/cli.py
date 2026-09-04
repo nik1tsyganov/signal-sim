@@ -111,12 +111,29 @@ def _parser() -> argparse.ArgumentParser:
         action="store_true",
         help="apply declared Hawkes intensity overlay when --drift is set",
     )
+    walkforward = commands.add_parser(
+        "walkforward",
+        help="expanding fixture-mark folds with purge/embargo (not a param search)",
+    )
+    walkforward.add_argument(
+        "--fixtures",
+        action="store_true",
+        help="load local fixture events and marks (required; the only supported input)",
+    )
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
-    if args.command in {"rank", "intensity", "diagnose", "marks", "drift", "replay"} and not args.fixtures:
+    if args.command in {
+        "rank",
+        "intensity",
+        "diagnose",
+        "marks",
+        "drift",
+        "replay",
+        "walkforward",
+    } and not args.fixtures:
         print(
             f"{args.command} requires --fixtures; only local fixture events are supported",
             file=sys.stderr,
@@ -219,6 +236,21 @@ def main(argv: list[str] | None = None) -> int:
             f"n_orders={stats.get('n_orders')} hit_rate={stats.get('hit_rate')}",
             file=sys.stderr,
         )
+        print(json.dumps(summary, separators=(",", ":")))
+        return 0
+    if args.command == "walkforward":
+        import tempfile
+        from .walkforward import run_fixture_walkforward
+
+        fixtures = Path(__file__).resolve().parent.parent / "fixtures"
+        ledger_dir = tempfile.mkdtemp(prefix="paper-walkforward-")
+        summary = run_fixture_walkforward(fixtures=fixtures, ledger_dir=ledger_dir)
+        for row in summary["folds"]:
+            print(
+                f"fold {row['fold']} {row['name']}: fixture-mark total_pnl={row['total_pnl']} "
+                f"n_events={row['n_events']} n_orders={row['n_orders']}",
+                file=sys.stderr,
+            )
         print(json.dumps(summary, separators=(",", ":")))
         return 0
     return 2
