@@ -154,3 +154,5 @@ XLK and MSFT paper POSTs returned `HTTP 403: insufficient buying power`. The res
 - Not permission to point the client at a live host.
 
 See [operate readiness](operate-readiness.md) and [paper submit smoke](paper-submit-smoke.md).
+
+**Later the same day (market open):** those 11 working orders were canceled, then a live-sized book was submitted and filled. See [paper live submit](paper-live-submit.md). Do not re-run this closed-session `--submit-paper`.

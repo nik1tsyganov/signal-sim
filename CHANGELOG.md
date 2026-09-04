@@ -12,6 +12,8 @@ What landed in the paper operate loop. This is not a live trading log. Every PnL
 - **Paper only.** No live-money trading.
 - **2026-09-04 print smoke:** `research --live` wrote today's book (27-name operating universe; new intel names ranked). Print-only `rebalance --fixtures --live` sized from paper IEX last trades (SPY ~$773, not fixture $40). 11 earlier paper orders were still open — no `--submit-paper` and no live `paper-cancel` in that PR.
 - **2026-09-04 paper cancel:** [paper order cancel](docs/paper-order-cancel.md) ran `paper-cancel --open --limit 11` on the paper host after PR 12. All 11 working day orders canceled (`filled_qty=0`), including fixture-priced QQQ ~278 / SPY ~250 and the smoke SPY x1. Buying power returned to `$400000`. Reprint: live-sized SPY ~13 @ ~$771. **No new `--submit-paper`.** Snapshot: [2026-09-04.json](docs/performance/2026-09-04.json).
+- **2026-09-04 live-session submit:** [paper live submit](docs/paper-live-submit.md). Market open. Print-only book was live-sized (SPY ~13 @ ~$773). First `--submit-paper` only POSTed MSFT because canceled morning `client_order_id`s were treated as duplicates. Date-scoped keys (`rb:YYYYMMDD:…`) plus canceled-key retry unblocked the rest. Second `--submit-paper --limit 20` posted 10 live-sized tickets; all filled. Positions `n=10`. Snapshot: [2026-09-04.json](docs/performance/2026-09-04.json).
+- **Client order id:** paper rebalance keys are `rb:{YYYYMMDD}:{SYM}:{side}:{action}` (research date when `--live`). Canceled / expired / rejected ids are not live duplicates; a `:rN` key is POSTed. Working or filled ids stay idempotent.
 
 ## Unreleased — paper strategy submit + performance snapshot
 
