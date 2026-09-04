@@ -88,6 +88,8 @@ python3 -m unittest tests.test_live_feeds tests.test_alpaca_paper tests.test_reb
 
 A 2026-09-04 Cloud Runtime Secrets pass (presence only; no secret values) is recorded in [paper smoke results](paper-smoke-results.md). That run kept the submit flag at `0`.
 
+A 2026-09-04 local book smoke (print-only, then `--apply-local` onto `/tmp/signal-sim-paper.sqlite`) is recorded in [local book smoke](local-book-smoke.md). Morning-brief cite, **not alpha**: print-only `n_tickets=10` / `n_skipped=2`; apply `n_applied=7` / `n_apply_skipped=3` (`paper_mark_not_execution`); fixture-mark MTM `total_pnl=-265.07`. Submit stayed `0`. No `/v2/orders` POST. Do not apply-local a `--live` paper-mark ticket as a fill.
+
 ## Cursor Cloud Runtime Secrets
 
 Cloud agents do not read a repo `.env`. Paper keys belong in **Dashboard Runtime Secrets** on a saved environment.
