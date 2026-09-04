@@ -337,8 +337,10 @@
                     n_clusters: (data.stats || {}).n_clusters,
                     n_events_after_decision: (data.stats || {}).n_events_after_decision,
                     n_intel: (data.stats || {}).n_intel,
+                    n_trendradar: (data.stats || {}).n_trendradar,
                     intensity: data.intensity || {},
                     intel: data.intel || {},
+                    trendradar: data.trendradar || {},
                 }, null, 2))}</pre>`;
             } catch (err) {
                 box.innerHTML = `<div class="error">Diagnose failed: ${escapeHtml(err.message)}</div>`;
@@ -359,7 +361,8 @@
                     decision_at: data.decision_at,
                     horizon_hours: data.horizon_hours,
                     intel: data.intel || {},
-                    targets: (data.targets || []).map((row) => ({
+                    trendradar: data.trendradar || {},
+                    targets: (data.targets || []).map((row) => ({)
                         ticker: row.ticker,
                         target_frac: row.target_frac,
                         horizon_hours: row.horizon_hours,
@@ -368,6 +371,7 @@
                         intel_brief: row.intel_brief,
                         wm_intel: row.wm_intel,
                         chokepoint: row.chokepoint,
+                        trendradar: row.trendradar,
                     })),
                 }, null, 2))}</pre>`;
             } catch (err) {

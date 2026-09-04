@@ -13,7 +13,7 @@ from typing import Any
 from .clusters import online_clusters
 from .events import Event
 from .fixture_load import load_fixture_events
-from .indicators import filed_confirm_features, intel_features
+from .indicators import filed_confirm_features, intel_features, trendradar_features
 from .sizer import MAX_GROSS_FRAC
 
 
@@ -81,6 +81,7 @@ def drift_targets(
     peak = max((abs(float(row["state"])) for row in states.values()), default=0.0)
     confirms = filed_confirm_features(events, when)
     intel = intel_features(events, when)
+    hotspot = trendradar_features(events, when)
     ranked: list[dict[str, Any]] = []
     for row in sorted(states.values(), key=lambda item: (-abs(float(item["state"])), str(item["ticker"]))):
         if peak <= 0:
@@ -102,6 +103,7 @@ def drift_targets(
             "intel_brief": 0,
             "wm_intel": 0,
             "chokepoint": 0,
+            "trendradar": 0,
         }
         row_confirms = confirms.get(str(row["ticker"]))
         if row_confirms:
@@ -112,6 +114,9 @@ def drift_targets(
             target["intel_brief"] = row_intel["intel_brief"]
             target["wm_intel"] = row_intel["wm_intel"]
             target["chokepoint"] = row_intel["chokepoint"]
+        row_tr = hotspot.get(str(row["ticker"]))
+        if row_tr:
+            target["trendradar"] = row_tr["trendradar"]
         if intensities is not None:
             from .hawkes import intensity_size_scale
 
@@ -155,11 +160,13 @@ def fixture_drift_book(
         intensities=intensities,
     )
     intel = intel_features(feature_events, book["decision_at"])
+    hotspot = trendradar_features(events, book["decision_at"])
     for row in targets:
         feat = intel.get(str(row["ticker"]), {})
         row["intel_brief"] = int(feat.get("intel_brief", 0))
         row["wm_intel"] = int(feat.get("wm_intel", 0))
         row["chokepoint"] = int(feat.get("chokepoint", 0))
+        row["trendradar"] = int(hotspot.get(str(row["ticker"]), {}).get("trendradar", 0))
     decision_at = book["decision_at"].isoformat().replace("+00:00", "Z")
     payload = {
         "mode": "local-paper-drift",
@@ -172,6 +179,7 @@ def fixture_drift_book(
         "max_gross_frac": float(book.get("max_gross_frac", MAX_GROSS_FRAC)),
         "mark_path": book.get("path"),
         "intel": intel,
+        "trendradar": hotspot,
         "targets": targets,
     }
     if intensity:

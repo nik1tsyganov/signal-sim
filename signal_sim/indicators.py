@@ -105,6 +105,26 @@ def intel_features(
     return features
 
 
+def trendradar_features(
+    events: list[Event],
+    when: datetime,
+    universe: tuple[str, ...] | None = None,
+) -> dict[str, dict[str, int]]:
+    """TrendRadar fixture flags at ``when``. Uses observed_at only. No GPL client."""
+    features: dict[str, dict[str, int]] = {}
+    for ticker in UNIVERSE if universe is None else universe:
+        hits = [
+            event
+            for event in events
+            if event.source == "trendradar"
+            and event.ticker == ticker
+            and event.observed_at <= when
+        ]
+        if hits:
+            features[ticker] = {"trendradar": 1}
+    return features
+
+
 def filed_confirm_features(
     events: list[Event],
     when: datetime,

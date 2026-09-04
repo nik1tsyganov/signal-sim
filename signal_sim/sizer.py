@@ -65,6 +65,7 @@ def size_targets(
             "intel_brief",
             "wm_intel",
             "chokepoint",
+            "trendradar",
         ):
             if key in row:
                 target[key] = row[key]
