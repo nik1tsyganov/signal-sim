@@ -482,8 +482,17 @@ def run_fixture_replay(
     decision_key = book["decision_at"].isoformat().replace("+00:00", "Z")
     fill_key = fill_at.isoformat().replace("+00:00", "Z") if hasattr(fill_at, "isoformat") else str(fill_at)
     horizon_hours = (book["exit_at"] - book["decision_at"]).total_seconds() / 3600.0
+    fillable: list[dict[str, Any]] = []
+    refusals: list[dict[str, Any]] = []
+    for row in candidates:
+        ticker = str(row["ticker"])
+        mark = book["marks"].get(ticker)
+        if mark is None or mark.get("unused"):
+            refusals.append({"ticker": ticker, "reason": "no_mark"})
+        else:
+            fillable.append(row)
     targets, skipped = size_targets(
-        candidates,
+        fillable,
         size_frac=size_frac,
         horizon_hours=horizon_hours,
         max_gross_frac=max_gross_frac,
@@ -495,7 +504,7 @@ def run_fixture_replay(
             raise ValueError(f"held ticker missing fixture mark: {ticker!r}")
     halted = last_pnl is not None and last_pnl <= -max_drawdown * starting_cash
     orders: list[dict[str, Any]] = []
-    refusals: list[dict[str, Any]] = [{"ticker": row["ticker"], "reason": row["reason"]} for row in skipped]
+    refusals.extend({"ticker": row["ticker"], "reason": row["reason"]} for row in skipped)
     wanted = {str(row["ticker"]): row for row in targets}
     reserved_cash = cash
 
