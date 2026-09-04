@@ -26,21 +26,32 @@ python3 -m unittest discover -s tests -v
 
 ## Operate (paper only)
 
-`rank`, `intensity`, `diagnose`, `marks`, `drift`, and `replay` require `--fixtures`. Omitting that flag exits with status 2. Those commands read checked-in files under `fixtures/`. `rank --fixtures` and `GET /api/rank` cut at the default mark-book `decision_at`, the same window replay uses. Prints first seen after that decision do not change the rank. There is no live broker, no vendor bars, and no Quiver live path.
+`rank`, `intensity`, `diagnose`, `marks`, `drift`, and `replay` require `--fixtures`. Omitting that flag exits with status 2. Those commands read checked-in files under `fixtures/`. `rank --fixtures` and `GET /api/rank` cut at the default mark-book `decision_at`, the same window replay uses. Prints first seen after that decision do not change the rank. There is no live broker, no vendor bars, and no Quiver live path. Every `total_pnl` / `ending_equity` figure from these commands is **fixture-mark PnL**, not a live or vendor-bar result.
 
 Every name in `fixtures/universe.json` either has a real fixture mark or cannot fill. Default `replay --fixtures` sizes the liquid sector book in `fixtures/marks/liquid.json`: tagged `fixture_mark` rows for NVDA/MSFT (tech), XLE/XOM (energy), DIS/NFLX (media), and SPY/QQQ (ETF). `--marks liquid` is the same book. `--marks two-name` (or `fixtures/marks/universe.json`) is the older NVDA/XLE book. Other ranked names are refused with `no_mark`. That skip is honest: the allocator does not invent a 100.0 fill. AAPL, CVX, CMCSA, and XLK have checked-in fixture news so each sector gap can enter the rank cut; they still have no fixture mark. AMZN, GOOGL, and META have no checked-in print at `decision_at` and are listed as `no_print` by `marks --fixtures` — they cannot rank until a fixture print exists. These are research fixtures, not Yahoo/Stooq/vendor bars. Prints are admitted on `observed_at` / `first_seen_at` only; `occurred_at` and congress trade dates do not fill.
 
 ```bash
 python3 -m signal_sim replay --fixtures
+python3 -m signal_sim replay --fixtures --drift
+python3 -m signal_sim drift --fixtures
+python3 -m signal_sim diagnose --fixtures
+```
+
+Also:
+
+```bash
 python3 -m signal_sim replay --fixtures --ledger paper-replay.sqlite
 python3 -m signal_sim replay --fixtures --marks liquid
 python3 -m signal_sim replay --fixtures --marks two-name
 python3 -m signal_sim replay --fixtures --path
-python3 -m signal_sim drift --fixtures
-python3 -m signal_sim replay --fixtures --drift
+python3 -m signal_sim replay --fixtures --path --drift
+python3 -m signal_sim drift --fixtures --intensity
+python3 -m signal_sim replay --fixtures --drift --intensity
 ```
 
-`drift --fixtures` is the first directional baseline stub (docs method #3). It scores online news clusters at the mark-book `decision_at` and emits a signed `target_frac` + horizon. The half-life is declared, not fitted. The output is a target book for the paper ledger. It is not alpha and not a fitted return model. `rank` is unchanged. `replay --fixtures --drift` sizes that book; unmarked names are still `no_mark`.
+`drift --fixtures` is the first directional baseline stub (docs method #3). It scores online news clusters at the mark-book `decision_at` and emits a signed `target_frac` + horizon. The half-life is declared, not fitted. The output is a target book for the paper ledger. It is not alpha and not a fitted return model. `rank` is unchanged. `replay --fixtures --drift` sizes that book; unmarked names are still `no_mark`. `--intensity` attaches the declared Hawkes intensity from `diagnose` / `intensity_at` (same baseline, excitation, and decay; not a fit) so the sizer can shrink size as a risk overlay. It never raises size and does not change `rank_candidates`.
+
+`--path --drift` walks the same liquid mark path, but sizes each step from cluster drift at that step's `decision_at`. Mid-path fixture prints (after the default 10:15Z cut) can add or reduce names across sectors. `position_history` keeps the held book per step. Default `--path` still uses the checked-in candidate list. PnL on both paths is fixture-mark PnL.
 
 `--path` walks `fixtures/marks/path.json`: three fixture steps on one ledger across the sector mark set (open NVDA/XOM/DIS/QQQ → rotate in MSFT/NFLX → hold MSFT/SPY). AAPL is `no_mark` on every step. Rankings on that path are a test input. Marks stay fixtures. Ordering is `observed_at` / `decision_at`. This is not a market and not a live result. After the run, `account` and `positions` are the latest snapshot (last step). `account_history` keeps one row per step; those `ending_equity` values match `equity_curve`. `position_history` keeps the held book per step so a mid-path open and later reduce/close stay visible. `<ledger>.run.jsonl` still appends each step JSON.
 
@@ -95,7 +106,7 @@ python3 -m signal_sim drift --fixtures
 
 `diagnose` prints Hawkes intensity and online clusters cut at the default mark-book `decision_at`, the same window replay uses. Prints first seen after that decision are counted in `n_events_after_decision` and excluded from the intensity. It is not a ranking input and not a return. Do not change `rank_candidates` to chase fixture-mark PnL.
 
-`replay` uses `rank_candidates` as-is (unless a mark book supplies an explicit `candidates` list, as the path fixture does). Names without a fixture mark are refused `no_mark` before sizing, so they do not consume `max_gross_frac`. A sizer turns each remaining positive-score name into a signed long target of `size_frac` with a horizon equal to the fixture `decision_at`→`exit_at` window. The local ledger opens, adds, reduces, or closes to that book, subject to cash and a prior-run drawdown halt. Rebalance is share-accurate at the decision mark: a close sells held shares, not the sum of prior `size_frac` tickets. Ending equity is cash plus remaining shares at `exit_px`, so intra-path sells keep realized PnL. `cost_bps` (default 0) is a declared bid-ask fee on each fill. `decision_delay_hours` (default 1) sets `fill_at` after `decision_at`; the fill price is still the fixture `entry_px`. Replay stamps that fixture `fill_at` onto the ledger fill row. It does not use `occurred_at`, a congress trade date, or wall-clock `now()` for the paper clock. Online news clusters in replay `stats` are rebuilt at `decision_at` and are not a ranking input. The JSON `stats` object is from the run (hit rate, turnover, winner/loser counts, Hawkes arrivals in the decision→exit window). It is a fixture-mark run, not a market backtest. The frozen ticker list is `fixtures/universe.json`. The sizer has no 3-name ceiling; `max_name_frac` and `max_gross_frac` are the size rails. World Monitor / Quiver live adapters stay stubbed without keys; recorded JSON under `fixtures/recorded/` maps offline.
+`replay` uses `rank_candidates` as-is (unless a mark book supplies an explicit `candidates` list, as the path fixture does). Names without a fixture mark are refused `no_mark` before sizing, so they do not consume `max_gross_frac`. A sizer turns each remaining positive-score name into a signed long target of `size_frac` with a horizon equal to the fixture `decision_at`→`exit_at` window. The local ledger opens, adds, reduces, or closes to that book, subject to cash and a prior-run drawdown halt. Rebalance is share-accurate at the decision mark: a close sells held shares, not the sum of prior `size_frac` tickets. Ending equity is cash plus remaining shares at `exit_px`, so intra-path sells keep realized PnL. `cost_bps` (default 0) is a declared bid-ask fee on each fill. `decision_delay_hours` (default 1) sets `fill_at` after `decision_at`; the fill price is still the fixture `entry_px`. Replay stamps that fixture `fill_at` onto the ledger fill row. It does not use `occurred_at`, a congress trade date, or wall-clock `now()` for the paper clock. Online news clusters in replay `stats` are rebuilt at `decision_at` and are not a ranking input. The JSON `stats` object is from the run (hit rate, turnover, winner/loser counts, Hawkes arrivals in the decision→exit window). Every PnL number is fixture-mark PnL, not a market backtest. The frozen ticker list is `fixtures/universe.json`. The sizer has no 3-name ceiling; `max_name_frac` and `max_gross_frac` are the size rails. World Monitor / Quiver live adapters stay stubbed without keys; recorded JSON under `fixtures/recorded/` maps offline.
 
 The desk refuses to start unless the paper-only flag is on and no `KILL` file sits in the repository root.
 

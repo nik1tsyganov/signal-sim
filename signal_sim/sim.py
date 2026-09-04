@@ -726,21 +726,33 @@ def run_fixture_path(
     kill_root: str | None = None,
     mark_path: Path | None = None,
     universe: tuple[str, ...] | None = None,
+    drift: bool = False,
+    intensity: bool = False,
 ) -> dict[str, Any]:
     """Replay successive fixture mark books on one ledger. Not vendor bars."""
     books = load_mark_path(mark_path)
-    steps = [
-        run_fixture_replay(
-            fixtures=fixtures,
-            ledger_path=ledger_path,
-            audit_path=audit_path,
-            kill_root=kill_root,
-            mark_book=book,
-            candidates=book.get("candidates"),
-            universe=universe,
+    steps = []
+    for book in books:
+        candidates = book.get("candidates")
+        if drift:
+            from .drift import fixture_drift_book
+
+            candidates = fixture_drift_book(
+                fixtures,
+                mark_book=book,
+                intensity=intensity,
+            )["targets"]
+        steps.append(
+            run_fixture_replay(
+                fixtures=fixtures,
+                ledger_path=ledger_path,
+                audit_path=audit_path,
+                kill_root=kill_root,
+                mark_book=book,
+                candidates=candidates,
+                universe=universe,
+            )
         )
-        for book in books
-    ]
     starting_cash = float(books[0]["starting_cash"])
     equity_curve = [float(step["ending_equity"]) for step in steps]
     peak = starting_cash
@@ -783,6 +795,8 @@ def run_fixture_path(
             "hit_rate": steps[-1]["stats"].get("hit_rate"),
         },
     }
+    if drift:
+        summary["signal"] = "cluster-drift-stub"
     with open(str(ledger_path) + ".run.jsonl", "a", encoding="utf-8") as handle:
         handle.write(json.dumps({key: value for key, value in summary.items() if key != "steps"}, sort_keys=True) + "\n")
     return summary

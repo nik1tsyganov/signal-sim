@@ -145,7 +145,7 @@ class ReplayRoundTripTests(unittest.TestCase):
         self.assertAlmostEqual(summary["stats"]["hit_rate"], 0.5)
         self.assertAlmostEqual(summary["stats"]["turnover"], 0.2)
         self.assertAlmostEqual(summary["stats"]["max_name_frac"], book["size_frac"])
-        self.assertEqual(summary["stats"]["hawkes_n_arrivals"], 1)
+        self.assertEqual(summary["stats"]["hawkes_n_arrivals"], 5)
         self.assertEqual(summary["fill_rule"], "decision-time fixture mark; size_frac of starting_cash")
         self.assertLess(summary["decision_at"], summary["fill_at"])
         self.assertTrue(all(row["filled_at"] == summary["fill_at"] for row in summary["orders"]))
@@ -286,7 +286,7 @@ class ReplayRoundTripTests(unittest.TestCase):
             connection.close()
         self.assertNotIn("fx-nvda-late", json.loads(raw_ids))
         self.assertNotIn("fx-nvda-trade-date", json.loads(raw_ids))
-        self.assertEqual(summary["stats"]["hawkes_n_arrivals"], 1)
+        self.assertEqual(summary["stats"]["hawkes_n_arrivals"], 5)
 
     def test_second_replay_at_target_places_no_new_orders(self):
         first = run_fixture_replay(
@@ -628,7 +628,7 @@ class ReplayCliTests(unittest.TestCase):
         self.assertGreaterEqual(payload["stats"]["n_winners"], 1)
         self.assertGreaterEqual(payload["stats"]["n_losers"], 1)
         self.assertAlmostEqual(payload["stats"]["turnover"], 0.8)
-        self.assertEqual(payload["stats"]["hawkes_n_arrivals"], 1)
+        self.assertEqual(payload["stats"]["hawkes_n_arrivals"], 5)
         self.assertEqual(payload["fill_rule"], "decision-time fixture mark; size_frac of starting_cash")
         rendered = json.dumps(payload).lower()
         for host in ("api." + "alpaca.markets", "local" + "host"):

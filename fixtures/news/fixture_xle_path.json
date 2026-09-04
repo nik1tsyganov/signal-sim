@@ -1,0 +1,14 @@
+{
+  "id": "fx-xle-path-3",
+  "source": "fixture",
+  "kind": "news",
+  "ticker": "XLE",
+  "entities": ["XLE"],
+  "headline": "Third-step energy print observed after the second path decision",
+  "url": "https://example.invalid/fixture-xle-path",
+  "occurred_at": "2026-09-03T12:55:00Z",
+  "filed_at": "2026-09-03T12:56:00Z",
+  "observed_at": "2026-09-03T13:05:00Z",
+  "confidence": 0.7,
+  "raw_ref": "fixture:xle-path-3"
+}

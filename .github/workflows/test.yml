@@ -24,11 +24,17 @@ jobs:
         run: python -m signal_sim marks --fixtures
       - name: Fixture cluster-drift target book
         run: python -m signal_sim drift --fixtures
+      - name: Fixture cluster-drift with intensity overlay
+        run: python -m signal_sim drift --fixtures --intensity
       - name: Run fixture paper replay
         run: python -m signal_sim replay --fixtures
+      - name: Run fixture paper replay from drift
+        run: python -m signal_sim replay --fixtures --drift
       - name: Run fixture sector mark book alias
         run: python -m signal_sim replay --fixtures --marks liquid
       - name: Run fixture two-name mark book
         run: python -m signal_sim replay --fixtures --marks two-name
       - name: Run fixture three-step mark path
         run: python -m signal_sim replay --fixtures --path
+      - name: Run fixture three-step drift path
+        run: python -m signal_sim replay --fixtures --path --drift
