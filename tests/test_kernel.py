@@ -71,6 +71,58 @@ class EventValidationTests(unittest.TestCase):
         self.assertEqual(parsed.first_seen_at, parsed.observed_at)
         self.assertNotEqual(parsed.first_seen_at, parsed.occurred_at)
 
+    def test_from_dict_rejects_first_seen_at_that_disagrees_with_observed_at(self):
+        with self.assertRaisesRegex(EventValidationError, "first_seen_at"):
+            event(
+                observed_at="2026-09-02T10:00:00Z",
+                first_seen_at="2026-09-02T09:00:00Z",
+            )
+
+    def test_from_dict_accepts_first_seen_at_as_observed_at_when_missing(self):
+        values = {
+            "id": "alias-first-seen",
+            "source": "fixture",
+            "kind": "news",
+            "ticker": "NVDA",
+            "entities": ["NVIDIA"],
+            "headline": "Fixture headline",
+            "url": "https://example.invalid/alias-first-seen",
+            "occurred_at": "2026-09-02T09:00:00Z",
+            "filed_at": None,
+            "first_seen_at": "2026-09-02T10:00:00Z",
+            "confidence": 0.9,
+            "raw_ref": "fixture:alias-first-seen",
+        }
+        parsed = Event.from_dict(values)
+        self.assertEqual(parsed.observed_at, parsed.first_seen_at)
+        self.assertEqual(parsed.first_seen_at.isoformat().replace("+00:00", "Z"), "2026-09-02T10:00:00Z")
+
+    def test_from_dict_accepts_matching_first_seen_at_and_observed_at(self):
+        parsed = event(
+            observed_at="2026-09-02T10:00:00Z",
+            first_seen_at="2026-09-02T10:00:00Z",
+        )
+        self.assertEqual(parsed.first_seen_at, parsed.observed_at)
+
+    def test_from_dict_rejects_published_at_that_disagrees_with_occurred_at(self):
+        with self.assertRaisesRegex(EventValidationError, "published_at"):
+            event(
+                occurred_at="2026-09-02T09:00:00Z",
+                published_at="2026-09-02T08:00:00Z",
+            )
+
+    def test_event_store_sql_is_insert_only(self):
+        source = Path(EventStore.__module__.replace(".", "/") + ".py")
+        if not source.exists():
+            source = Path(__file__).resolve().parent.parent / "signal_sim" / "store.py"
+        text = source.read_text(encoding="utf-8")
+        self.assertIn("INSERT INTO events", text)
+        lowered = text.lower()
+        self.assertNotIn("update ", lowered)
+        self.assertNotIn("replace", lowered)
+        self.assertNotIn("on conflict", lowered)
+        self.assertNotIn("delete from events", lowered)
+
     def test_published_at_is_occurred_at_not_observed_at(self):
         parsed = event(
             occurred_at="2026-07-15T00:00:00Z",
@@ -201,6 +253,16 @@ class PaperOnlyCliTests(unittest.TestCase):
         error = io.StringIO()
         with redirect_stdout(output), redirect_stderr(error):
             exit_code = cli.main(["marks"])
+
+        self.assertEqual(exit_code, 2)
+        self.assertEqual(output.getvalue(), "")
+        self.assertIn("requires --fixtures", error.getvalue())
+
+    def test_drift_without_fixtures_flag_is_refused(self):
+        output = io.StringIO()
+        error = io.StringIO()
+        with redirect_stdout(output), redirect_stderr(error):
+            exit_code = cli.main(["drift"])
 
         self.assertEqual(exit_code, 2)
         self.assertEqual(output.getvalue(), "")
