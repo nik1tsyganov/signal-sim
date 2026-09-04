@@ -19,7 +19,7 @@ from .paper import (
     paper_host,
     paper_submit_enabled,
 )
-from .rebalance import proposed_rebalance
+from .rebalance import apply_local_rebalance, proposed_rebalance
 from .runtime_env import paper_submit_flag, runtime_env_status
 from .sim import resolve_mark_book_path
 from .store import EventStore
@@ -182,7 +182,7 @@ def _parser() -> argparse.ArgumentParser:
     )
     rebalance = commands.add_parser(
         "rebalance",
-        help="print proposed paper rebalance tickets (no POST)",
+        help="print proposed paper rebalance tickets; --apply-local fills the local ledger (no POST)",
     )
     rebalance.add_argument(
         "--fixtures",
@@ -206,7 +206,16 @@ def _parser() -> argparse.ArgumentParser:
     rebalance.add_argument(
         "--live",
         action="store_true",
-        help="pull Quiver/World Monitor into the Hawkes overlay (print-only)",
+        help="pull Quiver/World Monitor into the Hawkes overlay (print-only unless --apply-local)",
+    )
+    rebalance.add_argument(
+        "--apply-local",
+        action="store_true",
+        help="record fixture-mark tickets on the local paper ledger (no broker POST)",
+    )
+    rebalance.add_argument(
+        "--ledger",
+        help="sqlite ledger path (required with --apply-local; unused for print-only)",
     )
     commands.add_parser(
         "runtime-env",
@@ -454,10 +463,16 @@ def main(argv: list[str] | None = None) -> int:
                 file=sys.stderr,
             )
             return 2
+        apply_local = getattr(args, "apply_local", False)
+        ledger = getattr(args, "ledger", None)
+        if apply_local and not ledger:
+            print("rebalance --apply-local requires --ledger", file=sys.stderr)
+            return 2
         if paper_submit_enabled():
             print(
                 "SIGNAL_SIM_ALPACA_PAPER_SUBMIT=1; this build still "
-                "refuses remote paper POSTs. Rebalance is print-only.",
+                "refuses remote paper POSTs. --apply-local writes the local "
+                "ledger only.",
                 file=sys.stderr,
             )
         try:
@@ -472,6 +487,12 @@ def main(argv: list[str] | None = None) -> int:
                 intensity=intensity or live,
                 live=live,
             )
+            if apply_local:
+                report = apply_local_rebalance(
+                    report,
+                    ledger_path=ledger,
+                    fixtures=fixtures,
+                )
         except LiveFeedConfigError as error:
             print(str(error), file=sys.stderr)
             return 2

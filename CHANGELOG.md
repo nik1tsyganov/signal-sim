@@ -2,6 +2,12 @@
 
 What landed in the paper operate loop. This is not a live trading log. Every PnL number the loop prints is **fixture-mark PnL**, not alpha.
 
+## Unreleased — rebalance apply-local
+
+- **Local apply:** `python3 -m signal_sim rebalance --fixtures --apply-local --ledger <path>` computes the same tickets as the print-only dry-run, then records fills on the local paper ledger through `submit_paper_order`. Default remains print-only.
+- **Fixture-mark gate:** only tickets with `mark_kind=fixture_mark` and `mark_source=fixture` fill. Paper IEX last-trade or snapshot marks may size qty but are skipped as `paper_mark_not_execution`. They are not claimed broker fills.
+- **Fills:** still local-ledger only. No `/v2/orders` POST. `SIGNAL_SIM_ALPACA_PAPER_SUBMIT` stays `0` and still does not enable a remote submit.
+
 ## Unreleased — rebalance marks + live intensity
 
 - **Sizing marks:** `rebalance --fixtures` still prefers fixture `entry_px`. Names without a fixture mark may use a paper IEX last trade or snapshot `latestTrade`. Missing or unreadable prices stay `no_mark`. Paper data marks are print-only and are not execution marks.
