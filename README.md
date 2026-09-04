@@ -4,7 +4,7 @@ Signal Sim is a paper-only signal desk for US-listed technology, energy, media, 
 
 The project will join market data with time-stamped news-intensity features. It will test event-driven and stochastic methods against strict forward-only evaluation.
 
-Start with [the paper-trading and quant research](docs/paper-trading-and-quant.md).
+Start with [the paper-trading and quant research](docs/paper-trading-and-quant.md). For what the paper loop can run today, what is still blocked on the owner, and what must never be claimed, see [operate readiness](docs/operate-readiness.md).
 
 The initial execution target is a local simulated ledger. Alpaca paper is the preferred later broker adapter for cash equities and ETFs. IBKR remains a later option when broader instruments justify its desktop gateway and account requirements.
 
@@ -32,7 +32,7 @@ All of these require `--fixtures`. Omitting that flag exits with status 2. Every
 - `drift --fixtures` — cluster-drift target book (not alpha)
 - `walkforward --fixtures` — two expanding folds plus comparisons
 - `shadow --fixtures` — frozen operate report of that harness (`GET /api/shadow` is the same JSON without writing artifacts)
-- `smoke --fixtures` — one frozen-params pass of rank / diagnose / intensity / drift / replay / walkforward / shadow (`GET /api/smoke` is the same JSON without writing artifacts)
+- `smoke --fixtures` — one frozen-params pass of rails / rank / diagnose / intensity / drift / replay / walkforward / shadow (`GET /api/smoke` is the same JSON without writing artifacts). Rails assert live-host construct, a temp `KILL`, and a research/vendor mark without live calls.
 - `diagnose --fixtures` — Hawkes / clusters / intel / confirms (not a rank input)
 - `intensity --fixtures` — declared Hawkes intensity at the same `decision_at` cut (`GET /api/intensity` is the same JSON)
 
@@ -135,4 +135,4 @@ python3 -m signal_sim drift --fixtures
 
 The desk refuses to start unless the paper-only flag is on and no `KILL` file sits in the repository root.
 
-See [intel sources](docs/intel-sources.md), [paper trading and quant research](docs/paper-trading-and-quant.md), and [alternative data and safety](docs/alt-data-and-safety.md) for the source and safety rules.
+See [operate readiness](docs/operate-readiness.md), [intel sources](docs/intel-sources.md), [paper trading and quant research](docs/paper-trading-and-quant.md), and [alternative data and safety](docs/alt-data-and-safety.md) for the source and safety rules.

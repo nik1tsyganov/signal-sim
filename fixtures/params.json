@@ -7,5 +7,9 @@
   "hawkes_decay": 1.0,
   "placebo_seed": 20260902,
   "cost_bps": 0,
-  "decision_delay_hours": 1.0
+  "decision_delay_hours": 1.0,
+  "starting_cash": 100000,
+  "max_drawdown": 0.2,
+  "max_gross_frac": 1.0,
+  "max_name_frac": 1.0
 }

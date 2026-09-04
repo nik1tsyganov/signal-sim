@@ -32,6 +32,10 @@ HAWKES_DECAY = float(_PARAMS["hawkes_decay"])
 PLACEBO_SEED = int(_PARAMS["placebo_seed"])
 COST_BPS = float(_PARAMS["cost_bps"])
 DECISION_DELAY_HOURS = float(_PARAMS["decision_delay_hours"])
+STARTING_CASH = float(_PARAMS["starting_cash"])
+MAX_DRAWDOWN = float(_PARAMS["max_drawdown"])
+MAX_GROSS_FRAC = float(_PARAMS["max_gross_frac"])
+MAX_NAME_FRAC = float(_PARAMS["max_name_frac"])
 
 
 def frozen_operate_params() -> dict[str, Any]:
@@ -44,6 +48,10 @@ def frozen_operate_params() -> dict[str, Any]:
         "hawkes_decay": HAWKES_DECAY,
         "cost_bps": COST_BPS,
         "decision_delay_hours": DECISION_DELAY_HOURS,
+        "starting_cash": STARTING_CASH,
+        "max_drawdown": MAX_DRAWDOWN,
+        "max_gross_frac": MAX_GROSS_FRAC,
+        "max_name_frac": MAX_NAME_FRAC,
         "note": NOTE,
     }
 

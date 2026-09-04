@@ -27,8 +27,16 @@ from .paper import (
     execution_mark_failure,
     submit_paper_order,
 )
-from .params import COST_BPS, DECISION_DELAY_HOURS, operate_stamp
-from .sizer import MAX_GROSS_FRAC, size_targets
+from .params import (
+    COST_BPS,
+    DECISION_DELAY_HOURS,
+    MAX_DRAWDOWN,
+    MAX_GROSS_FRAC,
+    MAX_NAME_FRAC,
+    STARTING_CASH,
+    operate_stamp,
+)
+from .sizer import size_targets
 from .store import EventStore
 
 
@@ -107,6 +115,15 @@ def _positive(value: Any, field: str) -> float:
     return number
 
 
+def _locked_positive(raw: dict[str, Any], field: str, expected: float) -> float:
+    if field not in raw:
+        return expected
+    value = _positive(raw.get(field), field)
+    if value != expected:
+        raise ValueError(f"{field} must match fixtures/params.json")
+    return value
+
+
 def _parse_mark_book(raw: dict[str, Any], marks_path: Path) -> dict[str, Any]:
     if not isinstance(raw, dict):
         raise ValueError("mark book must be an object")
@@ -114,18 +131,15 @@ def _parse_mark_book(raw: dict[str, Any], marks_path: Path) -> dict[str, Any]:
     exit_at = _aware(raw.get("exit_at", ""), "exit_at")
     if exit_at <= decision_at:
         raise ValueError("exit_at must be after decision_at")
-    starting_cash = _positive(raw.get("starting_cash"), "starting_cash")
+    starting_cash = _locked_positive(raw, "starting_cash", STARTING_CASH)
     size_frac = _positive(raw.get("size_frac"), "size_frac")
-    max_drawdown = raw.get("max_drawdown", 0.2)
-    max_drawdown = _positive(max_drawdown, "max_drawdown")
+    max_drawdown = _locked_positive(raw, "max_drawdown", MAX_DRAWDOWN)
     if max_drawdown > 1:
         raise ValueError("max_drawdown must be at most 1")
-    max_gross_frac = raw.get("max_gross_frac", MAX_GROSS_FRAC)
-    max_gross_frac = _positive(max_gross_frac, "max_gross_frac")
+    max_gross_frac = _locked_positive(raw, "max_gross_frac", MAX_GROSS_FRAC)
     if size_frac > max_gross_frac:
         raise ValueError("size_frac must be at most max_gross_frac")
-    max_name_frac = raw.get("max_name_frac", 1.0)
-    max_name_frac = _positive(max_name_frac, "max_name_frac")
+    max_name_frac = _locked_positive(raw, "max_name_frac", MAX_NAME_FRAC)
     if max_name_frac > 1:
         raise ValueError("max_name_frac must be at most 1")
     if "cost_bps" in raw:

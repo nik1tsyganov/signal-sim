@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Any
 
-MAX_GROSS_FRAC = 1.0
+from .params import MAX_GROSS_FRAC, MAX_NAME_FRAC
 
 
 def size_targets(
@@ -19,7 +19,7 @@ def size_targets(
     size_frac: float,
     horizon_hours: float,
     max_gross_frac: float = MAX_GROSS_FRAC,
-    max_name_frac: float = 1.0,
+    max_name_frac: float = MAX_NAME_FRAC,
 ) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
     if size_frac <= 0:
         raise ValueError("size_frac must be positive")

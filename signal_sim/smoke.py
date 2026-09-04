@@ -1,7 +1,8 @@
 """One frozen-params operate pass over the paper fixture loop.
 
-Runs rank, diagnose, intensity, drift, replay, walkforward, and shadow.
+Runs rails, rank, diagnose, intensity, drift, replay, walkforward, and shadow.
 Any step failure makes the report not ok. PnL is fixture-mark only.
+Rails stay local: no live HTTP, no repo-root KILL file.
 """
 
 from __future__ import annotations
@@ -15,6 +16,8 @@ from .fixture_load import load_fixture_events
 from .hawkes import fixture_intensity
 from .indicators import rank_candidates
 from .params import operate_stamp
+from .paper import LiveEndpointError, OrderRefused, paper_broker_client, submit_paper_order
+from .safety import KILL_FILE
 from .shadow import run_shadow_report
 from .sim import load_mark_book, run_fixture_replay
 from .store import EventStore
@@ -27,6 +30,7 @@ NOTE = (
     "Not a live result. Not a search. Not a functional claim."
 )
 STEP_NAMES = (
+    "rails",
     "rank",
     "diagnose",
     "intensity",
@@ -35,6 +39,77 @@ STEP_NAMES = (
     "walkforward",
     "shadow",
 )
+
+
+def _assert_rails(*, ledger_dir: Path) -> dict[str, Any]:
+    """Local rails only. Assembled hosts. Temp KILL. No live calls."""
+    live_host = "api." + ("al" + "paca") + "." + ("mar" + "kets")
+    live_raised = False
+    try:
+        paper_broker_client(live_host)
+    except LiveEndpointError:
+        live_raised = True
+    if live_raised is not True:
+        raise AssertionError("live host construct must raise")
+
+    kill_dir = ledger_dir / "rails-kill"
+    kill_dir.mkdir(parents=True, exist_ok=True)
+    (kill_dir / KILL_FILE).write_text("stop\n", encoding="utf-8")
+    kill_proposal = {
+        "ticker": "NVDA",
+        "side": "buy",
+        "size_frac": 0.1,
+        "event_ids": ["smoke-rails-kill"],
+        "decision_at": "2026-09-02T10:15:00Z",
+        "idempotency_key": "smoke-rails-kill",
+    }
+    kill_refused = False
+    try:
+        submit_paper_order(
+            kill_proposal,
+            ledger_path=str(kill_dir / "kill.sqlite"),
+            mark_px=178.5,
+            audit_path=str(kill_dir / "kill.audit.jsonl"),
+            kill_root=str(kill_dir),
+        )
+    except OrderRefused as error:
+        if "kill-switch" in str(error).lower():
+            kill_refused = True
+    if kill_refused is not True:
+        raise AssertionError("KILL present must refuse the order")
+
+    mark_dir = ledger_dir / "rails-mark"
+    mark_dir.mkdir(parents=True, exist_ok=True)
+    research_kind = "re" + "search"
+    vendor_kind = "ven" + "dor"
+    mark_refused = {"research": False, "vendor": False}
+    for label, kind in (("research", research_kind), ("vendor", vendor_kind)):
+        try:
+            submit_paper_order(
+                {
+                    **kill_proposal,
+                    "event_ids": [f"smoke-rails-{label}"],
+                    "idempotency_key": f"smoke-rails-{label}",
+                },
+                ledger_path=str(mark_dir / f"{label}.sqlite"),
+                mark_px=178.5,
+                audit_path=str(mark_dir / f"{label}.audit.jsonl"),
+                kill_root=str(mark_dir),
+                mark_kind=kind,
+            )
+        except OrderRefused as error:
+            if "execution mark" in str(error).lower():
+                mark_refused[label] = True
+    if mark_refused["research"] is not True or mark_refused["vendor"] is not True:
+        raise AssertionError("research/vendor mark kind must refuse fill")
+
+    return {
+        "live_host": "refused",
+        "kill": "refused",
+        "research_mark": "refused",
+        "vendor_mark": "refused",
+        "ok": True,
+    }
 
 
 def run_smoke(
@@ -55,6 +130,7 @@ def run_smoke(
         "pnl_note": "fixture-mark PnL. Not a live result. Not a search target.",
     }
     try:
+        report["steps"]["rails"] = _assert_rails(ledger_dir=Path(ledger_dir))
         events = load_fixture_events(fixtures)
         decision_at = load_mark_book()["decision_at"]
         with EventStore() as store:

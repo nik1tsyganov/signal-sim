@@ -37,16 +37,37 @@ class SmokeTests(unittest.TestCase):
         self.assertEqual(set(payload["steps"]), set(STEP_NAMES))
         self.assertTrue(all(step.get("ok") is True for step in payload["steps"].values()))
         self.assertIn("fixture-mark", payload["steps"]["replay"]["pnl_note"].lower())
+        rails = payload["steps"]["rails"]
+        self.assertEqual(rails["live_host"], "refused")
+        self.assertEqual(rails["kill"], "refused")
+        self.assertEqual(rails["research_mark"], "refused")
+        self.assertEqual(rails["vendor_mark"], "refused")
+        self.assertTrue(rails["ok"])
         self.assertIn(payload["params_sha256"], error.getvalue())
         rendered = json.dumps(payload).lower()
         self.assertNotIn("sharpe", rendered)
         self.assertNotIn("yahoo", rendered)
+        self.assertFalse((REPO / "KILL").exists())
 
     def test_helper_stamps_the_same_digest(self):
         tmp = tempfile.mkdtemp()
         report = run_smoke(fixtures=FIXTURES, ledger_dir=tmp, write_artifact=False)
         self.assertTrue(report["ok"])
         self.assertEqual(report["params_sha256"], params_sha256())
+
+    def test_rails_are_local_and_leave_repo_kill_untouched(self):
+        from signal_sim.smoke import _assert_rails
+
+        tmp = Path(tempfile.mkdtemp())
+        result = _assert_rails(ledger_dir=tmp)
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["live_host"], "refused")
+        self.assertEqual(result["kill"], "refused")
+        self.assertEqual(result["research_mark"], "refused")
+        self.assertEqual(result["vendor_mark"], "refused")
+        self.assertTrue((tmp / "rails-kill" / "KILL").exists())
+        self.assertFalse((tmp / "rails-mark" / "KILL").exists())
+        self.assertFalse((REPO / "KILL").exists())
 
 
 if __name__ == "__main__":
