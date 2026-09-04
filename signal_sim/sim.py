@@ -56,6 +56,16 @@ CREATE TABLE IF NOT EXISTS positions (
     exit_px REAL NOT NULL,
     pnl REAL NOT NULL
 );
+CREATE TABLE IF NOT EXISTS position_history (
+    step INTEGER NOT NULL,
+    ticker TEXT NOT NULL,
+    side TEXT NOT NULL,
+    size_frac REAL NOT NULL,
+    shares REAL NOT NULL,
+    fill_px REAL NOT NULL,
+    exit_px REAL NOT NULL,
+    pnl REAL NOT NULL
+);
 """
 
 
@@ -193,14 +203,31 @@ def fixture_mark_map() -> dict[str, Any]:
         if not row.get("unused")
     }
     universe = set(UNIVERSE)
+    fixtures = Path(__file__).resolve().parent.parent / "fixtures"
+    decision_at = load_mark_book()["decision_at"]
+    printed = {
+        event.ticker
+        for event in load_fixture_events(fixtures)
+        if event.ticker in universe and event.observed_at <= decision_at
+    }
+    no_print = sorted(universe - printed)
     return {
         "mode": "local-paper-marks",
-        "note": "Fixture marks only. Ranked names without a row are no_mark. Unranked names have no print at decision_at. Not a vendor feed.",
+        "note": (
+            "Fixture marks only. Ranked names without a row are no_mark. "
+            "no_print names have no checked-in print at decision_at and cannot enter the rank cut. "
+            "Not a vendor feed."
+        ),
         "universe": list(UNIVERSE),
         "default_fillable": sorted(default),
         "liquid_fillable": sorted(liquid),
         "no_mark_default": sorted(universe - default),
         "no_mark_liquid": sorted(universe - liquid),
+        "no_print": no_print,
+        "no_print_reason": (
+            "No checked-in news or intel print with observed_at at or before decision_at. "
+            "Distinct from no_mark: those names ranked but have no fixture mark."
+        ),
         "sectors": {name: list(tickers) for name, tickers in SECTORS.items()},
     }
 
@@ -357,18 +384,25 @@ def _write_account(ledger_path: str, summary: dict[str, Any]) -> None:
             ),
         )
         for row in summary["positions"]:
+            values = (
+                row["ticker"],
+                row["side"],
+                row["size_frac"],
+                row["shares"],
+                row["fill_px"],
+                row["exit_px"],
+                row["pnl"],
+            )
             connection.execute(
                 "INSERT INTO positions (ticker, side, size_frac, shares, fill_px, exit_px, pnl)"
                 " VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (
-                    row["ticker"],
-                    row["side"],
-                    row["size_frac"],
-                    row["shares"],
-                    row["fill_px"],
-                    row["exit_px"],
-                    row["pnl"],
-                ),
+                values,
+            )
+            connection.execute(
+                "INSERT INTO position_history "
+                "(step, ticker, side, size_frac, shares, fill_px, exit_px, pnl)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (step, *values),
             )
         connection.commit()
     finally:
@@ -683,6 +717,16 @@ def run_fixture_path(
         peak = max(peak, equity)
         worst_drawdown = min(worst_drawdown, equity - peak)
     total_pnl = equity_curve[-1] - starting_cash
+    position_history = [
+        {
+            "step": index + 1,
+            "fill_at": step["fill_at"],
+            "decision_at": step["decision_at"],
+            "held": sorted(row["ticker"] for row in step["positions"]),
+            "positions": step["positions"],
+        }
+        for index, step in enumerate(steps)
+    ]
     summary = {
         "mode": "local-paper-path",
         "mark_source": books[0].get("source", "fixture"),
@@ -690,6 +734,7 @@ def run_fixture_path(
         "fill_rule": FILL_RULE,
         "starting_cash": starting_cash,
         "steps": steps,
+        "position_history": position_history,
         "equity_curve": equity_curve,
         "ending_equity": equity_curve[-1],
         "total_pnl": total_pnl,

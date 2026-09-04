@@ -1,0 +1,14 @@
+{
+  "id": "fx-xlk-1",
+  "source": "fixture",
+  "kind": "news",
+  "ticker": "XLK",
+  "entities": ["Technology Select Sector"],
+  "headline": "Fixture ETF print for the paper ledger",
+  "url": "https://example.invalid/fixture-xlk",
+  "occurred_at": "2026-09-02T10:06:00Z",
+  "filed_at": "2026-09-02T10:07:00Z",
+  "observed_at": "2026-09-02T10:13:00Z",
+  "confidence": 0.7,
+  "raw_ref": "fixture:xlk-1"
+}

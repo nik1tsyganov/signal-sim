@@ -90,6 +90,9 @@ class ServeTests(unittest.TestCase):
         self.assertIn("NVDA", payload["universe"])
         self.assertEqual(len(payload["universe"]), 15)
         self.assertTrue(set(payload["default_fillable"]).isdisjoint(payload["no_mark_default"]))
+        self.assertEqual(set(payload["no_print"]), {"AMZN", "GOOGL", "META"})
+        self.assertNotIn("AAPL", payload["no_print"])
+        self.assertIn("no checked-in", payload["no_print_reason"].lower())
         self.assertNotIn("sharpe", json.dumps(payload).lower())
 
     def test_api_diagnose_matches_diagnose_fixtures(self):
@@ -103,6 +106,10 @@ class ServeTests(unittest.TestCase):
         self.assertEqual(content_type, "application/json")
         payload = json.loads(body)
         self.assertEqual(payload["mode"], "local-paper-diagnose")
+        self.assertEqual(payload["cut"], "decision_at")
+        self.assertEqual(payload["when"], payload["decision_at"])
+        self.assertGreaterEqual(payload["stats"]["n_events_after_decision"], 1)
+        self.assertIn("decision_at", payload["note"])
         self.assertNotIn("candidates", payload)
         self.assertNotIn("sharpe", json.dumps(payload).lower())
 
@@ -140,6 +147,10 @@ class ServeTests(unittest.TestCase):
         self.assertEqual({row["ticker"] for row in payload["steps"][0]["orders"]}, {"NVDA", "XOM", "DIS", "QQQ"})
         self.assertIn({"ticker": "AAPL", "reason": "no_mark"}, payload["steps"][0]["refusals"])
         self.assertEqual({row["ticker"] for row in payload["steps"][2]["positions"]}, {"MSFT", "SPY"})
+        self.assertEqual(len(payload["position_history"]), 3)
+        self.assertIn("XOM", payload["position_history"][0]["held"])
+        self.assertNotIn("XOM", payload["position_history"][1]["held"])
+        self.assertEqual(payload["position_history"][2]["held"], ["MSFT", "SPY"])
         self.assertNotIn("sharpe", json.dumps(payload).lower())
 
     def test_get_api_liquid_does_not_place_orders(self):
@@ -176,7 +187,11 @@ class ServeTests(unittest.TestCase):
             {row["ticker"] for row in payload["orders"]},
             {"NVDA", "MSFT", "XLE", "XOM", "DIS", "NFLX", "SPY", "QQQ"},
         )
-        self.assertEqual(payload["refusals"], [])
+        self.assertEqual(
+            {row["ticker"] for row in payload["refusals"]},
+            {"AAPL", "CMCSA", "CVX", "XLK"},
+        )
+        self.assertTrue(all(row["reason"] == "no_mark" for row in payload["refusals"]))
         self.assertNotIn(100.0, [row["fill_px"] for row in payload["orders"]])
 
     def test_post_api_replay_runs_paper_round_trip(self):
@@ -210,7 +225,10 @@ class ServeTests(unittest.TestCase):
         self.assertIn(b"no_mark", body)
         self.assertIn(b"data.steps", body)
         self.assertIn(b"not_in_rank_cut", body)
+        self.assertIn(b"no_print", body)
         self.assertIn(b"equity_curve", body)
+        self.assertIn(b"position_history", body)
+        self.assertIn(b"n_events_after_decision", body)
         self.assertNotIn(b"sharpe", body.lower())
 
     def test_root_falls_back_to_paper_only_message(self):

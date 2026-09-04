@@ -117,7 +117,7 @@
         </div>
         <section id="marks">
             <h2>Marks</h2>
-            <p>GET /api/marks. Frozen universe vs who can fill. Not a ranking input. Names not in the rank cut have no print at decision_at; replay will not refuse them unless they are forced candidates.</p>
+            <p>GET /api/marks. Frozen universe vs who can fill. Not a ranking input. no_print names have no checked-in print at decision_at. no_mark names ranked but have no fixture mark.</p>
             <div id="marks-result">Loading marks…</div>
         </section>
         <section id="diagnose">
@@ -230,10 +230,18 @@
 
         function renderPaperSummary(data) {
             if (data.steps && data.steps.length) {
+                const history = data.position_history && data.position_history.length
+                    ? data.position_history
+                    : data.steps;
                 return {
                     mode: data.mode,
                     n_steps: data.steps.length,
                     equity_curve: data.equity_curve || [],
+                    position_history: history.map((row, index) => ({
+                        step: row.step || index + 1,
+                        fill_at: row.fill_at,
+                        held: row.held || (row.positions || []).map((item) => item.ticker),
+                    })),
                     steps: data.steps.map((step) => ({
                         fill_at: step.fill_at,
                         orders: (step.orders || []).map((row) => [row.ticker, row.side]),
@@ -293,6 +301,8 @@
                     liquid_fillable: marks.liquid_fillable || [],
                     no_mark_default: marks.no_mark_default || [],
                     no_mark_liquid: marks.no_mark_liquid || [],
+                    no_print: marks.no_print || [],
+                    no_print_reason: marks.no_print_reason || '',
                     not_in_rank_cut: notInRankCut,
                 }, null, 2))}</pre>`;
             } catch (err) {
@@ -312,7 +322,10 @@
                     mode: data.mode,
                     note: data.note,
                     when: data.when,
+                    decision_at: data.decision_at,
+                    cut: data.cut,
                     n_clusters: (data.stats || {}).n_clusters,
+                    n_events_after_decision: (data.stats || {}).n_events_after_decision,
                 }, null, 2))}</pre>`;
             } catch (err) {
                 box.innerHTML = `<div class="error">Diagnose failed: ${escapeHtml(err.message)}</div>`;

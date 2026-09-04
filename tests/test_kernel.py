@@ -172,6 +172,9 @@ class PaperOnlyCliTests(unittest.TestCase):
         )
         nvda = next(item for item in ranked if item["ticker"] == "NVDA")
         self.assertEqual(nvda["news_breakout"], 1)
+        ranked_names = {row["ticker"] for row in ranked}
+        self.assertTrue({"AAPL", "CVX", "CMCSA", "XLK"}.issubset(ranked_names))
+        self.assertFalse({"AMZN", "GOOGL", "META"} & ranked_names)
 
     def test_rank_without_fixtures_flag_is_refused(self):
         output = io.StringIO()

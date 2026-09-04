@@ -88,7 +88,14 @@ class ReplayRoundTripTests(unittest.TestCase):
         self.assertIn({"ticker": "XOM", "reason": "no_mark"}, summary["refusals"])
         self.assertIn({"ticker": "NFLX", "reason": "no_mark"}, summary["refusals"])
         self.assertIn({"ticker": "QQQ", "reason": "no_mark"}, summary["refusals"])
+        self.assertIn({"ticker": "AAPL", "reason": "no_mark"}, summary["refusals"])
+        self.assertIn({"ticker": "CVX", "reason": "no_mark"}, summary["refusals"])
+        self.assertIn({"ticker": "CMCSA", "reason": "no_mark"}, summary["refusals"])
+        self.assertIn({"ticker": "XLK", "reason": "no_mark"}, summary["refusals"])
         self.assertEqual(len(summary["positions"]), 2)
+        self.assertNotIn("AMZN", [row["ticker"] for row in summary["candidates"]])
+        self.assertNotIn("GOOGL", [row["ticker"] for row in summary["candidates"]])
+        self.assertNotIn("META", [row["ticker"] for row in summary["candidates"]])
 
         expected = {
             ticker: _expected_buy_pnl(
@@ -419,7 +426,11 @@ class ReplayRoundTripTests(unittest.TestCase):
         )
         filled = {row["ticker"] for row in summary["orders"]}
         self.assertEqual(filled, {"NVDA", "MSFT", "XLE", "XOM", "DIS", "NFLX", "SPY", "QQQ"})
-        self.assertEqual(summary["refusals"], [])
+        self.assertEqual(
+            {row["ticker"] for row in summary["refusals"]},
+            {"AAPL", "CMCSA", "CVX", "XLK"},
+        )
+        self.assertTrue(all(row["reason"] == "no_mark" for row in summary["refusals"]))
         self.assertNotIn(100.0, [row["fill_px"] for row in summary["orders"]])
         sectors = load_sectors()
         for names in sectors.values():
@@ -630,7 +641,10 @@ class ReplayCliTests(unittest.TestCase):
             {row["ticker"] for row in payload["orders"]},
             {"NVDA", "MSFT", "XLE", "XOM", "DIS", "NFLX", "SPY", "QQQ"},
         )
-        self.assertEqual(payload["refusals"], [])
+        self.assertEqual(
+            {row["ticker"] for row in payload["refusals"]},
+            {"AAPL", "CMCSA", "CVX", "XLK"},
+        )
         self.assertNotIn(100.0, [row["fill_px"] for row in payload["orders"]])
 
 
@@ -693,6 +707,14 @@ class MarkPathTests(unittest.TestCase):
         )
         self.assertNotIn("sharpe", json.dumps(summary).lower())
         self.assertLessEqual(summary["worst_drawdown"], 0.0)
+        self.assertEqual(len(summary["position_history"]), 3)
+        self.assertIn("XOM", summary["position_history"][0]["held"])
+        self.assertIn("DIS", summary["position_history"][0]["held"])
+        self.assertNotIn("XOM", summary["position_history"][1]["held"])
+        self.assertNotIn("DIS", summary["position_history"][1]["held"])
+        self.assertIn("MSFT", summary["position_history"][1]["held"])
+        self.assertIn("NFLX", summary["position_history"][1]["held"])
+        self.assertEqual(summary["position_history"][2]["held"], ["MSFT", "SPY"])
         connection = sqlite3.connect(ledger)
         try:
             history = connection.execute(
@@ -702,6 +724,9 @@ class MarkPathTests(unittest.TestCase):
                 "SELECT ending_equity, total_pnl FROM account"
             ).fetchall()
             held = connection.execute("SELECT ticker FROM positions ORDER BY ticker").fetchall()
+            trail = connection.execute(
+                "SELECT step, ticker FROM position_history ORDER BY step, ticker"
+            ).fetchall()
         finally:
             connection.close()
         self.assertEqual([row[0] for row in history], [1, 2, 3])
@@ -714,6 +739,18 @@ class MarkPathTests(unittest.TestCase):
             self.assertAlmostEqual(row[2], step["total_pnl"])
             self.assertEqual(row[3], step["fill_at"])
         self.assertEqual([row[0] for row in held], ["MSFT", "SPY"])
+        self.assertEqual(
+            {ticker for step, ticker in trail if step == 1},
+            {"DIS", "NVDA", "QQQ", "XOM"},
+        )
+        self.assertEqual(
+            {ticker for step, ticker in trail if step == 2},
+            {"MSFT", "NFLX", "NVDA", "QQQ"},
+        )
+        self.assertEqual({ticker for step, ticker in trail if step == 3}, {"MSFT", "SPY"})
+        self.assertIn((1, "XOM"), trail)
+        self.assertNotIn((2, "XOM"), trail)
+        self.assertIn((2, "MSFT"), trail)
 
 
 if __name__ == "__main__":
