@@ -157,6 +157,10 @@ class SubmitPaperOrderTests(PaperOrderPathBase):
         self.assertEqual(line["fill"]["fill_px"], 178.5)
         self.assertTrue(line["fill"]["filled_at"])
         self.assertTrue(line["fill"]["order_id"])
+        from signal_sim.params import params_sha256
+
+        self.assertEqual(line["params_sha256"], params_sha256())
+        self.assertEqual(len(line["params_sha256"]), 64)
         decision_at = datetime.fromisoformat(line["decision_at"])
         self.assertIsNotNone(decision_at.tzinfo)
 
@@ -165,6 +169,27 @@ class SubmitPaperOrderTests(PaperOrderPathBase):
         del proposal["decision_at"]
         self._assert_refused(proposal)
         self.assertEqual(self._audit_lines()[-1]["outcome"], "refused")
+
+    def test_filled_at_before_decision_at_is_refused(self):
+        with self.assertRaises(OrderRefused) as error:
+            self._submit(filled_at="2026-09-02T10:00:00Z")
+        self.assertIn("filled_at must be after decision_at", str(error.exception))
+        self.assertEqual(self._rows("orders"), [])
+        self.assertEqual(self._rows("fills"), [])
+        self.assertEqual(self._audit_lines()[-1]["outcome"], "refused")
+        from signal_sim.params import params_sha256
+
+        self.assertEqual(self._audit_lines()[-1]["params_sha256"], params_sha256())
+
+    def test_audit_digest_mismatch_fails_closed(self):
+        self._submit(filled_at="2026-09-02T11:15:00Z")
+        lines = self._audit_lines()
+        lines[0]["params_sha256"] = "0" * 64
+        with open(self.audit, "w", encoding="utf-8") as handle:
+            handle.write(json.dumps(lines[0]) + "\n")
+        with self.assertRaises(ProvenanceMissing) as error:
+            assert_fills_have_provenance(self.ledger, self.audit)
+        self.assertIn("params_sha256", str(error.exception))
 
     def test_fills_without_audit_fail_closed(self):
         self._submit()

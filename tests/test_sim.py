@@ -190,7 +190,9 @@ class ReplayRoundTripTests(unittest.TestCase):
         self.assertTrue(all(line.get("verdict") == "approved" for line in audit_lines))
         from signal_sim.params import params_sha256
 
-        self.assertEqual(summary["params_sha256"], params_sha256())
+        digest = params_sha256()
+        self.assertTrue(all(line.get("params_sha256") == digest for line in audit_lines))
+        self.assertEqual(summary["params_sha256"], digest)
         self.assertEqual(summary["audit_path"], self.audit)
         self.assertEqual(len(summary["params_sha256"]), 64)
 
@@ -544,7 +546,7 @@ class InventoryCostTests(unittest.TestCase):
         audit = os.path.join(tmp, "audit.jsonl")
         starting = 1000.0
         for key, px, frac, when in (
-            ("a", 100.0, 0.1, "2026-09-02T10:00:00Z"),
+            ("a", 100.0, 0.1, "2026-09-02T10:16:00Z"),
             ("b", 200.0, 0.1, "2026-09-02T10:30:00Z"),
         ):
             submit_paper_order(

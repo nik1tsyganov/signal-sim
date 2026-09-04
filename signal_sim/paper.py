@@ -134,6 +134,8 @@ def _audit_snapshot(proposal):
             decision_at = None
     elif not isinstance(decision_at, str) or not decision_at:
         decision_at = None
+    from .params import params_sha256
+
     record = {
         "ticker": _json_scalar(proposal.get("ticker")),
         "side": _json_scalar(proposal.get("side")),
@@ -142,6 +144,7 @@ def _audit_snapshot(proposal):
         "event_id_hashes": _event_id_hashes(event_ids) if event_ids else [],
         "event_id_hash": _event_id_hash(event_ids) if event_ids else None,
         "decision_at": decision_at,
+        "params_sha256": params_sha256(),
         "idempotency_key": _json_scalar(proposal.get("idempotency_key")),
         "fill": None,
     }
@@ -162,6 +165,15 @@ def _missing_provenance(record, *, filled):
         return "event_id_hashes"
     if not record.get("decision_at"):
         return "decision_at"
+    digest = record.get("params_sha256")
+    if not isinstance(digest, str) or len(digest) != 64 or any(
+        char not in "0123456789abcdef" for char in digest
+    ):
+        return "params_sha256"
+    from .params import params_sha256
+
+    if digest != params_sha256():
+        return "params_sha256"
     if not record.get("verdict"):
         return "verdict"
     if record.get("outcome") not in ("filled", "refused"):
@@ -173,6 +185,13 @@ def _missing_provenance(record, *, filled):
         for key in ("fill_px", "filled_at", "order_id"):
             if fill.get(key) in (None, ""):
                 return f"fill.{key}"
+        try:
+            decision = _stamp(record["decision_at"], "decision_at")
+            filled_at = _stamp(fill["filled_at"], "filled_at")
+        except ValueError:
+            return "fill.filled_at"
+        if filled_at <= decision:
+            return "fill.filled_at<=decision_at"
     return None
 
 
@@ -368,8 +387,11 @@ def submit_paper_order(
         refuse("R9: cost must be a non-negative finite number")
     try:
         ledger_stamp = processed_at if filled_at is None else _stamp(filled_at, "filled_at")
+        decision_stamp = _stamp(proposal["decision_at"], "decision_at")
     except ValueError as error:
         refuse(f"R9: {error}")
+    if ledger_stamp <= decision_stamp:
+        refuse("R9: filled_at must be after decision_at")
 
     order_id = hashlib.sha256(proposal["idempotency_key"].encode("utf-8")).hexdigest()[:32]
     fill_id = hashlib.sha256(f"{proposal['idempotency_key']}:fill".encode("utf-8")).hexdigest()[:32]

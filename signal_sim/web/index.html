@@ -268,6 +268,7 @@
                     : data.steps;
                 return {
                     mode: data.mode,
+                    params_sha256: data.params_sha256,
                     n_steps: data.steps.length,
                     equity_curve: data.equity_curve || [],
                     position_history: history.map((row, index) => ({
@@ -285,6 +286,7 @@
             }
             return {
                 mode: data.mode,
+                params_sha256: data.params_sha256,
                 orders: (data.orders || []).map((row) => row.ticker),
                 refusals: data.refusals || [],
                 held: (data.positions || []).map((row) => row.ticker),
