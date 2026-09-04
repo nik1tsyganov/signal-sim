@@ -2,6 +2,13 @@
 
 What landed in the paper operate loop. This is not a live trading log. Every PnL number the loop prints is **fixture-mark PnL**, not alpha.
 
+## Unreleased — Alpaca paper submit (flag-gated)
+
+- **Guarded paper POST:** remote `/v2/orders` POSTs run only when **all** of these hold: `SIGNAL_SIM_ALPACA_PAPER_SUBMIT=1`, resolved base URL is the paper host (`paper-api.alpaca.markets`), paper keys are present, and an explicit CLI flag (`rebalance --fixtures --submit-paper` or `paper-submit`). Print-only remains the default. `--apply-local` stays local-ledger only and cannot be combined with `--submit-paper`.
+- **CLI:** `python3 -m signal_sim paper-submit --symbol SPY --qty 1` posts one tiny paper order. `rebalance --fixtures --submit-paper` posts sized dry-run tickets, smallest notional first, default `--limit 1` so the first enable cannot spray the book.
+- **Rails:** live Alpaca hosts, a non-paper base URL, missing keys, flag omitted, or flag=`0` hard-refuse with no silent fallback. Duplicate `client_order_id` is treated as already submitted (GET before POST). Logs order id / status only; never secret values.
+- **Kill switch:** set `SIGNAL_SIM_ALPACA_PAPER_SUBMIT=0` (or omit it). That is the off switch. There is still no live-money trading.
+
 ## Unreleased — ledger inspect
 
 - **Read-only inspect:** `python3 -m signal_sim ledger --ledger <path>` (`paper-ledger` is the same command) prints order/fill counts, symbols, sides, qtys, and mark kinds from a local sqlite ledger. `--fixtures` adds fixture-mark MTM versus `fixtures/marks`. Labeled plumbing, not alpha.

@@ -1,10 +1,11 @@
-"""Paper rebalance tickets: print-only by default, optional local-ledger apply.
+"""Paper rebalance tickets: print-only by default, optional local or paper apply.
 
 Reads a paper account snapshot and the existing fixture / cluster-drift
 target book, then prints intended tickets. Default is print-only: it does
 not POST to a broker and does not write the local ledger. ``--apply-local``
-records fixture-mark tickets through submit_paper_order. Paper IEX sizing
-marks never become fills. No remote paper POST.
+records fixture-mark tickets through submit_paper_order. ``--submit-paper``
+POSTs sized tickets to the Alpaca paper host only after require_paper_submit
+rails pass. Paper IEX sizing marks never become local-ledger fills.
 """
 
 from __future__ import annotations
@@ -26,8 +27,10 @@ from .live_feeds import (
 )
 from .paper import (
     OrderRefused,
+    PaperSubmitRefused,
     assert_fills_have_provenance,
     execution_mark_failure,
+    require_paper_submit,
     submit_paper_order,
 )
 from .params import COST_BPS, DECISION_DELAY_HOURS, operate_stamp
@@ -50,6 +53,13 @@ APPLY_NOTE = (
     "No remote paper POST."
 )
 APPLY_GATE = "mark_kind=fixture_mark and mark_source=fixture"
+SUBMIT_NOTE = (
+    "Alpaca paper POST of sized dry-run tickets. Requires "
+    "SIGNAL_SIM_ALPACA_PAPER_SUBMIT=1, paper-api host, keys, and "
+    "--submit-paper. Default remains print-only. Not live money. "
+    "Not alpha. Kill by setting SIGNAL_SIM_ALPACA_PAPER_SUBMIT=0."
+)
+SUBMIT_GATE = "SIGNAL_SIM_ALPACA_PAPER_SUBMIT=1 and --submit-paper and paper host"
 PAPER_SIZING_SOURCE = "alpaca_paper_data"
 PAPER_MARK_SKIP = "paper_mark_not_execution"
 SIGNAL_DRIFT = "cluster-drift-stub"
@@ -706,5 +716,124 @@ def apply_local_rebalance(
     out["n_apply_skipped"] = len(apply_skipped)
     out["ledger_path"] = ledger
     out["audit_path"] = effective_audit
+    out["ok"] = ok
+    return out
+
+
+def clear_sizing_failure(ticket: dict[str, Any]) -> str | None:
+    """Refuse a remote paper POST unless qty or notional is a clear size."""
+    if not isinstance(ticket, dict):
+        return "ticket must be a mapping"
+    symbol = ticket.get("symbol") or ticket.get("ticker")
+    if symbol not in UNIVERSE:
+        return "ticker not in universe"
+    side = ticket.get("side")
+    if side not in {"buy", "sell"}:
+        return "side must be 'buy' or 'sell'"
+    qty = _finite_number(ticket.get("qty"))
+    notional = _finite_number(ticket.get("notional"))
+    if qty is not None and abs(qty) > _EPS:
+        return None
+    if notional is not None and abs(notional) > _EPS:
+        return None
+    return "qty or notional must be a positive finite number"
+
+
+def _paper_ticket_sort(ticket: dict[str, Any]) -> tuple[float, float, str]:
+    notional = abs(_finite_number(ticket.get("notional")) or 0.0)
+    qty = abs(_finite_number(ticket.get("qty")) or 0.0)
+    return (notional, qty, str(ticket.get("symbol") or ""))
+
+
+def submit_paper_rebalance(
+    report: dict[str, Any],
+    client: Any,
+    *,
+    limit: int = 1,
+    explicit: bool = True,
+) -> dict[str, Any]:
+    """POST sized dry-run tickets to Alpaca paper. Hard-gated.
+
+    Default limit is 1 (smallest notional). This never writes the local
+    ledger and never targets a live host.
+    """
+    require_paper_submit(explicit=explicit)
+    if not isinstance(report, dict):
+        raise ValueError("rebalance report is required")
+    tickets = report.get("tickets")
+    if not isinstance(tickets, list):
+        raise ValueError("rebalance report tickets are required")
+    if not isinstance(limit, int) or isinstance(limit, bool) or limit < 1:
+        raise PaperSubmitRefused("rebalance --submit-paper --limit must be a positive integer")
+
+    indexed: list[tuple[int, dict[str, Any]]] = []
+    submit_skipped: list[dict[str, str]] = []
+    for index, ticket in enumerate(tickets):
+        row = dict(ticket) if isinstance(ticket, dict) else {}
+        reason = clear_sizing_failure(row)
+        if reason is not None:
+            submit_skipped.append(
+                {"ticker": str(row.get("symbol") or "unknown"), "reason": reason}
+            )
+            continue
+        indexed.append((index, row))
+    indexed.sort(key=lambda item: _paper_ticket_sort(item[1]))
+    chosen_indexes = {index for index, _row in indexed[:limit]}
+    for index, row in indexed[limit:]:
+        submit_skipped.append(
+            {
+                "ticker": str(row.get("symbol") or "unknown"),
+                "reason": "over_limit",
+            }
+        )
+
+    written: list[dict[str, Any]] = []
+    posted: list[dict[str, Any]] = []
+    ok = True
+    for index, ticket in enumerate(tickets):
+        row = dict(ticket) if isinstance(ticket, dict) else {}
+        if index not in chosen_indexes:
+            row["submitted"] = False
+            written.append(row)
+            continue
+        payload = row.get("payload") if isinstance(row.get("payload"), dict) else {}
+        qty = abs(_finite_number(row.get("qty")) or 0.0)
+        proposal = {
+            "symbol": row.get("symbol"),
+            "side": row.get("side"),
+            "qty": qty,
+            "client_order_id": payload.get("client_order_id"),
+        }
+        symbol = str(row.get("symbol") or "unknown")
+        try:
+            result = client.post_paper_order(proposal, explicit=explicit)
+        except (PaperSubmitRefused, ValueError, RuntimeError) as error:
+            reason = str(error)
+            submit_skipped.append({"ticker": symbol, "reason": reason})
+            row["submitted"] = False
+            row["paper_error"] = reason
+            written.append(row)
+            ok = False
+            continue
+        posted.append(result)
+        row["submitted"] = True
+        row["order_id"] = result.get("id")
+        row["order_status"] = result.get("status")
+        row["duplicate"] = bool(result.get("duplicate"))
+        written.append(row)
+
+    out = dict(report)
+    out["mode"] = "paper-rebalance-submit-paper"
+    out["note"] = SUBMIT_NOTE
+    out["tickets"] = written
+    out["order_post"] = "paper"
+    out["submitted"] = bool(posted)
+    out["local_applied"] = False
+    out["submit_gate"] = SUBMIT_GATE
+    out["paper_orders"] = posted
+    out["submit_skipped"] = submit_skipped
+    out["n_paper_submitted"] = len(posted)
+    out["n_submit_skipped"] = len(submit_skipped)
+    out["submit_limit"] = limit
     out["ok"] = ok
     return out
