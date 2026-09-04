@@ -62,6 +62,7 @@ def size_targets(
             "intensity_scale",
             "insider_confirm",
             "congress_confirm",
+            "gov_confirm",
             "insider_lag_hours",
             "congress_lag_hours",
             "intel_brief",

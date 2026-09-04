@@ -18,6 +18,7 @@ from typing import Any
 from .events import Event
 from .fixture_load import load_fixture_events
 from .indicators import NEWS_KINDS
+from .params import DECISION_DELAY_HOURS, PLACEBO_SEED
 
 
 DEFAULT_WALKFORWARD = (
@@ -29,8 +30,6 @@ NOTE = (
     "and news-only ablation on the same folds. They are not a search and not a "
     "functional claim."
 )
-# Declared shuffle seed. Not fitted. Do not retune to move comparison PnL.
-PLACEBO_SEED = 20260902
 COMPARISON_NAMES = ("no_news", "shuffled_news", "news_only")
 COMPARISON_NOTE = (
     "Same fold clocks and declared drift params. no_news drops NEWS_KINDS. "
@@ -100,7 +99,7 @@ def variant_events(events: list[Event], name: str, *, seed: int) -> list[Event]:
 
 def embargo_hours(book: dict[str, Any]) -> float:
     horizon_hours = (book["exit_at"] - book["decision_at"]).total_seconds() / 3600.0
-    delay = float(book.get("decision_delay_hours", 1.0))
+    delay = float(book.get("decision_delay_hours", DECISION_DELAY_HOURS))
     return horizon_hours + delay
 
 

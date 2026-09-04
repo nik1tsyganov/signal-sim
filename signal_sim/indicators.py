@@ -135,8 +135,13 @@ def filed_confirm_features(
     for ticker in UNIVERSE if universe is None else universe:
         insider = _filed_confirmation(events, ticker, {"insider"}, when)
         congress = _filed_confirmation(events, ticker, {"congress_trade"}, when)
-        if insider or congress:
-            features[ticker] = {"insider_confirm": insider, "congress_confirm": congress}
+        gov = _filed_confirmation(events, ticker, {"gov_contract"}, when)
+        if insider or congress or gov:
+            features[ticker] = {
+                "insider_confirm": insider,
+                "congress_confirm": congress,
+                "gov_confirm": gov,
+            }
     return features
 
 

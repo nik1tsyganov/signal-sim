@@ -352,9 +352,11 @@
                     n_intel: (data.stats || {}).n_intel,
                     n_trendradar: (data.stats || {}).n_trendradar,
                     n_filing_lags: (data.stats || {}).n_filing_lags,
+                    n_gov_confirm: (data.stats || {}).n_gov_confirm,
                     intensity: data.intensity || {},
                     intel: data.intel || {},
                     trendradar: data.trendradar || {},
+                    confirms: data.confirms || {},
                     filing_lags: data.filing_lags || {},
                 });
             } catch (err) {
@@ -377,6 +379,7 @@
                     horizon_hours: data.horizon_hours,
                     intel: data.intel || {},
                     trendradar: data.trendradar || {},
+                    confirms: data.confirms || {},
                     filing_lags: data.filing_lags || {},
                     targets: (data.targets || []).map((row) => ({
                         ticker: row.ticker,
@@ -384,6 +387,7 @@
                         horizon_hours: row.horizon_hours,
                         insider_confirm: row.insider_confirm,
                         congress_confirm: row.congress_confirm,
+                        gov_confirm: row.gov_confirm,
                         insider_lag_hours: row.insider_lag_hours,
                         congress_lag_hours: row.congress_lag_hours,
                         intel_brief: row.intel_brief,

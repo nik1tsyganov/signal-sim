@@ -8,11 +8,12 @@ from typing import Iterable
 
 from .events import Event
 from .indicators import CONFIRM_KINDS, NEWS_KINDS, UNIVERSE
+from .params import HAWKES_BASELINE, HAWKES_DECAY, HAWKES_EXCITATION
 
 
-BASELINE = 0.1
-EXCITATION = 0.8
-DECAY = 1.0
+BASELINE = HAWKES_BASELINE
+EXCITATION = HAWKES_EXCITATION
+DECAY = HAWKES_DECAY
 _SECONDS_PER_HOUR = 3600.0
 _RANK_FEATURES = ("news_breakout", "insider_confirm")
 

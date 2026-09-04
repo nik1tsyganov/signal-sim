@@ -40,6 +40,7 @@ class FixtureReplayTests(unittest.TestCase):
                 "side": "buy",
                 "size_frac": 0.1,
                 "event_ids": event_ids,
+                "decision_at": book["decision_at"].isoformat().replace("+00:00", "Z"),
                 "idempotency_key": "fixture-replay-1",
             },
             ledger_path=os.path.join(tmp, "ledger.sqlite"),

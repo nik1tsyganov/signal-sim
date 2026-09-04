@@ -134,6 +134,7 @@ class ServeTests(unittest.TestCase):
         self.assertEqual(nvda["congress_confirm"], 1)
         self.assertEqual(nvda["insider_lag_hours"], 2.75)
         self.assertEqual(nvda["congress_lag_hours"], 16.75)
+        self.assertEqual(nvda["gov_confirm"], 1)
         self.assertNotIn("sharpe", json.dumps(payload).lower())
 
     def test_api_walkforward_matches_walkforward_fixtures(self):
@@ -294,6 +295,7 @@ class ServeTests(unittest.TestCase):
         self.assertIn(b"Shadow-paper", body)
         self.assertIn(b"insider_confirm", body)
         self.assertIn(b"insider_lag_hours", body)
+        self.assertIn(b"gov_confirm", body)
         self.assertIn(b"filing_lags", body)
         self.assertIn(b"intel_brief", body)
         self.assertIn(b"trendradar", body)

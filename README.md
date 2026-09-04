@@ -24,9 +24,17 @@ python -m unittest discover -s tests -v
 python3 -m unittest discover -s tests -v
 ```
 
-## Operate (paper only)
+## Paper operate
 
-`rank`, `intensity`, `diagnose`, `marks`, `drift`, `walkforward`, `shadow`, and `replay` require `--fixtures`. Omitting that flag exits with status 2. Those commands read checked-in files under `fixtures/`. `rank --fixtures` and `GET /api/rank` cut at the default mark-book `decision_at`, the same window replay uses. Prints first seen after that decision do not change the rank. There is no live broker, no vendor bars, and no Quiver live path. Every `total_pnl` / `ending_equity` figure from these commands is **fixture-mark PnL**, not a live or vendor-bar result.
+All of these require `--fixtures`. Omitting that flag exits with status 2. Every `total_pnl` / `ending_equity` is **fixture-mark PnL**, not a live or vendor-bar result. There is no live broker and no Yahoo/Stooq execution mark.
+
+- `replay --fixtures` — paper ledger on the liquid sector mark book
+- `drift --fixtures` — cluster-drift target book (not alpha)
+- `walkforward --fixtures` — two expanding folds plus comparisons
+- `shadow --fixtures` — frozen operate report of that harness (`GET /api/shadow` is the same JSON without writing artifacts)
+- `diagnose --fixtures` — Hawkes / clusters / intel / confirms (not a rank input)
+
+`rank`, `intensity`, and `marks` also require `--fixtures`. Those commands read checked-in files under `fixtures/`. `rank --fixtures` and `GET /api/rank` cut at the default mark-book `decision_at`, the same window replay uses. Prints first seen after that decision do not change the rank. There is no live broker, no vendor bars, and no Quiver live path.
 
 Every name in `fixtures/universe.json` either has a real fixture mark or cannot fill. Default `replay --fixtures` sizes the liquid sector book in `fixtures/marks/liquid.json`: tagged `fixture_mark` rows for NVDA/MSFT (tech), XLE/XOM (energy), DIS/NFLX (media), and SPY/QQQ (ETF). `--marks liquid` is the same book. `--marks two-name` (or `fixtures/marks/universe.json`) is the older NVDA/XLE book. Other ranked names are refused with `no_mark`. That skip is honest: the allocator does not invent a 100.0 fill. AAPL, CVX, CMCSA, and XLK have checked-in fixture news so each sector gap can enter the rank cut; they still have no fixture mark. AMZN, GOOGL, and META have no checked-in print at `decision_at` and are listed as `no_print` by `marks --fixtures` — they cannot rank until a fixture print exists. These are research fixtures, not Yahoo/Stooq/vendor bars. Prints are admitted on `observed_at` / `first_seen_at` only; `occurred_at` and congress trade dates do not fill.
 
@@ -59,7 +67,7 @@ python3 -m signal_sim replay --fixtures --drift --intensity
 
 `shadow --fixtures` is the frozen operate path for that same harness. It writes `shadow-paper-walkforward.json` under `$SIGNAL_SIM_ARTIFACTS`, `/opt/cursor/artifacts`, or a repo `artifacts/` directory when one of those exists; otherwise it prints the report to stdout only. Params in the report are declared constants. Do not search them. `GET /api/shadow` returns the same JSON without writing artifacts and without placing desk orders.
 
-Recorded World Monitor JSON under `fixtures/recorded/worldmonitor/` attaches as `intel_brief` / `wm_intel` / `chokepoint` flags on the drift book and diagnose. The checked-in TrendRadar hotspot fixture attaches as `trendradar` on the same `observed_at` rule. Filed insider/congress prints also attach `insider_lag_hours` / `congress_lag_hours` (hours from `filed_at` to `observed_at` on the latest admitted filing). Those lags are feature-only and never use the trade date. None of these flags change rank or size. Live World Monitor still raises without a key and does not open HTTP. There is no TrendRadar live client and no GPL/AGPL vendoring.
+Recorded World Monitor JSON under `fixtures/recorded/worldmonitor/` attaches as `intel_brief` / `wm_intel` / `chokepoint` flags on the drift book and diagnose. The checked-in TrendRadar hotspot fixture attaches as `trendradar` on the same `observed_at` rule. Filed insider/congress prints also attach `insider_lag_hours` / `congress_lag_hours` (hours from `filed_at` to `observed_at` on the latest admitted filing). Gov-contract fixtures attach as `gov_confirm` on the same filed/observed rule. Those flags and lags are feature-only on the drift book and diagnose; they do not change size. `rank_candidates` already counts `gov_confirm` in score and is left unchanged. Declared operate constants live in `fixtures/params.json`. Live World Monitor still raises without a key and does not open HTTP. There is no TrendRadar live client and no GPL/AGPL vendoring.
 
 `--path` walks `fixtures/marks/path.json`: three fixture steps on one ledger across the sector mark set (open NVDA/XOM/DIS/QQQ → rotate in MSFT/NFLX → hold MSFT/SPY). AAPL is `no_mark` on every step. Rankings on that path are a test input. Marks stay fixtures. Ordering is `observed_at` / `decision_at`. This is not a market and not a live result. After the run, `account` and `positions` are the latest snapshot (last step). `account_history` keeps one row per step; those `ending_equity` values match `equity_curve`. `position_history` keeps the held book per step so a mid-path open and later reduce/close stay visible. `<ledger>.run.jsonl` still appends each step JSON.
 

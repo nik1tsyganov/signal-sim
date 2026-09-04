@@ -1,0 +1,11 @@
+{
+  "note": "Declared operate constants. Not fitted. Not searched. Do not retune to move fixture-mark PnL.",
+  "half_life_hours": 24.0,
+  "min_relative_state": 0.5,
+  "hawkes_baseline": 0.1,
+  "hawkes_excitation": 0.8,
+  "hawkes_decay": 1.0,
+  "placebo_seed": 20260902,
+  "cost_bps": 0,
+  "decision_delay_hours": 1.0
+}

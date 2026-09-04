@@ -19,13 +19,8 @@ from .indicators import (
     intel_features,
     trendradar_features,
 )
+from .params import HALF_LIFE_HOURS, MIN_RELATIVE_STATE
 from .sizer import MAX_GROSS_FRAC
-
-
-# Declared, not fitted. Do not treat as a calibrated half-life.
-HALF_LIFE_HOURS = 24.0
-# Drop names whose state is below this fraction of the peak. Not a fit.
-MIN_RELATIVE_STATE = 0.5
 NOTE = (
     "Stub. Fixture cluster count only. Declared half-life, not a fitted drift. "
     "Not alpha. Target book for the paper ledger."
@@ -106,6 +101,7 @@ def drift_targets(
             "state": float(row["state"]),
             "insider_confirm": 0,
             "congress_confirm": 0,
+            "gov_confirm": 0,
             "insider_lag_hours": None,
             "congress_lag_hours": None,
             "intel_brief": 0,
@@ -117,6 +113,7 @@ def drift_targets(
         if row_confirms:
             target["insider_confirm"] = row_confirms["insider_confirm"]
             target["congress_confirm"] = row_confirms["congress_confirm"]
+            target["gov_confirm"] = row_confirms.get("gov_confirm", 0)
         row_lags = lags.get(str(row["ticker"]))
         if row_lags:
             target["insider_lag_hours"] = row_lags.get("insider_lag_hours")
@@ -174,6 +171,7 @@ def fixture_drift_book(
     intel = intel_features(feature_events, book["decision_at"])
     hotspot = trendradar_features(events, book["decision_at"])
     lags = filed_lag_features(events, book["decision_at"])
+    confirms = filed_confirm_features(events, book["decision_at"])
     for row in targets:
         feat = intel.get(str(row["ticker"]), {})
         row["intel_brief"] = int(feat.get("intel_brief", 0))
@@ -193,6 +191,7 @@ def fixture_drift_book(
         "mark_path": book.get("path"),
         "intel": intel,
         "trendradar": hotspot,
+        "confirms": confirms,
         "filing_lags": lags,
         "targets": targets,
     }

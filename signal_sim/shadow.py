@@ -12,7 +12,8 @@ import os
 from pathlib import Path
 from typing import Any
 
-from .walkforward import PLACEBO_SEED, run_fixture_walkforward
+from .params import frozen_operate_params
+from .walkforward import run_fixture_walkforward
 
 
 NOTE = (
@@ -24,18 +25,7 @@ REPORT_NAME = "shadow-paper-walkforward.json"
 
 
 def frozen_params() -> dict[str, Any]:
-    from .drift import HALF_LIFE_HOURS, MIN_RELATIVE_STATE
-    from .hawkes import BASELINE, DECAY, EXCITATION
-
-    return {
-        "half_life_hours": HALF_LIFE_HOURS,
-        "min_relative_state": MIN_RELATIVE_STATE,
-        "placebo_seed": PLACEBO_SEED,
-        "hawkes_baseline": BASELINE,
-        "hawkes_excitation": EXCITATION,
-        "hawkes_decay": DECAY,
-        "note": "Declared constants. Not fitted. Not searched.",
-    }
+    return frozen_operate_params()
 
 
 def artifacts_dir() -> Path | None:

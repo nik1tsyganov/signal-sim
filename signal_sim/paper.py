@@ -102,6 +102,15 @@ def _json_scalar(value):
     return None
 
 
+def _event_id_hash(event_ids):
+    payload = json.dumps(list(event_ids), separators=(",", ":"), ensure_ascii=True)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _event_id_hashes(event_ids):
+    return [hashlib.sha256(str(item).encode("utf-8")).hexdigest() for item in event_ids]
+
+
 def _audit_snapshot(proposal):
     """R8 fields, tolerant of malformed proposals - refusals get logged too."""
     if not isinstance(proposal, dict):
@@ -113,13 +122,70 @@ def _audit_snapshot(proposal):
         event_ids = [e if isinstance(e, str) else repr(e) for e in event_ids]
     else:
         event_ids = []
-    return {
+    decision_at = proposal.get("decision_at")
+    if isinstance(decision_at, datetime):
+        try:
+            decision_at = _stamp(decision_at, "decision_at")
+        except ValueError:
+            decision_at = None
+    elif not isinstance(decision_at, str) or not decision_at:
+        decision_at = None
+    record = {
         "ticker": _json_scalar(proposal.get("ticker")),
         "side": _json_scalar(proposal.get("side")),
         "size_frac": _json_scalar(proposal.get("size_frac")),
         "event_ids": event_ids,
+        "event_id_hashes": _event_id_hashes(event_ids) if event_ids else [],
+        "event_id_hash": _event_id_hash(event_ids) if event_ids else None,
+        "decision_at": decision_at,
         "idempotency_key": _json_scalar(proposal.get("idempotency_key")),
+        "fill": None,
     }
+    return record
+
+
+def _missing_provenance(record, *, filled):
+    """Return the first missing R8 field, or None when the record is complete."""
+    if not isinstance(record, dict):
+        return "provenance record missing"
+    event_ids = record.get("event_ids")
+    if not isinstance(event_ids, list) or not event_ids:
+        return "event_ids"
+    if not record.get("event_id_hash"):
+        return "event_id_hash"
+    hashes = record.get("event_id_hashes")
+    if not isinstance(hashes, list) or len(hashes) != len(event_ids):
+        return "event_id_hashes"
+    if not record.get("decision_at"):
+        return "decision_at"
+    if not record.get("verdict"):
+        return "verdict"
+    if record.get("outcome") not in ("filled", "refused"):
+        return "outcome"
+    if filled:
+        fill = record.get("fill")
+        if not isinstance(fill, dict):
+            return "fill"
+        for key in ("fill_px", "filled_at", "order_id"):
+            if fill.get(key) in (None, ""):
+                return f"fill.{key}"
+    return None
+
+
+def _last_audit_line(audit_path):
+    if not audit_path:
+        return None
+    try:
+        with open(audit_path, "r", encoding="utf-8") as handle:
+            lines = [line for line in handle.read().splitlines() if line]
+    except OSError:
+        return None
+    if not lines:
+        return None
+    try:
+        return json.loads(lines[-1])
+    except json.JSONDecodeError:
+        return None
 
 
 def _append_audit(audit_path, record):
@@ -153,6 +219,13 @@ def _validation_failure(proposal, mark_px):
         or not all(isinstance(e, str) and e for e in event_ids)
     ):
         return "event_ids must be a non-empty list of provenance id strings"
+    decision_at = proposal.get("decision_at")
+    if decision_at is None or decision_at == "":
+        return "decision_at must be a timezone-aware timestamp"
+    try:
+        _stamp(decision_at, "decision_at")
+    except ValueError:
+        return "decision_at must be a timezone-aware timestamp"
     key = proposal.get("idempotency_key")
     if not isinstance(key, str) or not key:
         return "idempotency_key must be a non-empty string"
@@ -196,7 +269,6 @@ def submit_paper_order(
     if audit_path is None:
         audit_path = str(ledger_path) + ".audit.jsonl"
     record = _audit_snapshot(proposal)
-    record["decision_at"] = processed_at
 
     def refuse(reason):
         record["verdict"] = f"refused: {reason}"
@@ -262,9 +334,24 @@ def submit_paper_order(
         record["verdict"] = "approved"
         record["outcome"] = "filled"
         record["order_id"] = order_id
+        record["decision_at"] = _stamp(proposal["decision_at"], "decision_at")
+        record["event_id_hash"] = _event_id_hash(proposal["event_ids"])
+        record["event_id_hashes"] = _event_id_hashes(proposal["event_ids"])
+        record["fill"] = {
+            "fill_px": float(mark_px),
+            "filled_at": ledger_stamp,
+            "cost": float(cost),
+            "order_id": order_id,
+        }
+        missing = _missing_provenance(record, filled=True)
+        if missing is not None:
+            refuse(f"R8: provenance missing {missing}")
         # R8: the audit line lands before the fill commits - if the append
         # fails, the transaction rolls back and no unaudited fill can exist.
         _append_audit(audit_path, record)
+        written = _last_audit_line(audit_path)
+        if _missing_provenance(written, filled=True) is not None:
+            raise OrderRefused("R8: provenance record incomplete after write")
         con.commit()
     finally:
         con.close()
@@ -277,7 +364,7 @@ def submit_paper_order(
         "fill_px": float(mark_px),
         "cost": float(cost),
         "idempotency_key": proposal["idempotency_key"],
-        "decision_at": processed_at,
+        "decision_at": record["decision_at"],
         "filled_at": ledger_stamp,
         "ledger_path": str(ledger_path),
         "audit_path": str(audit_path),

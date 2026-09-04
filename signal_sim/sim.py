@@ -22,6 +22,7 @@ from .events import Event
 from .hawkes import log_likelihood
 from .indicators import SECTORS, UNIVERSE, rank_candidates
 from .paper import OrderRefused, submit_paper_order
+from .params import COST_BPS, DECISION_DELAY_HOURS
 from .sizer import MAX_GROSS_FRAC, size_targets
 from .store import EventStore
 
@@ -122,8 +123,10 @@ def _parse_mark_book(raw: dict[str, Any], marks_path: Path) -> dict[str, Any]:
     max_name_frac = _positive(max_name_frac, "max_name_frac")
     if max_name_frac > 1:
         raise ValueError("max_name_frac must be at most 1")
-    cost_bps = _non_negative(raw.get("cost_bps", 0), "cost_bps")
-    decision_delay_hours = _positive(raw.get("decision_delay_hours", 1.0), "decision_delay_hours")
+    cost_bps = _non_negative(raw.get("cost_bps", COST_BPS), "cost_bps")
+    decision_delay_hours = _positive(
+        raw.get("decision_delay_hours", DECISION_DELAY_HOURS), "decision_delay_hours"
+    )
     fill_at = decision_at + timedelta(hours=decision_delay_hours)
     if fill_at >= exit_at:
         raise ValueError("fill_at must be before exit_at")
@@ -296,15 +299,22 @@ def proposal_from_candidate(
     idempotency_key: str,
     side: str = "buy",
     event_ids: list[str] | None = None,
+    decision_at: datetime | str | None = None,
 ) -> dict[str, Any]:
     ids = event_ids if event_ids is not None else [event.id for event in events if event.ticker == ticker]
-    return {
+    row: dict[str, Any] = {
         "ticker": ticker,
         "side": side,
         "size_frac": size_frac,
         "event_ids": ids,
         "idempotency_key": idempotency_key,
     }
+    if decision_at is not None:
+        if hasattr(decision_at, "isoformat"):
+            row["decision_at"] = decision_at.isoformat().replace("+00:00", "Z")
+        else:
+            row["decision_at"] = str(decision_at)
+    return row
 
 
 def _inventory(ledger_path: str, starting_cash: float) -> tuple[dict[str, dict[str, Any]], float, float | None]:
@@ -447,6 +457,7 @@ def _place(
     action: str,
     cost: float,
     filled_at,
+    decision_at: datetime | str | None = None,
 ) -> dict[str, Any]:
     return submit_paper_order(
         proposal_from_candidate(
@@ -456,6 +467,7 @@ def _place(
             f"replay:{decision_key}:{ticker}:{side}:{action}:{size_frac}",
             side=side,
             event_ids=event_ids,
+            decision_at=decision_at if decision_at is not None else decision_key,
         ),
         ledger_path=ledger_path,
         mark_px=mark_px,
@@ -499,10 +511,12 @@ def run_fixture_replay(
     starting_cash = float(book["starting_cash"])
     max_drawdown = float(book.get("max_drawdown", 0.2))
     max_gross_frac = float(book.get("max_gross_frac", MAX_GROSS_FRAC))
-    cost_bps = float(book.get("cost_bps", 0))
+    cost_bps = float(book.get("cost_bps", COST_BPS))
     fill_at = book.get("fill_at")
     if fill_at is None:
-        fill_at = book["decision_at"] + timedelta(hours=float(book.get("decision_delay_hours", 1.0)))
+        fill_at = book["decision_at"] + timedelta(
+            hours=float(book.get("decision_delay_hours", DECISION_DELAY_HOURS))
+        )
     decision_key = book["decision_at"].isoformat().replace("+00:00", "Z")
     fill_key = fill_at.isoformat().replace("+00:00", "Z") if hasattr(fill_at, "isoformat") else str(fill_at)
     horizon_hours = (book["exit_at"] - book["decision_at"]).total_seconds() / 3600.0
@@ -597,6 +611,7 @@ def run_fixture_replay(
                 decision_key=decision_key,
                 action=action,
                 filled_at=fill_at,
+                decision_at=decision_key,
                 cost=starting_cash * frac * cost_bps / 10000.0,
             )
         except OrderRefused as error:
@@ -663,7 +678,7 @@ def run_fixture_replay(
         "cash": cash,
         "size_frac": size_frac,
         "cost_bps": cost_bps,
-        "decision_delay_hours": float(book.get("decision_delay_hours", 1.0)),
+        "decision_delay_hours": float(book.get("decision_delay_hours", DECISION_DELAY_HOURS)),
         "max_drawdown": max_drawdown,
         "drawdown_halt": halted,
         "gross_frac": gross_frac,

@@ -56,6 +56,8 @@ class ConfirmFeatureTests(unittest.TestCase):
         nvda = next(row for row in book["targets"] if row["ticker"] == "NVDA")
         self.assertEqual(nvda["insider_confirm"], 1)
         self.assertEqual(nvda["congress_confirm"], 1)
+        self.assertEqual(nvda["gov_confirm"], 1)
+        self.assertEqual(book["confirms"]["NVDA"]["gov_confirm"], 1)
         self.assertEqual(nvda["insider_lag_hours"], 2.75)
         self.assertEqual(nvda["congress_lag_hours"], 16.75)
         self.assertEqual(book["filing_lags"]["NVDA"]["insider_lag_hours"], 2.75)
@@ -63,9 +65,27 @@ class ConfirmFeatureTests(unittest.TestCase):
         xle = next(row for row in book["targets"] if row["ticker"] == "XLE")
         self.assertEqual(xle["insider_confirm"], 0)
         self.assertEqual(xle["congress_confirm"], 0)
+        self.assertEqual(xle["gov_confirm"], 0)
         self.assertIsNone(xle["insider_lag_hours"])
         self.assertIsNone(xle["congress_lag_hours"])
         self.assertNotIn("XLE", book["filing_lags"])
+
+    def test_gov_confirm_is_a_flag_and_does_not_change_rank_cut(self):
+        from signal_sim.diagnose import fixture_diagnostics
+        from signal_sim.fixture_load import load_fixture_events
+        from signal_sim.sim import load_mark_book
+
+        events = load_fixture_events(FIXTURES)
+        decision = load_mark_book()["decision_at"]
+        ranked = rank_candidates(events, window_end=decision)
+        nvda = next(row for row in ranked if row["ticker"] == "NVDA")
+        self.assertEqual(nvda["gov_confirm"], 1)
+        self.assertEqual(nvda["score"], 3)
+        diag = fixture_diagnostics(events)
+        self.assertEqual(diag["confirms"]["NVDA"]["gov_confirm"], 1)
+        self.assertGreaterEqual(diag["stats"]["n_gov_confirm"], 1)
+        after = rank_candidates(events, window_end=decision)
+        self.assertEqual(ranked, after)
 
     def test_confirms_do_not_change_rank(self):
         from signal_sim.fixture_load import load_fixture_events
@@ -99,6 +119,7 @@ class ConfirmFeatureTests(unittest.TestCase):
         stripped = dict(nvda)
         stripped.pop("insider_confirm")
         stripped.pop("congress_confirm")
+        stripped.pop("gov_confirm", None)
         stripped.pop("insider_lag_hours", None)
         stripped.pop("congress_lag_hours", None)
         with_keys, _ = size_targets([nvda], size_frac=0.1, horizon_hours=7.75)

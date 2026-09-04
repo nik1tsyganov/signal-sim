@@ -182,6 +182,11 @@ class ReplayRoundTripTests(unittest.TestCase):
             if line
         ]
         self.assertEqual([line["outcome"] for line in audit_lines], ["filled", "filled"])
+        self.assertTrue(all(line.get("event_id_hash") for line in audit_lines))
+        self.assertTrue(all(line.get("event_ids") for line in audit_lines))
+        self.assertTrue(all(line.get("decision_at") for line in audit_lines))
+        self.assertTrue(all((line.get("fill") or {}).get("fill_px") for line in audit_lines))
+        self.assertTrue(all(line.get("verdict") == "approved" for line in audit_lines))
 
     def test_missing_mark_is_refused_not_invented(self):
         book = load_mark_book(TWO_NAME_MARKS)
@@ -490,6 +495,7 @@ class InventoryCostTests(unittest.TestCase):
                     "side": "buy",
                     "size_frac": frac,
                     "event_ids": [f"e-{key}"],
+                    "decision_at": "2026-09-02T10:15:00Z",
                     "idempotency_key": key,
                 },
                 ledger_path=ledger,
@@ -519,6 +525,7 @@ class InventoryCostTests(unittest.TestCase):
                     "side": "buy",
                     "size_frac": frac,
                     "event_ids": [f"e-{key}"],
+                    "decision_at": "2026-09-02T10:15:00Z",
                     "idempotency_key": key,
                 },
                 ledger_path=ledger,

@@ -42,6 +42,7 @@ def good_proposal(**overrides):
         "confidence": 0.6,
         "rationale": "news breakout with insider confirm (fixture-derived)",
         "event_ids": ["ptr-test-1", "form4-test-1"],
+        "decision_at": "2026-09-02T10:15:00Z",
         "idempotency_key": "prop-0001",
     }
     values.update(overrides)
@@ -147,8 +148,33 @@ class SubmitPaperOrderTests(PaperOrderPathBase):
         self.assertEqual(line["size_frac"], 0.25)
         self.assertEqual(line["verdict"], "approved")
         self.assertEqual(line["outcome"], "filled")
+        self.assertEqual(line["decision_at"], "2026-09-02T10:15:00Z")
+        self.assertEqual(line["event_ids"], ["ptr-test-1", "form4-test-1"])
+        self.assertEqual(len(line["event_id_hash"]), 64)
+        self.assertEqual(len(line["event_id_hashes"]), 2)
+        self.assertEqual(line["fill"]["fill_px"], 178.5)
+        self.assertTrue(line["fill"]["filled_at"])
+        self.assertTrue(line["fill"]["order_id"])
         decision_at = datetime.fromisoformat(line["decision_at"])
         self.assertIsNotNone(decision_at.tzinfo)
+
+    def test_missing_decision_at_is_refused(self):
+        proposal = good_proposal()
+        del proposal["decision_at"]
+        self._assert_refused(proposal)
+        self.assertEqual(self._audit_lines()[-1]["outcome"], "refused")
+
+    def test_incomplete_audit_write_fails_closed(self):
+        def write_incomplete(path, _record):
+            with open(path, "a", encoding="utf-8") as handle:
+                handle.write('{"outcome":"filled"}\n')
+
+        with mock.patch("signal_sim.paper._append_audit", side_effect=write_incomplete):
+            with self.assertRaises(OrderRefused) as error:
+                self._submit()
+        self.assertIn("provenance", str(error.exception).lower())
+        self.assertEqual(self._rows("orders"), [])
+        self.assertEqual(self._rows("fills"), [])
 
     def test_default_audit_path_is_derived_from_ledger_path(self):
         submit_paper_order(
