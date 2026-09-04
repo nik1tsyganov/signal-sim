@@ -196,11 +196,23 @@ class AlpacaPaperClient:
                 payload = json.loads(response.read().decode("utf-8"))
         except urllib.error.HTTPError as error:
             code = error.code
+            detail = ""
             try:
-                error.read()
-            except OSError:
-                pass
-            raise RuntimeError(f"{label} HTTP {code} for {path}") from None
+                raw_error = error.read().decode("utf-8")
+                parsed = json.loads(raw_error)
+            except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+                parsed = None
+            if isinstance(parsed, dict):
+                message = parsed.get("message")
+                if (
+                    isinstance(message, str)
+                    and message
+                    and len(message) < 200
+                    and "secret" not in message.lower()
+                    and "key" not in message.lower()
+                ):
+                    detail = f": {message}"
+            raise RuntimeError(f"{label} HTTP {code} for {path}{detail}") from None
         except urllib.error.URLError:
             raise RuntimeError(f"{label} request failed for {path}") from None
         except json.JSONDecodeError:

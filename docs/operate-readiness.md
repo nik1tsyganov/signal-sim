@@ -104,7 +104,7 @@ A 2026-09-04 local book smoke (print-only, then `--apply-local` onto `/tmp/signa
 
 A 2026-09-04 one-share paper POST (`paper-submit --symbol SPY --qty 1` once, flag exactly `1`, host `paper-api.alpaca.markets`) is recorded in [paper submit smoke](paper-submit-smoke.md). Cite: order `d7629fcb-ba1a-4c8d-a732-63b0f61cf12a`, status `pending_new` then `new`, `filled_qty=0`, clock closed. The full rebalance book was not submitted. Not a fill and not alpha.
 
-A 2026-09-04 paper strategy submit (`rebalance --fixtures --live --submit-paper` with a `--limit` covering the print-only book, flag exactly `1`, host `paper-api.alpaca.markets`) is recorded in [paper strategy submit](paper-strategy-submit.md). Morning-brief paper tracking: `python3 -m signal_sim paper-performance --write`. Not live money and not alpha.
+A 2026-09-04 paper strategy submit (`rebalance --fixtures --live --submit-paper --limit 20`, flag exactly `1`, host `paper-api.alpaca.markets`) is recorded in [paper strategy submit](paper-strategy-submit.md). Cite, **not alpha**: print-only live `n_tickets=12`; `n_paper_submitted=10` queued (`pending_new`/`new`/`accepted`, `filled_qty=0`); XLK/MSFT `HTTP 403: insufficient buying power`; smoke SPY x1 still `new`. Morning-brief paper tracking: `python3 -m signal_sim paper-performance --write` → [docs/performance/2026-09-04.json](performance/2026-09-04.json). Not live money and not alpha.
 
 ## Cursor Cloud Runtime Secrets
 

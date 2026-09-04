@@ -6,7 +6,8 @@ What landed in the paper operate loop. This is not a live trading log. Every PnL
 
 - **Strategy submit:** after a print-only capture, `rebalance --fixtures --live --submit-paper --limit <n>` POSTs the sized drift book on the paper host. `--limit` must be high enough to cover the print-only ticket count (no `--all` flag). Do not combine with `--apply-local`. Position-aware sizing GETs paper positions; the earlier SPY x1 smoke is only netted if it has already become a position.
 - **Paper performance:** `python3 -m signal_sim paper-performance --write` (alias `paper-snapshot`) is the morning-brief cite. It GETs paper equity/cash/positions/open orders/fills and writes `docs/performance/YYYY-MM-DD.json`. Read-only. Paper-labeled. Not alpha. Not live money.
-- **Recorded submit:** [paper strategy submit](docs/paper-strategy-submit.md). Kill remote paper POSTs by setting `SIGNAL_SIM_ALPACA_PAPER_SUBMIT=0`.
+- **HTTP errors:** paper POST 403/4xx include the sanitized Alpaca `message` (no secrets).
+- **Recorded submit:** [paper strategy submit](docs/paper-strategy-submit.md). Cite: 10 paper day orders queued (`pending_new`/`new`/`accepted`, `filled_qty=0`); XLK and MSFT `HTTP 403: insufficient buying power`; smoke SPY x1 still open. Snapshot: [2026-09-04.json](docs/performance/2026-09-04.json). Kill remote paper POSTs by setting `SIGNAL_SIM_ALPACA_PAPER_SUBMIT=0`.
 
 ## Unreleased — paper submit smoke
 
