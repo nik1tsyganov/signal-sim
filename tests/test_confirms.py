@@ -47,15 +47,25 @@ class ConfirmFeatureTests(unittest.TestCase):
         )
         features = filed_confirm_features([early_trade], when)
         self.assertNotIn("NVDA", features)
+        from signal_sim.indicators import filed_lag_features
+
+        self.assertNotIn("NVDA", filed_lag_features([early_trade], when))
 
     def test_fixture_nvda_has_insider_and_congress_confirms(self):
         book = fixture_drift_book(FIXTURES)
         nvda = next(row for row in book["targets"] if row["ticker"] == "NVDA")
         self.assertEqual(nvda["insider_confirm"], 1)
         self.assertEqual(nvda["congress_confirm"], 1)
+        self.assertEqual(nvda["insider_lag_hours"], 2.75)
+        self.assertEqual(nvda["congress_lag_hours"], 16.75)
+        self.assertEqual(book["filing_lags"]["NVDA"]["insider_lag_hours"], 2.75)
+        self.assertEqual(book["filing_lags"]["NVDA"]["congress_lag_hours"], 16.75)
         xle = next(row for row in book["targets"] if row["ticker"] == "XLE")
         self.assertEqual(xle["insider_confirm"], 0)
         self.assertEqual(xle["congress_confirm"], 0)
+        self.assertIsNone(xle["insider_lag_hours"])
+        self.assertIsNone(xle["congress_lag_hours"])
+        self.assertNotIn("XLE", book["filing_lags"])
 
     def test_confirms_do_not_change_rank(self):
         from signal_sim.fixture_load import load_fixture_events
@@ -89,12 +99,17 @@ class ConfirmFeatureTests(unittest.TestCase):
         stripped = dict(nvda)
         stripped.pop("insider_confirm")
         stripped.pop("congress_confirm")
+        stripped.pop("insider_lag_hours", None)
+        stripped.pop("congress_lag_hours", None)
         with_keys, _ = size_targets([nvda], size_frac=0.1, horizon_hours=7.75)
         without_keys, _ = size_targets([stripped], size_frac=0.1, horizon_hours=7.75)
         self.assertEqual(with_keys[0]["target_frac"], without_keys[0]["target_frac"])
         self.assertEqual(with_keys[0]["insider_confirm"], 1)
         self.assertEqual(with_keys[0]["congress_confirm"], 1)
+        self.assertEqual(with_keys[0]["insider_lag_hours"], 2.75)
+        self.assertEqual(with_keys[0]["congress_lag_hours"], 16.75)
         self.assertNotIn("insider_confirm", without_keys[0])
+        self.assertNotIn("insider_lag_hours", without_keys[0])
 
 
 if __name__ == "__main__":

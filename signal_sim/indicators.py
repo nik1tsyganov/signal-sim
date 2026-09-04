@@ -140,6 +140,50 @@ def filed_confirm_features(
     return features
 
 
+def _filed_lag_hours(
+    events: list[Event],
+    ticker: str,
+    kinds: set[str],
+    when: datetime,
+) -> float | None:
+    admitted = [
+        event
+        for event in events
+        if event.kind in kinds
+        and event.ticker == ticker
+        and event.filed_at is not None
+        and event.observed_at >= event.filed_at
+        and event.observed_at <= when
+    ]
+    if not admitted:
+        return None
+    latest = max(admitted, key=lambda event: event.observed_at)
+    return (latest.observed_at - latest.filed_at).total_seconds() / 3600.0
+
+
+def filed_lag_features(
+    events: list[Event],
+    when: datetime,
+    universe: tuple[str, ...] | None = None,
+) -> dict[str, dict[str, float]]:
+    """Hours from filed_at to observed_at on the latest admitted filing.
+
+    Feature-only. Never uses occurred_at / trade date. Does not change rank or size.
+    """
+    features: dict[str, dict[str, float]] = {}
+    for ticker in UNIVERSE if universe is None else universe:
+        insider = _filed_lag_hours(events, ticker, {"insider"}, when)
+        congress = _filed_lag_hours(events, ticker, {"congress_trade"}, when)
+        row: dict[str, float] = {}
+        if insider is not None:
+            row["insider_lag_hours"] = insider
+        if congress is not None:
+            row["congress_lag_hours"] = congress
+        if row:
+            features[ticker] = row
+    return features
+
+
 def rank_candidates(
     events: list[Event],
     window_start: datetime | None = None,

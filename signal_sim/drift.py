@@ -13,7 +13,12 @@ from typing import Any
 from .clusters import online_clusters
 from .events import Event
 from .fixture_load import load_fixture_events
-from .indicators import filed_confirm_features, intel_features, trendradar_features
+from .indicators import (
+    filed_confirm_features,
+    filed_lag_features,
+    intel_features,
+    trendradar_features,
+)
 from .sizer import MAX_GROSS_FRAC
 
 
@@ -80,6 +85,7 @@ def drift_targets(
     states = cluster_state(events, when)
     peak = max((abs(float(row["state"])) for row in states.values()), default=0.0)
     confirms = filed_confirm_features(events, when)
+    lags = filed_lag_features(events, when)
     intel = intel_features(events, when)
     hotspot = trendradar_features(events, when)
     ranked: list[dict[str, Any]] = []
@@ -100,6 +106,8 @@ def drift_targets(
             "state": float(row["state"]),
             "insider_confirm": 0,
             "congress_confirm": 0,
+            "insider_lag_hours": None,
+            "congress_lag_hours": None,
             "intel_brief": 0,
             "wm_intel": 0,
             "chokepoint": 0,
@@ -109,6 +117,10 @@ def drift_targets(
         if row_confirms:
             target["insider_confirm"] = row_confirms["insider_confirm"]
             target["congress_confirm"] = row_confirms["congress_confirm"]
+        row_lags = lags.get(str(row["ticker"]))
+        if row_lags:
+            target["insider_lag_hours"] = row_lags.get("insider_lag_hours")
+            target["congress_lag_hours"] = row_lags.get("congress_lag_hours")
         row_intel = intel.get(str(row["ticker"]))
         if row_intel:
             target["intel_brief"] = row_intel["intel_brief"]
@@ -161,6 +173,7 @@ def fixture_drift_book(
     )
     intel = intel_features(feature_events, book["decision_at"])
     hotspot = trendradar_features(events, book["decision_at"])
+    lags = filed_lag_features(events, book["decision_at"])
     for row in targets:
         feat = intel.get(str(row["ticker"]), {})
         row["intel_brief"] = int(feat.get("intel_brief", 0))
@@ -180,6 +193,7 @@ def fixture_drift_book(
         "mark_path": book.get("path"),
         "intel": intel,
         "trendradar": hotspot,
+        "filing_lags": lags,
         "targets": targets,
     }
     if intensity:

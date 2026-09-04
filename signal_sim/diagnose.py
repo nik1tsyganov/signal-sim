@@ -30,12 +30,13 @@ def fixture_diagnostics(
         raise ValueError("diagnose requires at least one fixture event at or before decision_at")
     intensities = intensity_map(window, decision_at)
     clusters = online_clusters(window, decision_at)
-    from .indicators import intel_features, trendradar_features
+    from .indicators import filed_lag_features, intel_features, trendradar_features
     from .sources.worldmonitor import load_recorded
 
     recorded = [event for event in load_recorded() if event.observed_at <= decision_at]
     intel = intel_features(window + recorded, decision_at)
     hotspot = trendradar_features(window, decision_at)
+    lags = filed_lag_features(window, decision_at)
     return {
         "mode": "local-paper-diagnose",
         "note": (
@@ -49,6 +50,7 @@ def fixture_diagnostics(
         "intensity": intensities,
         "intel": intel,
         "trendradar": hotspot,
+        "filing_lags": lags,
         "online_clusters": clusters,
         "hawkes_log_likelihood": log_likelihood(window, end=decision_at),
         "stats": {
@@ -58,5 +60,6 @@ def fixture_diagnostics(
             "max_cluster_size": max((row["size"] for row in clusters), default=0),
             "n_intel": sum(1 for row in intel.values() if row.get("intel_brief")),
             "n_trendradar": sum(1 for row in hotspot.values() if row.get("trendradar")),
+            "n_filing_lags": len(lags),
         },
     }
