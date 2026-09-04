@@ -11,6 +11,14 @@ from .diagnose import fixture_diagnostics
 from .fixture_load import load_fixture_events
 from .hawkes import fixture_intensity
 from .indicators import rank_candidates
+from .live_feeds import LiveFeedConfigError, pull_live_feeds
+from .paper import (
+    LiveEndpointError,
+    missing_paper_keys,
+    paper_broker_client,
+    paper_host,
+    paper_submit_enabled,
+)
 from .store import EventStore
 
 
@@ -150,6 +158,24 @@ def _parser() -> argparse.ArgumentParser:
         "--fixtures",
         action="store_true",
         help="load local fixture events and marks (required; the only supported input)",
+    )
+    feeds = commands.add_parser(
+        "feeds",
+        help="live intel counts and ticker histogram (no raw payload dump)",
+    )
+    feeds.add_argument(
+        "--live",
+        action="store_true",
+        help="pull Quiver and World Monitor live (requires keys)",
+    )
+    paper_account = commands.add_parser(
+        "paper-account",
+        help="read-only Alpaca paper account/positions/clock smoke",
+    )
+    paper_account.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="also validate a sample paper-order payload (does not POST)",
     )
     return parser
 
@@ -318,6 +344,49 @@ def main(argv: list[str] | None = None) -> int:
         ledger_dir = tempfile.mkdtemp(prefix="paper-smoke-")
         report = run_smoke(fixtures=fixtures, ledger_dir=ledger_dir, write_artifact=False)
         print(f"smoke params_sha256={report.get('params_sha256')} ok={report.get('ok')}", file=sys.stderr)
+        print(json.dumps(report, separators=(",", ":")))
+        return 0 if report.get("ok") is True else 1
+    if args.command == "feeds":
+        if not args.live:
+            print("feeds requires --live", file=sys.stderr)
+            return 2
+        try:
+            report = pull_live_feeds()
+        except LiveFeedConfigError as error:
+            print(str(error), file=sys.stderr)
+            return 2
+        print(json.dumps(report, separators=(",", ":")))
+        return 0 if report.get("ok") is True else 1
+    if args.command == "paper-account":
+        missing = missing_paper_keys()
+        if missing:
+            print(
+                "paper-account missing env: " + ", ".join(missing),
+                file=sys.stderr,
+            )
+            return 2
+        if paper_submit_enabled():
+            print(
+                "SIGNAL_SIM_ALPACA_PAPER_SUBMIT is set; this build still "
+                "refuses remote paper POSTs. Fills stay on the local ledger.",
+                file=sys.stderr,
+            )
+        try:
+            client = paper_broker_client(paper_host())
+            proposal = None
+            if args.dry_run:
+                proposal = {
+                    "ticker": "NVDA",
+                    "side": "buy",
+                    "idempotency_key": "paper-account-dry-run",
+                }
+            report = client.read_smoke(proposal)
+        except LiveEndpointError as error:
+            print(str(error), file=sys.stderr)
+            return 2
+        except NotImplementedError as error:
+            print(str(error), file=sys.stderr)
+            return 2
         print(json.dumps(report, separators=(",", ":")))
         return 0 if report.get("ok") is True else 1
     return 2

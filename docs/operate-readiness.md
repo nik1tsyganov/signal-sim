@@ -2,18 +2,18 @@
 
 What the paper loop can do today, how to run it, what is still blocked on the owner, and what must never be claimed.
 
-This is not a live desk. Every `total_pnl` / `ending_equity` is **fixture-mark PnL**. That is not alpha, not a broker fill, and not a search target.
+This is not a live desk. Every `total_pnl` / `ending_equity` is **fixture-mark PnL**. That is not alpha, not a broker fill, and not a search target. There is still no live-money trading.
 
 ## Owner wake checklist
 
-1. Review [PR 1](https://github.com/nik1tsyganov/signal-sim/pull/1). The agent will not merge it.
+1. Review this PR. The agent will not merge it.
 2. Run `python3 -m signal_sim smoke --fixtures` locally (`python -m` on Windows). Confirm `ok=True` and that every PnL is fixture-mark.
-3. Decide merge yourself. Do not ask the agent to merge.
-4. Only after you merge, consider an Alpaca paper signup and keys. Not before. No keys in this repo.
+3. On the machine that already has intel and Alpaca **paper** keys, run the optional live checks below. Do not paste keys into chat or the repo.
+4. Decide merge yourself. Do not ask the agent to merge.
 
 ## What the paper loop can do today
 
-Without an owner-created broker account or a paid intel key, the repo can:
+Without keys, the repo can:
 
 - Rank the frozen universe at the mark-book `decision_at` (`rank --fixtures`, `GET /api/rank`).
 - Diagnose Hawkes intensity, clusters, intel flags, and filed confirms at that same cut (`diagnose --fixtures`, `GET /api/diagnose`).
@@ -26,13 +26,18 @@ Without an owner-created broker account or a paid intel key, the repo can:
 - Run one frozen-params pass of rails + rank + diagnose + intensity + drift + replay + walkforward + shadow (`smoke --fixtures`, `GET /api/smoke`).
 - Serve the same loop on loopback only (`serve`). The desk smoke button is click-only; it does not auto-run on page load.
 
-Fills go through `submit_paper_order` only. A fill must be `kind=fixture_mark` and `source=fixture`. Research or vendor mark kinds refuse. Constructing a live Alpaca host or IBKR live ports raises and does not open a socket. A present or unreadable `KILL` file refuses the order. Every fill writes an R8 provenance line that cites `params_sha256`.
+With owner keys on a local machine (never committed):
+
+- **Live intel:** `python3 -m signal_sim feeds --live` pulls Quiver and World Monitor, then prints event counts and a ticker histogram only. It does not dump person names, headlines, URLs, or raw payloads. Missing `QUIVER_API_KEY` or `WORLD_MONITOR_KEY` exits 2 with the missing env names. `QUIVER_USERNAME` is unused by this path.
+- **Alpaca paper read smoke:** `python3 -m signal_sim paper-account` constructs the paper-host client when `ALPACA_PAPER_API_KEY` and `ALPACA_PAPER_API_SECRET` are set. It GETs `/v2/account`, `/v2/positions`, and `/v2/clock` on the paper host. `ALPACA_PAPER_API_BASE_URL` is optional and defaults to the paper HTTPS origin. A non-paper Alpaca host or IBKR live port still raises `LiveEndpointError`. Add `--dry-run` to validate a sample order payload in memory. This path does not POST an order.
+
+Fills go through `submit_paper_order` only. A fill must be `kind=fixture_mark` and `source=fixture`. Research or vendor mark kinds refuse. Constructing a live Alpaca host or IBKR live ports raises and does not open a socket. A present or unreadable `KILL` file refuses the order. Every fill writes an R8 provenance line that cites `params_sha256`. The local ledger fill gate is unchanged: Alpaca paper reads do not become execution marks.
 
 Declared operate constants live in `fixtures/params.json`. Mark books may not override the locked policy fields. `size_frac` stays book-level so a path step can allocate differently from the liquid book.
 
 ## How to run
 
-From the repository root. On Windows the launcher is usually `python`; on Linux it is often `python3`. All of these require `--fixtures`.
+From the repository root. On Windows the launcher is usually `python`; on Linux it is often `python3`. Fixture commands require `--fixtures`.
 
 ```bash
 python3 -m signal_sim rails --fixtures
@@ -54,6 +59,24 @@ python3 -m signal_sim serve
 Then `GET /api/params`, `GET /api/rails`, `GET /api/smoke`, `GET /api/drift`, `GET /api/walkforward`, `GET /api/shadow`, or `POST /api/replay`. `GET /api/replay` returns 405 and does not place orders.
 
 `rails --fixtures` and `GET /api/rails` are the fast local check: live host construct raises, a temp `KILL` refuses an order, a research/vendor mark refuses a fill. `smoke --fixtures` and `GET /api/smoke` run that rails step first and then the rest of the frozen-params pass. They do not place live calls and do not write the repo-root `KILL` file. The desk loads rails on page load; smoke stays click-only. CI runs both commands after unittest on ubuntu-latest with no secrets.
+
+### Optional owner-machine live checks
+
+These need keys in the process environment. They are skipped in CI and in unittest when the env names are absent. Do not put keys in the repo.
+
+```bash
+python3 -m signal_sim feeds --live
+python3 -m signal_sim paper-account
+python3 -m signal_sim paper-account --dry-run
+```
+
+Unittest integration cases are marked with `skipUnless` the relevant env names are set. To run them on the owner machine:
+
+```bash
+python3 -m unittest tests.test_live_feeds tests.test_alpaca_paper -v
+```
+
+`SIGNAL_SIM_ALPACA_PAPER_SUBMIT=1` is reserved for a later paper-order POST. This build still refuses remote submits even if that flag is set. Default is read-only account smoke. Fills stay on the local ledger.
 
 ## Locked policy vs book fields
 
@@ -77,13 +100,14 @@ Adding a key to `frozen_operate_params()` changes `params_sha256`. Do not retune
 
 ## Blocked on the owner
 
-These are not missing code paths to invent. They are owner actions:
+These are not missing code paths to invent. They are owner actions or later product work:
 
 | Blocker | Why it is blocked | What the repo does today |
 |---|---|---|
-| Alpaca paper account and keys | Alpaca requires signup and separate paper keys. We will not create that account here. | Live Alpaca host construct raises. The paper host is a stub (`NotImplementedError` / missing keys) and never opens a socket. |
-| Paid Quiver key and commercial-use terms | No verified key + terms. | Live Quiver raises `NotImplementedError: no verified key + terms` and does not open HTTP. Congress / insider prints are fixtures. |
-| Paid World Monitor key | `WORLD_MONITOR_KEY` is absent. | Live WM raises `ValueError: WORLD_MONITOR_KEY is missing` and does not open HTTP. Recorded JSON under `fixtures/recorded/worldmonitor/` attaches as feature flags only. |
+| Alpaca paper keys on CI | Keys stay on the owner machine. Never commit them. | Paper host without keys still raises `NotImplementedError` and does not open a socket. With keys, `paper-account` is a read-only GET smoke. Live Alpaca hosts and IBKR live ports raise. |
+| Remote Alpaca paper submits | Safer default is local-ledger fills. | `submit_paper_order` is still the only order path. `SIGNAL_SIM_ALPACA_PAPER_SUBMIT=1` does not enable a POST in this build. |
+| Paid Quiver commercial-use terms | Key presence is not a terms review. | `feeds --live` calls Quiver when `QUIVER_API_KEY` is set. Without the key it exits 2 / raises `NotImplementedError` and does not open HTTP. |
+| Paid World Monitor key on CI | Same as Quiver: owner-machine only. | `feeds --live` calls WM when `WORLD_MONITOR_KEY` is set. Without the key it exits 2. Recorded JSON under `fixtures/recorded/worldmonitor/` still attaches as feature flags only. |
 | Honest vendor bars | Yahoo / Stooq / yfinance are not execution marks. | Fills require `fixture_mark`. Research or vendor kinds refuse. Jump-diffusion stays documentation-only until honest intraday bars exist. |
 
 There is no TrendRadar live client and no GPL/AGPL vendoring.
@@ -94,7 +118,9 @@ There is no TrendRadar live client and no GPL/AGPL vendoring.
 - Fixture-mark PnL is not a live result, a broker fill, or evidence of execution quality.
 - Fixture-mark PnL is not a parameter-search target. Do not retune `rank_candidates`, Hawkes, drift, or `fixtures/params.json` to move it.
 - Walk-forward fold numbers are the same class of number. They are not a fitted score.
-- Intel flags (gov-contract, World Monitor recorded JSON, TrendRadar fixture, filing lags) are feature-only on the drift book and diagnose unless a test already documents a rank count. They are not a live intel feed.
+- Intel flags (gov-contract, World Monitor recorded JSON, TrendRadar fixture, filing lags) are feature-only on the drift book and diagnose unless a test already documents a rank count.
+- `feeds --live` counts are a connectivity check, not a rank input and not a live trading signal.
+- `paper-account` is a paper-host read smoke. It is not a live-money balance, not a fill, and not permission to trade live.
 - The desk is paper-only and loopback-only. It is not a production broker UI.
 
 See [the changelog](../CHANGELOG.md), [paper trading and quant research](paper-trading-and-quant.md), and [alternative data and safety](alt-data-and-safety.md).

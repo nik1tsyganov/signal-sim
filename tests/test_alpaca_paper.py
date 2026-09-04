@@ -1,0 +1,297 @@
+"""Read-only Alpaca paper client. HTTP is mocked unless paper keys exist."""
+
+import io
+import json
+import os
+import unittest
+from contextlib import redirect_stderr, redirect_stdout
+from unittest import mock
+
+from signal_sim import cli
+from signal_sim.alpaca_paper import AlpacaPaperClient
+from signal_sim.paper import (
+    LiveEndpointError,
+    OrderRefused,
+    missing_paper_keys,
+    paper_broker_client,
+    paper_host,
+    paper_submit_enabled,
+    resolve_paper_base_url,
+    submit_paper_order,
+)
+
+
+PAPER_BROKER_HOST = "paper-api." + "alpaca" + ".markets"
+LIVE_BROKER_HOST = "api." + "alpaca" + ".markets"
+
+_FAKE_KEYS = {
+    "ALPACA_PAPER_API_KEY": "paper-key-id",
+    "ALPACA_PAPER_API_SECRET": "paper-secret",
+}
+
+
+def _env(name, extra=None):
+    values = dict(_FAKE_KEYS)
+    if extra:
+        values.update(extra)
+    return values.get(name)
+
+
+def _json_response(payload):
+    response = mock.MagicMock()
+    response.read.return_value = json.dumps(payload).encode("utf-8")
+    response.__enter__.return_value = response
+    response.__exit__.return_value = False
+    return response
+
+
+class AlpacaPaperClientUnitTests(unittest.TestCase):
+    def test_missing_keys_raise_and_never_open_a_socket(self):
+        with mock.patch("signal_sim.paper.read_env", return_value=None), mock.patch(
+            "socket.create_connection"
+        ) as connect, mock.patch(
+            "signal_sim.alpaca_paper.urllib.request.urlopen"
+        ) as urlopen:
+            with self.assertRaises(NotImplementedError) as error:
+                paper_broker_client(PAPER_BROKER_HOST, 443)
+            self.assertIn("no verified key", str(error.exception))
+            connect.assert_not_called()
+            urlopen.assert_not_called()
+
+    def test_keys_construct_read_client_without_opening_a_socket(self):
+        with mock.patch("signal_sim.paper.read_env", side_effect=_env), mock.patch(
+            "signal_sim.alpaca_paper.urllib.request.urlopen"
+        ) as urlopen:
+            client = paper_broker_client(PAPER_BROKER_HOST)
+        self.assertIsInstance(client, AlpacaPaperClient)
+        self.assertEqual(client.mode, "alpaca-paper-read")
+        self.assertEqual(client._base_url, "https://" + PAPER_BROKER_HOST)
+        urlopen.assert_not_called()
+        for name in ("submit", "submit_order", "place_order", "submit_paper_order"):
+            self.assertFalse(hasattr(client, name), name)
+        self.assertNotIn(_FAKE_KEYS["ALPACA_PAPER_API_SECRET"], repr(client))
+
+    def test_live_base_url_raises_before_http(self):
+        def env(name):
+            return _env(
+                name,
+                {"ALPACA_PAPER_API_BASE_URL": "https://" + LIVE_BROKER_HOST},
+            )
+
+        with mock.patch("signal_sim.paper.read_env", side_effect=env), mock.patch(
+            "signal_sim.alpaca_paper.urllib.request.urlopen"
+        ) as urlopen:
+            with self.assertRaises(LiveEndpointError):
+                paper_broker_client(PAPER_BROKER_HOST)
+            urlopen.assert_not_called()
+
+    def test_http_base_url_is_refused(self):
+        def env(name):
+            return _env(
+                name,
+                {"ALPACA_PAPER_API_BASE_URL": "http://" + PAPER_BROKER_HOST},
+            )
+
+        with mock.patch("signal_sim.paper.read_env", side_effect=env):
+            with self.assertRaises(ValueError) as error:
+                resolve_paper_base_url()
+        self.assertIn("https", str(error.exception))
+
+    def test_embedded_credentials_are_refused(self):
+        def env(name):
+            return _env(
+                name,
+                {
+                    "ALPACA_PAPER_API_BASE_URL": (
+                        "https://user:pass@" + PAPER_BROKER_HOST
+                    )
+                },
+            )
+
+        with mock.patch("signal_sim.paper.read_env", side_effect=env):
+            with self.assertRaises(ValueError) as error:
+                resolve_paper_base_url()
+        self.assertIn("credential", str(error.exception))
+
+    def test_read_smoke_uses_get_only_and_strips_account_fields(self):
+        calls = []
+
+        def urlopen(request, timeout=None):
+            calls.append((request.full_url, request.get_method(), timeout))
+            url = request.full_url
+            self.assertEqual(request.get_header("Apca-api-key-id"), "paper-key-id")
+            self.assertEqual(request.get_header("Apca-api-secret-key"), "paper-secret")
+            if url.endswith("/v2/account"):
+                return _json_response(
+                    {
+                        "status": "ACTIVE",
+                        "currency": "USD",
+                        "cash": "100000",
+                        "equity": "100000",
+                        "buying_power": "200000",
+                        "trading_blocked": False,
+                        "account_blocked": False,
+                        "pattern_day_trader": False,
+                        "shorting_enabled": True,
+                        "account_number": "PA123HIDE",
+                        "id": "uuid-hide",
+                    }
+                )
+            if url.endswith("/v2/positions"):
+                return _json_response(
+                    [{"symbol": "NVDA", "qty": "2", "side": "long", "market_value": "1"}]
+                )
+            if url.endswith("/v2/clock"):
+                return _json_response(
+                    {
+                        "timestamp": "2026-09-04T12:00:00Z",
+                        "is_open": False,
+                        "next_open": "2026-09-08T13:30:00Z",
+                        "next_close": "2026-09-08T20:00:00Z",
+                    }
+                )
+            raise AssertionError(url)
+
+        with mock.patch("signal_sim.paper.read_env", side_effect=_env), mock.patch(
+            "signal_sim.alpaca_paper.urllib.request.urlopen", side_effect=urlopen
+        ):
+            client = paper_broker_client(paper_host())
+            report = client.read_smoke(
+                {"ticker": "NVDA", "side": "buy", "idempotency_key": "dry-1"}
+            )
+
+        self.assertTrue(report["ok"])
+        self.assertEqual(report["mode"], "alpaca-paper-read")
+        self.assertEqual(report["order_post"], "disabled")
+        self.assertEqual(report["account"]["status"], "ACTIVE")
+        self.assertNotIn("account_number", report["account"])
+        self.assertNotIn("id", report["account"])
+        self.assertEqual(report["positions"]["n"], 1)
+        self.assertEqual(report["positions"]["symbols"]["NVDA"], "2")
+        self.assertFalse(report["clock"]["is_open"])
+        self.assertTrue(report["dry_run"]["ok"])
+        self.assertFalse(report["dry_run"]["submitted"])
+        dumped = json.dumps(report)
+        self.assertNotIn("paper-secret", dumped)
+        self.assertNotIn("PA123HIDE", dumped)
+        self.assertEqual(len(calls), 3)
+        self.assertTrue(all(method == "GET" for _url, method, _timeout in calls))
+        self.assertTrue(all(timeout == 15 for _url, _method, timeout in calls))
+        self.assertTrue(all(PAPER_BROKER_HOST in url for url, _method, _timeout in calls))
+
+    def test_dry_run_refuses_unknown_ticker_and_does_not_post(self):
+        client = AlpacaPaperClient(
+            base_url="https://" + PAPER_BROKER_HOST,
+            api_key="paper-key-id",
+            api_secret="paper-secret",
+        )
+        with mock.patch("signal_sim.alpaca_paper.urllib.request.urlopen") as urlopen:
+            result = client.validate_order_payload(
+                {"ticker": "TSLA", "side": "buy", "idempotency_key": "x"}
+            )
+        self.assertFalse(result["ok"])
+        self.assertFalse(result["submitted"])
+        urlopen.assert_not_called()
+
+    def test_submit_flag_does_not_add_an_order_method(self):
+        with mock.patch(
+            "signal_sim.paper.read_env",
+            side_effect=lambda name: "1"
+            if name == "SIGNAL_SIM_ALPACA_PAPER_SUBMIT"
+            else _env(name),
+        ):
+            self.assertTrue(paper_submit_enabled())
+            client = paper_broker_client(PAPER_BROKER_HOST)
+        self.assertFalse(hasattr(client, "submit"))
+        self.assertFalse(hasattr(client, "submit_order"))
+        self.assertEqual(client.mode, "alpaca-paper-read")
+
+    def test_fixture_mark_gate_is_unchanged_when_paper_client_exists(self):
+        import os
+        import tempfile
+
+        tmp = tempfile.mkdtemp()
+        with mock.patch("signal_sim.paper.read_env", side_effect=_env):
+            client = paper_broker_client(PAPER_BROKER_HOST)
+        self.assertEqual(client.mode, "alpaca-paper-read")
+        with self.assertRaisesRegex(OrderRefused, "fixture_mark"):
+            submit_paper_order(
+                {
+                    "ticker": "NVDA",
+                    "side": "buy",
+                    "size_frac": 0.1,
+                    "event_ids": ["paper-client-mark"],
+                    "decision_at": "2026-09-02T10:15:00Z",
+                    "idempotency_key": "paper-client-mark",
+                },
+                ledger_path=os.path.join(tmp, "ledger.sqlite"),
+                mark_px=178.5,
+                audit_path=os.path.join(tmp, "audit.jsonl"),
+                kill_root=tmp,
+                mark_kind="vendor",
+            )
+
+
+class PaperAccountCliTests(unittest.TestCase):
+    def test_missing_keys_exit_2(self):
+        error = io.StringIO()
+        with mock.patch("signal_sim.paper.read_env", return_value=None), redirect_stdout(
+            io.StringIO()
+        ), redirect_stderr(error):
+            code = cli.main(["paper-account"])
+        self.assertEqual(code, 2)
+        text = error.getvalue()
+        self.assertIn("ALPACA_PAPER_API_KEY", text)
+        self.assertIn("ALPACA_PAPER_API_SECRET", text)
+        self.assertNotIn("paper-secret", text)
+
+    def test_read_smoke_prints_sanitized_json(self):
+        def urlopen(request, timeout=None):
+            if request.full_url.endswith("/v2/account"):
+                return _json_response({"status": "ACTIVE", "cash": "1", "account_number": "NO"})
+            if request.full_url.endswith("/v2/positions"):
+                return _json_response([])
+            if request.full_url.endswith("/v2/clock"):
+                return _json_response({"is_open": True, "timestamp": "2026-09-04T12:00:00Z"})
+            raise AssertionError(request.full_url)
+
+        printed = io.StringIO()
+        error = io.StringIO()
+        with mock.patch("signal_sim.paper.read_env", side_effect=_env), mock.patch(
+            "signal_sim.alpaca_paper.urllib.request.urlopen", side_effect=urlopen
+        ), redirect_stdout(printed), redirect_stderr(error):
+            code = cli.main(["paper-account", "--dry-run"])
+        self.assertEqual(code, 0)
+        payload = json.loads(printed.getvalue())
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["order_post"], "disabled")
+        self.assertFalse(payload["dry_run"]["submitted"])
+        self.assertNotIn("NO", printed.getvalue())
+        self.assertNotIn("paper-secret", printed.getvalue() + error.getvalue())
+
+
+def _paper_keys_present():
+    return bool(os.environ.get("ALPACA_PAPER_API_KEY", "").strip()) and bool(
+        os.environ.get("ALPACA_PAPER_API_SECRET", "").strip()
+    )
+
+
+@unittest.skipUnless(_paper_keys_present(), "ALPACA_PAPER_API_KEY/SECRET not set")
+class AlpacaPaperIntegrationTests(unittest.TestCase):
+    def test_read_smoke_against_paper_host(self):
+        client = paper_broker_client(paper_host())
+        report = client.read_smoke()
+        self.assertEqual(report["mode"], "alpaca-paper-read")
+        self.assertTrue(report["ok"])
+        self.assertIn("status", report["account"])
+        self.assertIn("n", report["positions"])
+        self.assertIn("is_open", report["clock"])
+        self.assertEqual(report["order_post"], "disabled")
+        dumped = json.dumps(report)
+        self.assertNotIn(os.environ["ALPACA_PAPER_API_KEY"], dumped)
+        self.assertNotIn(os.environ["ALPACA_PAPER_API_SECRET"], dumped)
+        self.assertFalse(missing_paper_keys())
+
+
+if __name__ == "__main__":
+    unittest.main()

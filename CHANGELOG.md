@@ -2,6 +2,13 @@
 
 What landed in the paper operate loop. This is not a live trading log. Every PnL number the loop prints is **fixture-mark PnL**, not alpha.
 
+## Unreleased — live intel + Alpaca paper read
+
+- **Live intel:** `python3 -m signal_sim feeds --live` pulls Quiver and World Monitor and prints counts plus a ticker histogram only. Missing `QUIVER_API_KEY` or `WORLD_MONITOR_KEY` exits 2. No raw PII dump.
+- **Alpaca paper read:** `paper_broker_client` on the paper host returns a read-only client when `ALPACA_PAPER_API_KEY` and `ALPACA_PAPER_API_SECRET` are set. `python3 -m signal_sim paper-account` GETs account, positions, and clock. Optional `ALPACA_PAPER_API_BASE_URL` must stay on the paper host. Live Alpaca hosts and IBKR live ports still raise.
+- **Fills:** still local-ledger only through `submit_paper_order`. `fixture_mark` is unchanged. `SIGNAL_SIM_ALPACA_PAPER_SUBMIT=1` does not enable a remote POST in this build.
+- **Tests:** mocked HTTP unit tests always run. Integration cases skip unless the owner-machine keys are present. No secrets in CI.
+
 ## Unreleased — PR 1
 
 Paper-only local loop on a frozen universe and checked-in fixture marks.
