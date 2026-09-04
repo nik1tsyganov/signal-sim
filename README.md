@@ -88,6 +88,7 @@ python3 -m signal_sim rank --fixtures
 python3 -m signal_sim intensity --fixtures
 python3 -m signal_sim diagnose --fixtures
 python3 -m signal_sim marks --fixtures
+python3 -m signal_sim drift --fixtures
 ```
 
 `marks` lists who can fill on the default liquid book (same as `--marks liquid`), the older two-name book, who stays `no_mark`, and who is `no_print` (no checked-in print at `decision_at`). It does not rank or place orders.
