@@ -7,9 +7,16 @@ What landed in the paper operate loop. This is not a live trading log. Every PnL
 - **Strategy growth:** `python3 -m signal_sim research --live` pulls Quiver congress/insider/gov/news plus World Monitor, expands the operating universe (fixture set ∪ top-N allowlisted intel tickers), ranks / diagnoses / intensity on that set, and writes `docs/research/YYYY-MM-DD.json`. That file is the next rebalance book, not a decorative dump. No PII.
 - **Live-price sizing:** `--live` and `--submit-paper` size qty from an observed paper IEX last trade or snapshot `latestTrade` when one exists. Fixture `entry_px` (including the $36/$40 QQQ/SPY research marks) is the fallback only. Offline fixture-only mode still prefers fixture marks. Never invents a price.
 - **Buy and sell:** rebalance diffs the target book against paper positions. Leftover names not in the book get close/sell tickets. Opens and increases stay buys. `--submit-paper` POSTs sells as well as buys.
-- **Daily ops:** [daily-ops.md](docs/daily-ops.md) — morning `research --live`, after-open print `rebalance --fixtures --live`, optional `--submit-paper`, then `paper-performance --write`. Kill switch remains `SIGNAL_SIM_ALPACA_PAPER_SUBMIT=0`. Do not spray another full-book submit while earlier paper orders are still open.
+- **Daily ops:** [daily-ops.md](docs/daily-ops.md) — morning `research --live`, after-open print `rebalance --fixtures --live`, optional `--submit-paper`, then `paper-performance --write` to `docs/performance/YYYY-MM-DD.json`. Kill switch remains `SIGNAL_SIM_ALPACA_PAPER_SUBMIT=0`. Do not spray another full-book submit while earlier paper orders are still open.
 - **Paper only.** No live-money trading.
 - **2026-09-04 print smoke:** `research --live` wrote today's book (27-name operating universe; new intel names ranked). Print-only `rebalance --fixtures --live` sized from paper IEX last trades (SPY ~$773, not fixture $40). 11 earlier paper orders were still open — no `--submit-paper` in this PR.
+
+## Unreleased — paper strategy submit + performance snapshot
+
+- **Strategy submit:** after a print-only capture, `rebalance --fixtures --live --submit-paper --limit <n>` POSTs the sized drift book on the paper host. `--limit` must be high enough to cover the print-only ticket count (no `--all` flag). Do not combine with `--apply-local`. Position-aware sizing GETs paper positions; the earlier SPY x1 smoke is only netted if it has already become a position.
+- **Paper performance:** `python3 -m signal_sim paper-performance --write` (alias `paper-snapshot`) is the morning-brief cite. It GETs paper equity/cash/positions/open orders/fills and writes `docs/performance/YYYY-MM-DD.json`. Read-only. Paper-labeled. Not alpha. Not live money.
+- **HTTP errors:** paper POST 403/4xx include the sanitized Alpaca `message` (no secrets).
+- **Recorded submit:** [paper strategy submit](docs/paper-strategy-submit.md). Cite: 10 paper day orders queued (`pending_new`/`new`/`accepted`, `filled_qty=0`); XLK and MSFT `HTTP 403: insufficient buying power`; smoke SPY x1 still open. Snapshot: [2026-09-04.json](docs/performance/2026-09-04.json). Kill remote paper POSTs by setting `SIGNAL_SIM_ALPACA_PAPER_SUBMIT=0`.
 
 ## Unreleased — paper submit smoke
 

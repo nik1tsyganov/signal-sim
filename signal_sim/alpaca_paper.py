@@ -39,7 +39,16 @@ _ACCOUNT_FIELDS = (
     "shorting_enabled",
 )
 _CLOCK_FIELDS = ("timestamp", "is_open", "next_open", "next_close")
-_POSITION_FIELDS = ("symbol", "qty", "side")
+_POSITION_FIELDS = (
+    "symbol",
+    "qty",
+    "side",
+    "avg_entry_price",
+    "current_price",
+    "market_value",
+    "cost_basis",
+    "unrealized_pl",
+)
 _ORDER_FIELDS = (
     "id",
     "client_order_id",
@@ -53,6 +62,18 @@ _ORDER_FIELDS = (
     "time_in_force",
     "submitted_at",
     "filled_at",
+)
+_FILL_FIELDS = (
+    "id",
+    "activity_type",
+    "transaction_time",
+    "type",
+    "price",
+    "qty",
+    "side",
+    "symbol",
+    "order_id",
+    "cum_qty",
 )
 _PAPER_TRADING_PREFIX = "paper-api."
 
@@ -112,6 +133,12 @@ def sanitize_order(raw: Any) -> dict[str, Any]:
     if not isinstance(raw, dict):
         return {}
     return {field: raw.get(field) for field in _ORDER_FIELDS}
+
+
+def sanitize_fill(raw: Any) -> dict[str, Any]:
+    if not isinstance(raw, dict):
+        return {}
+    return {field: raw.get(field) for field in _FILL_FIELDS}
 
 
 def _positive_size(value: Any) -> float | None:
@@ -181,11 +208,23 @@ class AlpacaPaperClient:
                 payload = json.loads(response.read().decode("utf-8"))
         except urllib.error.HTTPError as error:
             code = error.code
+            detail = ""
             try:
-                error.read()
-            except OSError:
-                pass
-            raise RuntimeError(f"{label} HTTP {code} for {path}") from None
+                raw_error = error.read().decode("utf-8")
+                parsed = json.loads(raw_error)
+            except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+                parsed = None
+            if isinstance(parsed, dict):
+                message = parsed.get("message")
+                if (
+                    isinstance(message, str)
+                    and message
+                    and len(message) < 200
+                    and "secret" not in message.lower()
+                    and "key" not in message.lower()
+                ):
+                    detail = f": {message}"
+            raise RuntimeError(f"{label} HTTP {code} for {path}{detail}") from None
         except urllib.error.URLError:
             raise RuntimeError(f"{label} request failed for {path}") from None
         except json.JSONDecodeError:
@@ -428,6 +467,29 @@ class AlpacaPaperClient:
         if not isinstance(raw, list):
             return []
         return [sanitize_order(item) for item in raw if isinstance(item, dict)]
+
+    def fills(self, *, limit: int = 100) -> list[dict[str, Any]]:
+        """GET paper fill activities. Never POSTs. Empty when the host returns none."""
+        query = urllib.parse.urlencode({"page_size": str(limit), "direction": "desc"})
+        path = "/v2/account/activities/FILL?" + query
+        try:
+            raw = self._get(path)
+        except RuntimeError as error:
+            if "HTTP 404" not in str(error):
+                raise
+            fallback = "/v2/account/activities?" + urllib.parse.urlencode(
+                {"activity_types": "FILL", "page_size": str(limit), "direction": "desc"}
+            )
+            raw = self._get(fallback)
+        rows = raw
+        if isinstance(raw, dict):
+            if isinstance(raw.get("activities"), list):
+                rows = raw["activities"]
+            else:
+                return []
+        if not isinstance(rows, list):
+            return []
+        return [sanitize_fill(item) for item in rows if isinstance(item, dict)]
 
     def post_paper_order(self, proposal: Any, *, explicit: bool) -> dict[str, Any]:
         """POST /v2/orders on the paper host only after the hard rails pass."""

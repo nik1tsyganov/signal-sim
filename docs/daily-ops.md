@@ -42,7 +42,7 @@ Requires `SIGNAL_SIM_ALPACA_PAPER_SUBMIT=1`, the paper-api host, keys, and `--su
 python3 -m signal_sim paper-performance --write
 ```
 
-Writes `docs/research/YYYY-MM-DD-paper.json`: sanitized paper equity/cash/positions and open-order count. Not alpha.
+Writes `docs/performance/YYYY-MM-DD.json`: sanitized paper equity/cash/positions, open orders, and fills. Not alpha.
 
 ## Kill switch
 

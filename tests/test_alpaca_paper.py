@@ -493,6 +493,46 @@ class AlpacaPaperSubmitGateTests(unittest.TestCase):
         self.assertTrue(all(PAPER_BROKER_HOST in url for url, _method, _data in calls))
         self.assertFalse(any(("://" + LIVE_BROKER_HOST) in url for url, _method, _data in calls))
 
+    def test_http_error_includes_sanitized_broker_message(self):
+        def env(name):
+            return _env(name, {"SIGNAL_SIM_ALPACA_PAPER_SUBMIT": "1"})
+
+        def urlopen(request, timeout=None):
+            if "orders:by_client_order_id" in request.full_url:
+                raise urllib.error.HTTPError(
+                    request.full_url, 404, "not found", hdrs=None, fp=io.BytesIO(b"")
+                )
+            if request.get_method() == "POST" and request.full_url.endswith("/v2/orders"):
+                payload = json.dumps({"message": "fractional orders not supported", "secret": "hide"}).encode()
+                raise urllib.error.HTTPError(
+                    request.full_url, 403, "forbidden", hdrs=None, fp=io.BytesIO(payload)
+                )
+            raise AssertionError(request.full_url)
+
+        with mock.patch("signal_sim.paper.read_env", side_effect=env), mock.patch(
+            "signal_sim.runtime_env.read_env", side_effect=env
+        ), mock.patch(
+            "signal_sim.alpaca_paper.urllib.request.urlopen", side_effect=urlopen
+        ):
+            client = paper_broker_client(PAPER_BROKER_HOST)
+            with self.assertRaises(RuntimeError) as error:
+                client.post_paper_order(
+                    {
+                        "symbol": "XLK",
+                        "qty": "1",
+                        "side": "buy",
+                        "type": "market",
+                        "time_in_force": "day",
+                        "client_order_id": "xlk-403",
+                    },
+                    explicit=True,
+                )
+        text = str(error.exception)
+        self.assertIn("HTTP 403", text)
+        self.assertIn("fractional orders not supported", text)
+        self.assertNotIn("hide", text)
+        self.assertNotIn("paper-secret", text)
+
     def test_duplicate_client_order_id_does_not_post_again(self):
         calls = []
 

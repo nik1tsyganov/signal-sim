@@ -34,8 +34,8 @@ With owner keys on a local machine (never committed):
 - **Alpaca paper read smoke:** `python3 -m signal_sim paper-account` constructs the paper-host client when `ALPACA_PAPER_API_KEY` and `ALPACA_PAPER_API_SECRET` are set. It GETs `/v2/account`, `/v2/positions`, and `/v2/clock` on the paper host. `ALPACA_PAPER_API_BASE_URL` is optional and defaults to the paper HTTPS origin. A non-paper Alpaca host or IBKR live port still raises `LiveEndpointError`. Add `--dry-run` to validate a sample order payload in memory. This path does not POST an order.
 - **Proposed rebalance dry-run:** `python3 -m signal_sim rebalance --fixtures` reads that same paper account and positions, sizes the existing fixture cluster-drift target book (or `rank_candidates` with `--rank`), and prints intended tickets: symbol, side, qty, notional, rationale. Offline fixture-only qty prefers fixture `entry_px`. `--live` and `--submit-paper` prefer an observed paper IEX last trade or snapshot `latestTrade` when one exists so QQQ/SPY are not sized at the fixture $36/$40 marks. It never invents a quote. Names still unmarked stay `no_mark`. `--live` loads today's research book (or computes it) so new intel names can enter; tickets are a full target-versus-positions diff (buys, sells, leftover closes). Default is print-only: no ledger write and no broker POST. Paper last-trade marks are not execution marks.
 - **Local apply of those tickets:** `python3 -m signal_sim rebalance --fixtures --apply-local --ledger <path>` records the same dry-run tickets on the local SQLite ledger through `submit_paper_order`. Only tickets with `mark_kind=fixture_mark` and `mark_source=fixture` fill. Paper IEX sizing marks are skipped (`paper_mark_not_execution`) and must not be claimed as broker fills. This still does not POST `/v2/orders`.
-- **Alpaca paper submit (off by default):** `python3 -m signal_sim paper-submit --symbol SPY --qty 1` or `python3 -m signal_sim rebalance --fixtures --submit-paper` (default `--limit 1`, smallest notional first) POST to the paper host only when `SIGNAL_SIM_ALPACA_PAPER_SUBMIT=1`, the resolved base URL is the paper host, keys are present, and the CLI flag is explicit. Live hosts and any other base URL are refused. Sells and leftover closes POST as well as buys. This is paper only. It is not live-money trading. If earlier paper orders are still open, print the book and wait; do not spray another full-book submit.
-- **Paper performance snapshot:** `python3 -m signal_sim paper-performance --write` writes a sanitized paper account/positions/open-order summary to `docs/research/YYYY-MM-DD-paper.json`. Not alpha.
+- **Alpaca paper submit (off by default):** `python3 -m signal_sim paper-submit --symbol SPY --qty 1` or `python3 -m signal_sim rebalance --fixtures --submit-paper` (default `--limit 1`, smallest notional first) POST to the paper host only when `SIGNAL_SIM_ALPACA_PAPER_SUBMIT=1`, the resolved base URL is the paper host, keys are present, and the CLI flag is explicit. There is no `--all`; pass a `--limit` high enough to cover the print-only ticket count. `--fixtures --live --submit-paper` is supported (live intensity, then paper POST). Live hosts and any other base URL are refused. Sells and leftover closes POST as well as buys. This is paper only. It is not live-money trading. If earlier paper orders are still open, print the book and wait; do not spray another full-book submit.
+- **Paper performance snapshot:** `python3 -m signal_sim paper-performance` (alias `paper-snapshot`) GETs paper account equity/cash, positions, clock, open orders, recent orders, and fill activities. It does not POST. `--write` records a dated JSON under `docs/performance/YYYY-MM-DD.json`. This is paper tracking, not alpha.
 
 Fills go through `submit_paper_order` only. A fill must be `kind=fixture_mark` and `source=fixture`. Research or vendor mark kinds refuse. Constructing a live Alpaca host or IBKR live ports raises and does not open a socket. A present or unreadable `KILL` file refuses the order. Every fill writes an R8 provenance line that cites `params_sha256`. The local ledger fill gate is unchanged: Alpaca paper reads do not become execution marks.
 
@@ -85,8 +85,12 @@ python3 -m signal_sim rebalance --fixtures --apply-local --ledger paper-rebalanc
 python3 -m signal_sim ledger --ledger paper-rebalance.sqlite --fixtures
 python3 -m signal_sim paper-performance --write
 python3 -m signal_sim paper-submit --symbol SPY --qty 1
+python3 -m signal_sim rebalance --fixtures --submit-paper --limit 1
 python3 -m signal_sim rebalance --fixtures --live --submit-paper --limit 1
+python3 -m signal_sim paper-performance --write
 ```
+
+`paper-performance --write` is the morning-brief paper-account cite. It is read-only, paper-labeled, and not alpha. Re-run it to refresh `docs/performance/YYYY-MM-DD.json`.
 
 Weekday command order is in [daily ops](daily-ops.md). Print `rebalance --fixtures --live` before any submit. If open paper orders from earlier in the day are still working, skip `--submit-paper`.
 
@@ -95,16 +99,18 @@ Weekday command order is in [daily ops](daily-ops.md). Print `rebalance --fixtur
 Unittest integration cases are marked with `skipUnless` the relevant env names are set. To run them on the owner machine:
 
 ```bash
-python3 -m unittest tests.test_live_feeds tests.test_alpaca_paper tests.test_rebalance -v
+python3 -m unittest tests.test_live_feeds tests.test_alpaca_paper tests.test_rebalance tests.test_performance -v
 ```
 
-`SIGNAL_SIM_ALPACA_PAPER_SUBMIT` defaults to `0`. That is the kill switch: omit the name or set `0` and remote paper POSTs are refused. Set `1` **and** pass `paper-submit` or `rebalance --fixtures --submit-paper` to POST on the paper host only. A non-paper `ALPACA_PAPER_API_BASE_URL` is refused. Default is still print-only / read-only. `--apply-local` writes fixture-mark fills to `--ledger` only and cannot be combined with `--submit-paper`. `ledger --ledger` is the morning-brief read of that file (counts, sides, qtys, mark kinds, optional fixture-mark MTM). It does not POST and does not write. `--live` needs intel keys and still does not POST. Local-ledger fills stay on `submit_paper_order`.
+`SIGNAL_SIM_ALPACA_PAPER_SUBMIT` defaults to `0`. That is the kill switch: omit the name or set `0` and remote paper POSTs are refused. Set `1` **and** pass `paper-submit` or `rebalance --fixtures --submit-paper` to POST on the paper host only. A non-paper `ALPACA_PAPER_API_BASE_URL` is refused. Default is still print-only / read-only. `--apply-local` writes fixture-mark fills to `--ledger` only and cannot be combined with `--submit-paper`. `ledger --ledger` is the morning-brief read of that file (counts, sides, qtys, mark kinds, optional fixture-mark MTM). `paper-performance --write` is the morning-brief read of the Alpaca paper account. Both inspect paths do not POST and do not write a ledger. `--live` needs intel keys and still does not POST unless `--submit-paper` is also set. Local-ledger fills stay on `submit_paper_order`.
 
 A 2026-09-04 Cloud Runtime Secrets pass (presence only; no secret values) is recorded in [paper smoke results](paper-smoke-results.md). That run kept the submit flag at `0`.
 
 A 2026-09-04 local book smoke (print-only, then `--apply-local` onto `/tmp/signal-sim-paper.sqlite`) is recorded in [local book smoke](local-book-smoke.md). Morning-brief cite, **not alpha**: print-only `n_tickets=10` / `n_skipped=2`; apply `n_applied=7` / `n_apply_skipped=3` (`paper_mark_not_execution`); fixture-mark MTM `total_pnl=-265.07`. Local book state: `python3 -m signal_sim ledger --ledger /tmp/signal-sim-paper.sqlite --fixtures`. Submit stayed `0`. No `/v2/orders` POST. Do not apply-local a `--live` paper-mark ticket as a fill.
 
 A 2026-09-04 one-share paper POST (`paper-submit --symbol SPY --qty 1` once, flag exactly `1`, host `paper-api.alpaca.markets`) is recorded in [paper submit smoke](paper-submit-smoke.md). Cite: order `d7629fcb-ba1a-4c8d-a732-63b0f61cf12a`, status `pending_new` then `new`, `filled_qty=0`, clock closed. The full rebalance book was not submitted. Not a fill and not alpha.
+
+A 2026-09-04 paper strategy submit (`rebalance --fixtures --live --submit-paper --limit 20`, flag exactly `1`, host `paper-api.alpaca.markets`) is recorded in [paper strategy submit](paper-strategy-submit.md). Cite, **not alpha**: print-only live `n_tickets=12`; `n_paper_submitted=10` queued (`pending_new`/`new`/`accepted`, `filled_qty=0`); XLK/MSFT `HTTP 403: insufficient buying power`; smoke SPY x1 still `new`. Morning-brief paper tracking: `python3 -m signal_sim paper-performance --write` → [docs/performance/2026-09-04.json](performance/2026-09-04.json). Not live money and not alpha.
 
 ## Cursor Cloud Runtime Secrets
 
@@ -173,6 +179,7 @@ There is no TrendRadar live client and no GPL/AGPL vendoring.
 - `rebalance --fixtures --apply-local` grows a local simulated book from those same tickets. It is a fixture-mark ledger fill, not a broker submit and not a live-money trade. Paper IEX marks never become claimed fills.
 - `paper-submit` / `rebalance --fixtures --submit-paper` is an Alpaca **paper** POST. It is not live money, not alpha, and not permission to point the client at a live host.
 - `ledger --ledger` is a read of that local simulated book. Fixture-mark MTM is plumbing, not alpha.
+- `paper-performance` / `paper-snapshot` is a read of the Alpaca **paper** account. Equity, cash, and fills in that JSON are paper tracking, not alpha and not live money.
 - The desk is paper-only and loopback-only. It is not a production broker UI.
 
 See [the changelog](../CHANGELOG.md), [paper trading and quant research](paper-trading-and-quant.md), and [alternative data and safety](alt-data-and-safety.md).
