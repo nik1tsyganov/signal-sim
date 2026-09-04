@@ -57,14 +57,14 @@ Rebalance `--live` diffs the conviction book against paper positions:
    target. Moves inside the band are not ticketed.
 
 `--submit-paper` stays flag-gated. Do not spray another full-book submit while
-today's 10 paper positions are already held.
+today's conviction names are already held.
 
-## 2026-09-04 equal-weight vs score' (print-only)
+## 2026-09-04 equal-weight vs score'
 
-Recomputed from the checked-in equal-weight artifact
-[2026-09-04.json](research/2026-09-04.json): un-lumped `diagnose.confirms`,
-`rank.news_breakout`, `feeds.quiver.tickers`, and World Monitor flags on the
-old targets. `rec_term=0` on that file (no lags stamped). Not a live rerun.
+The A/B below was computed against the **pre-submit** equal-weight artifact
+(XLE/MSFT/NFLX/NVDA/AAPL/CMCSA/CVX/DIS/SPY/XOM at 0.10). The checked-in
+[2026-09-04.json](research/2026-09-04.json) is now the live conviction book
+written by `research --live` before the authorized paper submit.
 
 | | Equal-weight stub (held / proposed) | score' conviction |
 |---|---|---|
@@ -77,13 +77,16 @@ old targets. `rec_term=0` on that file (no lags stamped). Not a live rerun.
 Intel-only names (HD, ABT, AMAT, …) enter on congress count + quiver term
 instead of being skipped `gross_frac_cap` behind mega-cap news.
 
-Print-only `research --live` on 2026-09-04 (temp out; did **not** overwrite
-the equal-weight artifact; **no** `--submit-paper`) produced the same enter/exit
-set. Live filing lags lifted NVDA score' to ~13.3 so `target_frac` hit the
-0.20 name cap. Against the held equal-weight 10, the print-only rebalance
-diff is leftover **closes** on NFLX/CMCSA/CVX/DIS/SPY/XOM, a **trim** on XLE,
-and **opens** on GOOGL/HD/ABT/AMAT/UNH/AMZN. Do not submit that book while
-those 10 names are already held.
+Print-only `research --live` on 2026-09-04 (PR 15; temp out; did **not**
+overwrite the equal-weight artifact; **no** `--submit-paper`) produced the
+same enter/exit set. Live filing lags lifted NVDA score' to ~13.3 so
+`target_frac` hit the 0.20 name cap.
+
+The authorized paper submit ([paper conviction submit](paper-conviction-submit.md))
+then overwrote the artifact and POSTed the live-sized diff: leftover **closes**
+on NFLX/CMCSA/CVX/DIS/SPY/XOM, an **add** on XLE (held 10% → target 12.3%;
+PR 15's A/B had expected a trim), **opens** on GOOGL/HD/ABT/AMAT/UNH/AMZN,
+and an NVDA add to the name cap. All 14 filled. Reprint `n_tickets=0`.
 
 ## Deviations from Math Eng (none on the formula)
 

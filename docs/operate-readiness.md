@@ -115,6 +115,8 @@ A 2026-09-04 one-share paper POST (`paper-submit --symbol SPY --qty 1` once, fla
 
 A 2026-09-04 paper strategy submit (`rebalance --fixtures --live --submit-paper --limit 20`, flag exactly `1`, host `paper-api.alpaca.markets`) is recorded in [paper strategy submit](paper-strategy-submit.md). Cite, **not alpha**: print-only live `n_tickets=12`; `n_paper_submitted=10` queued (`pending_new`/`new`/`accepted`, `filled_qty=0`); XLK/MSFT `HTTP 403: insufficient buying power`; smoke SPY x1 still `new`. Morning-brief paper tracking: `python3 -m signal_sim paper-performance --write` → [docs/performance/2026-09-04.json](performance/2026-09-04.json). Not live money and not alpha.
 
+A 2026-09-04 conviction-weight paper submit (`research --live`, then `rebalance --fixtures --live --submit-paper --limit 30`, flag exactly `1`, host `paper-api.alpaca.markets`) is recorded in [paper conviction submit](paper-conviction-submit.md). Cite, **not alpha**: 14 live-sized tickets filled; six leftover closes; six intel opens; NVDA to the 0.20 cap; XLE add (not trim). Positions match the conviction names. Reprint `n_tickets=0`. Equity `$99864.04`. Not live money and not alpha.
+
 ## Cursor Cloud Runtime Secrets
 
 Cloud agents do not read a repo `.env`. Paper keys belong in **Dashboard Runtime Secrets** on a saved environment.

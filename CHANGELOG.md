@@ -2,12 +2,16 @@
 
 What landed in the paper operate loop. This is not a live trading log. Every PnL number the loop prints is **fixture-mark PnL**, not alpha.
 
+## Unreleased — conviction-weight paper submit
+
+- **2026-09-04 conviction submit:** after owner authorization, `research --live` overwrote today's equal-weight artifact with the score' book, print-only `rebalance --fixtures --live` showed 14 live-sized tickets (not fixture-oversized), then `rebalance --fixtures --live --submit-paper --limit 30` POSTed and filled all 14 on the paper host. Six leftover closes (NFLX/CMCSA/CVX/DIS/SPY/XOM), six intel opens (GOOGL/HD/ABT/AMAT/UNH/AMZN), NVDA add to the 0.20 cap, XLE add to 12.3% (held 10% was below target; not a trim). MSFT/AAPL inside `trim_band`. Reprint `n_tickets=0`. Equity `$99864.04`. Recorded in [paper conviction submit](docs/paper-conviction-submit.md). Snapshot: [2026-09-04.json](docs/performance/2026-09-04.json). Paper only. Not alpha.
+
 ## Unreleased — conviction weights + richer Quiver rank
 
 - **score':** research-live ranks with the declared Math Eng formula (un-lumped congress vs insider, `log1p` news, quiver-count term, World Monitor flags, filing-lag recency). Weights are in `fixtures/params.json` `conviction`. Not fitted. Not alpha. Fixture `rank_candidates` is unchanged.
 - **Conviction book:** top 10 by score' share `max_gross_frac` in proportion to score', capped at paper `max_name_frac=0.20`. Research artifacts stamp `target_frac` per name. Equal-weight `0.1` is the old stub.
-- **Tighter sells:** `--live` rebalance closes leftovers, closes score' below `min_score`, and trims when held exceeds target by more than `trim_band=0.02`. Print-only default. `--submit-paper` still flag-gated. Do not spray another full-book submit over today's 10 held names.
-- **Note:** [research-conviction.md](docs/research-conviction.md). 2026-09-04 print-only A/B vs the equal-weight 10: enter GOOGL/HD/ABT/AMAT/UNH/AMZN; exit NFLX/CMCSA/CVX/DIS/SPY/XOM; NVDA highest frac (~0.18 artifact / 0.20 live with lags). No `--submit-paper` in this change. The checked-in `docs/research/2026-09-04.json` stays the equal-weight before snapshot.
+- **Tighter sells:** `--live` rebalance closes leftovers, closes score' below `min_score`, and trims when held exceeds target by more than `trim_band=0.02`. Print-only default. `--submit-paper` still flag-gated. Do not spray another full-book submit over today's held conviction names.
+- **Note:** [research-conviction.md](docs/research-conviction.md). 2026-09-04 print-only A/B vs the equal-weight 10: enter GOOGL/HD/ABT/AMAT/UNH/AMZN; exit NFLX/CMCSA/CVX/DIS/SPY/XOM; NVDA highest frac (~0.18 artifact / 0.20 live with lags). No `--submit-paper` in that PR. The later authorized submit overwrote `docs/research/2026-09-04.json` with the conviction book.
 
 ## Unreleased — daily research + live sizing + buy/sell
 

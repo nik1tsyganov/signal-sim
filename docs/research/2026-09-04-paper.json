@@ -1,10 +1,10 @@
 {
   "account": {
     "account_blocked": false,
-    "buying_power": "279886.53",
-    "cash": "-21.31",
+    "buying_power": "279714.56",
+    "cash": "79.38",
     "currency": "USD",
-    "equity": "99968.61",
+    "equity": "99864.04",
     "status": "ACTIVE",
     "trading_blocked": false
   },
@@ -12,11 +12,11 @@
     "is_open": true,
     "next_close": "2026-09-04T16:00:00-04:00",
     "next_open": "2026-09-08T09:30:00-04:00",
-    "timestamp": "2026-09-04T10:02:15.435347137-04:00"
+    "timestamp": "2026-09-04T10:41:21.55232695-04:00"
   },
   "date": "2026-09-04",
   "mode": "paper-performance",
-  "note": "Sanitized Alpaca paper snapshot after the live-sized open-session submit. Not alpha. Not live money.",
+  "note": "Sanitized Alpaca paper snapshot after the conviction-weight submit. Not alpha. Not live money.",
   "ok": true,
   "open_orders": {
     "n": 0,
@@ -26,16 +26,16 @@
     "n": 10,
     "symbols": {
       "AAPL": "30.978544",
-      "CMCSA": "377.39094",
-      "CVX": "48.082563",
-      "DIS": "94.450243",
+      "ABT": "71.919463",
+      "AMAT": "17.235264",
+      "AMZN": "29.830002",
+      "GOOGL": "24.774469",
+      "HD": "25.061179",
       "MSFT": "19.859722",
-      "NFLX": "123.147154",
-      "NVDA": "42.721677",
-      "SPY": "12.948755",
-      "XLE": "156.780146",
-      "XOM": "62.505227"
+      "NVDA": "85.447652",
+      "UNH": "19.720655",
+      "XLE": "191.322401"
     }
   },
-  "written_at": "2026-09-04T14:02:14.737456Z"
+  "written_at": "2026-09-04T14:41:20.900146Z"
 }
