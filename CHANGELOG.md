@@ -2,6 +2,11 @@
 
 What landed in the paper operate loop. This is not a live trading log. Every PnL number the loop prints is **fixture-mark PnL**, not alpha.
 
+## Unreleased — local book smoke
+
+- **Recorded apply:** [local book smoke](docs/local-book-smoke.md) runs print-only `rebalance --fixtures`, then `--apply-local --ledger /tmp/signal-sim-paper.sqlite`, on `main` after PR 6. Cite: `n_tickets=10` / `n_skipped=2`; `n_applied=7` / `n_apply_skipped=3` (`paper_mark_not_execution`). Fixture-mark MTM only; not alpha.
+- **Fills:** still local-ledger only. `SIGNAL_SIM_ALPACA_PAPER_SUBMIT` stayed `0`. No `/v2/orders` POST.
+
 ## Unreleased — rebalance apply-local
 
 - **Local apply:** `python3 -m signal_sim rebalance --fixtures --apply-local --ledger <path>` computes the same tickets as the print-only dry-run, then records fills on the local paper ledger through `submit_paper_order`. Default remains print-only.
