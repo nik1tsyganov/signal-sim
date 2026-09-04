@@ -97,4 +97,4 @@ There is no TrendRadar live client and no GPL/AGPL vendoring.
 - Intel flags (gov-contract, World Monitor recorded JSON, TrendRadar fixture, filing lags) are feature-only on the drift book and diagnose unless a test already documents a rank count. They are not a live intel feed.
 - The desk is paper-only and loopback-only. It is not a production broker UI.
 
-See [paper trading and quant research](paper-trading-and-quant.md) and [alternative data and safety](alt-data-and-safety.md).
+See [the changelog](../CHANGELOG.md), [paper trading and quant research](paper-trading-and-quant.md), and [alternative data and safety](alt-data-and-safety.md).

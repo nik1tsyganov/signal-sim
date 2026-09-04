@@ -94,6 +94,17 @@ class ProductLockTests(unittest.TestCase):
             [],
         )
 
+    def test_pyproject_is_stdlib_only_and_editable(self):
+        import tomllib
+
+        repo = Path(__file__).resolve().parent.parent
+        raw = tomllib.loads((repo / "pyproject.toml").read_text(encoding="utf-8"))
+        self.assertEqual(raw["project"]["dependencies"], [])
+        self.assertIn("3.12", raw["project"]["requires-python"])
+        text = (repo / "pyproject.toml").read_text(encoding="utf-8").lower()
+        for fragment in ("yfinance", "yahoo", "stooq", "alpaca", "ibkr", "quiver"):
+            self.assertNotIn(fragment, text, fragment)
+
     def test_package_has_no_yfinance_or_vendor_bar_client(self):
         package = __import__("pathlib").Path(__file__).resolve().parent.parent / "signal_sim"
         source = "\n".join(path.read_text(encoding="utf-8") for path in package.rglob("*.py")).lower()

@@ -4,13 +4,13 @@ Signal Sim is a paper-only signal desk for US-listed technology, energy, media, 
 
 The project will join market data with time-stamped news-intensity features. It will test event-driven and stochastic methods against strict forward-only evaluation.
 
-Start with [the paper-trading and quant research](docs/paper-trading-and-quant.md). For what the paper loop can run today, what is still blocked on the owner, and what must never be claimed, see [operate readiness](docs/operate-readiness.md).
+Start with [the paper-trading and quant research](docs/paper-trading-and-quant.md). For what the paper loop can run today, what is still blocked on the owner, and what must never be claimed, see [operate readiness](docs/operate-readiness.md). The paper operate loop is summarized in [CHANGELOG.md](CHANGELOG.md).
 
 The initial execution target is a local simulated ledger. Alpaca paper is the preferred later broker adapter for cash equities and ETFs. IBKR remains a later option when broader instruments justify its desktop gateway and account requirements.
 
 This repository must not connect to live money. It contains no trading engine, broker account, broker software, or credentials.
 
-There is no third-party install step. The package uses the Python standard library. On Windows the launcher is usually `python`; on Linux it is often `python3`.
+There is no third-party install step. The package uses the Python standard library. From a repo checkout, `pip install -e .` makes `python -m signal_sim` work without a `PYTHONPATH` hack. Do not add Yahoo, Stooq, or broker SDKs. On Windows the launcher is usually `python`; on Linux it is often `python3`.
 
 ## Test
 
