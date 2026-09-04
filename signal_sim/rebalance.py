@@ -15,6 +15,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
+from .conviction import paper_name_cap
 from .drift import NOTE as DRIFT_NOTE
 from .drift import fixture_drift_book
 from .events import Event
@@ -29,7 +30,13 @@ from .paper import (
     require_paper_submit,
     submit_paper_order,
 )
-from .params import COST_BPS, DECISION_DELAY_HOURS, operate_stamp
+from .params import (
+    CONVICTION_MIN_SCORE,
+    CONVICTION_TRIM_BAND,
+    COST_BPS,
+    DECISION_DELAY_HOURS,
+    operate_stamp,
+)
 from .sizer import size_targets
 from .sim import load_mark_book, resolve_mark_book_path
 from .store import EventStore
@@ -223,10 +230,16 @@ def _rationale(
     intensity: float | None = None,
     intensity_scale: float | None = None,
     mark_kind: str | None = None,
+    sell_reason: str | None = None,
 ) -> str:
     held = f"paper holds {have_shares:g}"
-    if action == "close":
+    if action == "close" and sell_reason == "below_min_score":
+        parts = [signal, "close", "score below min_score", held]
+    elif action == "close":
         parts = [signal, "close leftover", "not in target book", held]
+    elif action == "adjust" and sell_reason == "overweight_band":
+        frac = 0.0 if target_frac is None else float(target_frac)
+        parts = [signal, f"trim to target_frac={frac:g}", "overweight beyond band", held]
     else:
         frac = 0.0 if target_frac is None else float(target_frac)
         parts = [signal, f"{action} to target_frac={frac:g}", held]
@@ -351,6 +364,12 @@ def _intensity_cut(events: list[Event]) -> datetime:
     return cut
 
 
+def _row_score(row: dict[str, Any] | None) -> float | None:
+    if row is None:
+        return None
+    return _finite_number(row.get("score"))
+
+
 def plan_rebalance_tickets(
     *,
     targets: list[dict[str, Any]],
@@ -362,12 +381,19 @@ def plan_rebalance_tickets(
     signal: str,
     decision_at: str,
     session: str | None = None,
+    min_score: float | None = None,
+    trim_band: float = 0.0,
 ) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
-    """Share-accurate tickets. Same delta as fixture replay; print-only."""
+    """Share-accurate tickets. Same delta as fixture replay; print-only.
+
+    Research-live passes a score floor and an overweight band. Default
+    ``min_score=None`` / ``trim_band=0`` keeps the fixture drift planner.
+    """
     tickets: list[dict[str, Any]] = []
     skipped: list[dict[str, str]] = []
     wanted = {str(row["ticker"]): row for row in targets}
     reserved_cash = float(cash)
+    band = 0.0 if trim_band is None else max(0.0, float(trim_band))
 
     def skip(ticker: str, reason: str) -> None:
         skipped.append({"ticker": ticker, "reason": reason})
@@ -381,6 +407,7 @@ def plan_rebalance_tickets(
         have_shares: float,
         target_frac: float | None,
         qty: float,
+        sell_reason: str | None = None,
     ) -> None:
         key = paper_client_order_id(
             ticker,
@@ -416,14 +443,25 @@ def plan_rebalance_tickets(
                     intensity=None if intensity is None else float(intensity),
                     intensity_scale=None if intensity_scale is None else float(intensity_scale),
                     mark_kind=mark_kind,
+                    sell_reason=sell_reason,
                 ),
                 "submitted": False,
                 "payload": _ticket_payload(ticker, side, key),
             }
         )
 
+    def should_close(ticker: str) -> tuple[bool, str | None]:
+        row = wanted.get(ticker)
+        if row is None:
+            return True, None
+        score = _row_score(row)
+        if min_score is not None and score is not None and score < float(min_score):
+            return True, "below_min_score"
+        return False, None
+
     for ticker, position in list(held.items()):
-        if ticker in wanted:
+        close, sell_reason = should_close(ticker)
+        if not close:
             continue
         mark = marks.get(ticker)
         sell_px = _sizing_px(mark)
@@ -438,10 +476,13 @@ def plan_rebalance_tickets(
         side = "sell" if have_shares > 0 else "buy"
         fee = allocation * trade_frac * cost_bps / 10000.0
         reserved_cash += abs(have_shares) * sell_px - fee
-        emit(ticker, side, trade_frac, sell_px, "close", have_shares, None, qty)
+        emit(ticker, side, trade_frac, sell_px, "close", have_shares, None, qty, sell_reason)
 
     for row in targets:
         ticker = str(row["ticker"])
+        close, _sell_reason = should_close(ticker)
+        if close:
+            continue
         mark = marks.get(ticker)
         mark_px = _sizing_px(mark)
         if mark_px is None:
@@ -457,6 +498,15 @@ def plan_rebalance_tickets(
         trade_frac = abs(delta_shares) * mark_px / allocation
         if trade_frac <= _EPS:
             continue
+        if delta_shares < 0 and band > 0 and trade_frac <= band + _EPS:
+            continue
+        if (
+            delta_shares > 0
+            and band > 0
+            and abs(have_shares) > _EPS
+            and trade_frac <= band + _EPS
+        ):
+            continue
         if delta_shares > 0:
             notional = trade_frac * allocation
             fee = notional * cost_bps / 10000.0
@@ -466,6 +516,7 @@ def plan_rebalance_tickets(
             reserved_cash -= notional + fee
         side = "buy" if delta_shares > 0 else "sell"
         action = "open" if abs(have_shares) <= _EPS else "adjust"
+        sell_reason = "overweight_band" if side == "sell" and band > 0 else None
         emit(
             ticker,
             side,
@@ -475,6 +526,7 @@ def plan_rebalance_tickets(
             have_shares,
             float(row["target_frac"]),
             delta_shares,
+            sell_reason,
         )
     return tickets, skipped
 
@@ -597,12 +649,23 @@ def proposed_rebalance(
         universe=mark_universe,
     )
     fillable, pre_skips = _fillable_candidates(candidates, sizing_marks)
+    name_cap = float(book["max_name_frac"])
+    sell_min_score = None
+    sell_band = 0.0
+    if live:
+        name_cap = paper_name_cap(name_cap)
+        sell_min_score = CONVICTION_MIN_SCORE
+        sell_band = CONVICTION_TRIM_BAND
+        fillable = [
+            {key: value for key, value in row.items() if key != "intensity_scale"}
+            for row in fillable
+        ]
     targets, size_skips = size_targets(
         fillable,
         size_frac=float(book["size_frac"]),
         horizon_hours=horizon_hours,
         max_gross_frac=float(book["max_gross_frac"]),
-        max_name_frac=float(book["max_name_frac"]),
+        max_name_frac=name_cap,
     )
     safe_account = sanitize_account(account)
     allocation = allocation_base(safe_account, float(book["starting_cash"]))
@@ -625,6 +688,8 @@ def proposed_rebalance(
         signal=signal_name,
         decision_at=decision_at,
         session=session,
+        min_score=sell_min_score,
+        trim_band=sell_band,
     )
     skipped = [*held_skips, *pre_skips, *size_skips, *plan_skips]
     stamp = operate_stamp()
