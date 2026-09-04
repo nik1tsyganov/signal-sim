@@ -2,6 +2,16 @@
 
 What landed in the paper operate loop. This is not a live trading log. Every PnL number the loop prints is **fixture-mark PnL**, not alpha.
 
+## Unreleased — daily research + live sizing + buy/sell
+
+- **Strategy growth:** `python3 -m signal_sim research --live` pulls Quiver congress/insider/gov/news plus World Monitor, expands the operating universe (fixture set ∪ top-N allowlisted intel tickers), ranks / diagnoses / intensity on that set, and writes `docs/research/YYYY-MM-DD.json`. That file is the next rebalance book, not a decorative dump. No PII.
+- **Live-price sizing:** `--live` and `--submit-paper` size qty from an observed paper IEX last trade or snapshot `latestTrade` when one exists. Fixture `entry_px` (including the $36/$40 QQQ/SPY research marks) is the fallback only. Offline fixture-only mode still prefers fixture marks. Never invents a price.
+- **Buy and sell:** rebalance diffs the target book against paper positions. Leftover names not in the book get close/sell tickets. Opens and increases stay buys. `--submit-paper` POSTs sells as well as buys.
+- **Daily ops:** [daily-ops.md](docs/daily-ops.md) — morning `research --live`, after-open print `rebalance --fixtures --live`, optional `--submit-paper`, then `paper-performance --write` to `docs/performance/YYYY-MM-DD.json`. Kill switch remains `SIGNAL_SIM_ALPACA_PAPER_SUBMIT=0`. Do not spray another full-book submit while earlier paper orders are still open.
+- **Paper cancel:** `python3 -m signal_sim paper-cancel --order-id <uuid>` or `paper-cancel --open --limit <n>` DELETEs paper orders on the same rails as submit (flag=1, paper host, keys, explicit CLI). Default `--limit` is 1. No `--all`. Flag `0` never DELETEs. Cancel or wait out the 11 oversized 2026-09-04 orders before the next submit.
+- **Paper only.** No live-money trading.
+- **2026-09-04 print smoke:** `research --live` wrote today's book (27-name operating universe; new intel names ranked). Print-only `rebalance --fixtures --live` sized from paper IEX last trades (SPY ~$773, not fixture $40). 11 earlier paper orders were still open — no `--submit-paper` and no live `paper-cancel` in this PR.
+
 ## Unreleased — paper strategy submit + performance snapshot
 
 - **Strategy submit:** after a print-only capture, `rebalance --fixtures --live --submit-paper --limit <n>` POSTs the sized drift book on the paper host. `--limit` must be high enough to cover the print-only ticket count (no `--all` flag). Do not combine with `--apply-local`. Position-aware sizing GETs paper positions; the earlier SPY x1 smoke is only netted if it has already become a position.

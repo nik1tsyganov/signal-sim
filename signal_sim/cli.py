@@ -28,6 +28,7 @@ from .performance import (
     write_paper_performance,
 )
 from .rebalance import apply_local_rebalance, proposed_rebalance, submit_paper_rebalance
+from .research import research_artifact_path, run_research
 from .runtime_env import paper_submit_flag, runtime_env_status
 from .sim import resolve_mark_book_path
 from .store import EventStore
@@ -214,7 +215,7 @@ def _parser() -> argparse.ArgumentParser:
     rebalance.add_argument(
         "--live",
         action="store_true",
-        help="pull Quiver/World Monitor into the Hawkes overlay (print-only unless --apply-local)",
+        help="use today's research book (or compute it) and prefer paper IEX marks",
     )
     rebalance.add_argument(
         "--apply-local",
@@ -252,6 +253,22 @@ def _parser() -> argparse.ArgumentParser:
     paper_submit.add_argument(
         "--client-order-id",
         help="idempotency key (max 48 chars; default is a stable paper-submit key)",
+    )
+    paper_cancel = commands.add_parser(
+        "paper-cancel",
+        help="DELETE Alpaca paper orders (requires flag=1, paper host, keys)",
+    )
+    paper_cancel.add_argument("--order-id", help="one paper order UUID to cancel")
+    paper_cancel.add_argument(
+        "--open",
+        action="store_true",
+        help="cancel open paper orders (uses --limit; default 1)",
+    )
+    paper_cancel.add_argument(
+        "--limit",
+        type=int,
+        default=1,
+        help="max open orders to DELETE with --open (default 1; no all-flag)",
     )
     ledger = commands.add_parser(
         "ledger",
@@ -293,6 +310,19 @@ def _parser() -> argparse.ArgumentParser:
     commands.add_parser(
         "runtime-env",
         help="print Runtime Secret / env presence only (never values)",
+    )
+    research = commands.add_parser(
+        "research",
+        help="daily live research book: intel universe, rank/diagnose, proposed targets",
+    )
+    research.add_argument(
+        "--live",
+        action="store_true",
+        help="pull Quiver + World Monitor and write docs/research/YYYY-MM-DD.json",
+    )
+    research.add_argument(
+        "--out",
+        help="write the JSON here (default: docs/research/YYYY-MM-DD.json)",
     )
     return parser
 
@@ -573,6 +603,7 @@ def main(argv: list[str] | None = None) -> int:
                 signal="rank" if getattr(args, "rank", False) else "drift",
                 intensity=intensity or live,
                 live=live,
+                prefer_paper_marks=bool(live or submit_paper),
             )
             if apply_local:
                 report = apply_local_rebalance(
@@ -678,6 +709,56 @@ def main(argv: list[str] | None = None) -> int:
         }
         print(json.dumps(report, separators=(",", ":")))
         return 0 if report.get("ok") is True else 1
+    if args.command == "paper-cancel":
+        missing = missing_paper_keys()
+        if missing:
+            print("paper-cancel missing env: " + ", ".join(missing), file=sys.stderr)
+            return 2
+        order_id = getattr(args, "order_id", None)
+        cancel_open = bool(getattr(args, "open", False))
+        if (order_id in (None, "")) == (not cancel_open):
+            print("paper-cancel requires exactly one of --order-id or --open", file=sys.stderr)
+            return 2
+        try:
+            require_paper_submit(explicit=True)
+            client = paper_broker_client(paper_host())
+            if cancel_open:
+                result = client.cancel_open_paper_orders(
+                    explicit=True,
+                    limit=int(getattr(args, "limit", 1)),
+                )
+            else:
+                cancelled = client.cancel_paper_order(order_id, explicit=True)
+                result = {
+                    "cancelled": [cancelled],
+                    "errors": [],
+                    "n_cancelled": 1,
+                    "n_errors": 0,
+                }
+        except (PaperSubmitRefused, LiveEndpointError, ValueError, RuntimeError, NotImplementedError) as error:
+            print(str(error), file=sys.stderr)
+            return 2
+        report = {
+            "mode": "alpaca-paper-cancel",
+            "ok": result.get("n_errors", 0) == 0,
+            "submitted": False,
+            "cancelled": True,
+            "order_post": "disabled",
+            "order_delete": "paper",
+            "submit_flag": paper_submit_flag(),
+            "n_cancelled": result.get("n_cancelled"),
+            "n_errors": result.get("n_errors"),
+            "orders": result.get("cancelled"),
+            "errors": result.get("errors"),
+            "runtime_env": runtime_env_status(),
+            "note": (
+                "Alpaca paper DELETE only. Not live money. Not a submit. "
+                "Kill by setting SIGNAL_SIM_ALPACA_PAPER_SUBMIT=0. "
+                "Reprint rebalance --fixtures --live before the next submit."
+            ),
+        }
+        print(json.dumps(report, separators=(",", ":")))
+        return 0 if report.get("ok") is True else 1
     if args.command in {"ledger", "paper-ledger"}:
         ledger = getattr(args, "ledger", None)
         if not ledger:
@@ -779,6 +860,27 @@ def main(argv: list[str] | None = None) -> int:
         report = runtime_env_status()
         print(json.dumps(report, separators=(",", ":")))
         return 0 if report.get("ok") is True else 2
+    if args.command == "research":
+        if not args.live:
+            print("research requires --live", file=sys.stderr)
+            return 2
+        missing_intel = missing_live_feed_keys()
+        if missing_intel:
+            print("research --live missing env: " + ", ".join(missing_intel), file=sys.stderr)
+            return 2
+        out = Path(args.out) if args.out else research_artifact_path()
+        try:
+            report = run_research(out_path=out)
+        except LiveFeedConfigError as error:
+            print(str(error), file=sys.stderr)
+            return 2
+        except (ValueError, NotImplementedError) as error:
+            print(str(error), file=sys.stderr)
+            return 2
+        report = dict(report)
+        report["runtime_env"] = runtime_env_status()
+        print(json.dumps(report, separators=(",", ":")))
+        return 0 if report.get("ok") is True else 1
     return 2
 
 

@@ -20,11 +20,7 @@ from .drift import fixture_drift_book
 from .events import Event
 from .fixture_load import load_fixture_events
 from .indicators import UNIVERSE, rank_candidates
-from .live_feeds import (
-    fetch_live_feed_payloads,
-    live_events_for_intensity,
-    summarize_feed,
-)
+from .universe import is_tradable_ticker
 from .paper import (
     OrderRefused,
     PaperSubmitRefused,
@@ -39,12 +35,15 @@ from .sim import load_mark_book, resolve_mark_book_path
 from .store import EventStore
 
 NOTE = (
-    "Print-only dry-run. Fixture or cluster-drift target book versus paper "
-    "positions. Not alpha. Not a broker fill. Qty prefers fixture entry_px, "
-    "then a paper IEX last trade or snapshot latestTrade. Never invents a "
-    "price. Names still unmarked stay skipped. No remote paper POST. "
-    "Local apply requires --apply-local and mark_source=fixture."
+    "Print-only dry-run. Target book versus paper positions (opens, adjusts, "
+    "and leftover closes). Not alpha. Not a broker fill. Offline fixture-only "
+    "qty prefers fixture entry_px. --live and --submit-paper prefer an observed "
+    "paper IEX last trade or snapshot latestTrade when one exists, then the "
+    "fixture mark. Never invents a price. Names still unmarked stay skipped. "
+    "No remote paper POST. Local apply requires --apply-local and "
+    "mark_source=fixture."
 )
+RESEARCH_SIGNAL = "research-live"
 APPLY_NOTE = (
     "Local ledger apply of the same dry-run tickets. Only tickets sized from "
     "mark_kind=fixture_mark and mark_source=fixture are recorded through "
@@ -155,8 +154,8 @@ def paper_held(positions: list[Any]) -> tuple[dict[str, dict[str, Any]], list[di
         else:
             skipped.append({"ticker": symbol, "reason": "unknown_position_side"})
             continue
-        if symbol not in UNIVERSE:
-            skipped.append({"ticker": symbol, "reason": "ticker_not_in_universe"})
+        if not is_tradable_ticker(symbol):
+            skipped.append({"ticker": symbol, "reason": "invalid_ticker"})
             continue
         held[symbol] = {"shares": shares, "side": "short" if shares < 0 else "long"}
     return held, skipped
@@ -224,34 +223,57 @@ def fixture_sizing_marks(marks: dict[str, Any]) -> dict[str, dict[str, Any]]:
     return resolved
 
 
+def _honest_paper_mark(row: Any) -> dict[str, Any] | None:
+    if not isinstance(row, dict):
+        return None
+    px = _sizing_px(row)
+    if px is None:
+        return None
+    kind = str(row.get("kind") or "last_trade")
+    source = str(row.get("source") or PAPER_SIZING_SOURCE)
+    if kind == "fixture_mark" or source == "fixture":
+        return None
+    return {"entry_px": px, "kind": kind, "source": source}
+
+
 def resolve_sizing_marks(
     needed: list[str],
     fixture_marks: dict[str, Any],
     client: Any | None = None,
+    *,
+    prefer_paper: bool = False,
+    universe: tuple[str, ...] | None = None,
 ) -> dict[str, dict[str, Any]]:
-    """Fixture marks first. Paper last trade / snapshot only for leftovers."""
-    resolved = fixture_sizing_marks(fixture_marks)
-    missing = [ticker for ticker in needed if ticker not in resolved and ticker in UNIVERSE]
-    if not missing or client is None or not hasattr(client, "sizing_marks"):
-        return resolved
-    try:
-        paper = client.sizing_marks(missing) or {}
-    except Exception:
-        return resolved
-    if not isinstance(paper, dict):
-        return resolved
-    for ticker in missing:
-        row = paper.get(ticker)
-        if not isinstance(row, dict):
+    """Offline: fixture first. --live / --submit-paper: observed paper mark first.
+
+    Never invents a price. Paper IEX last trade / snapshot only when the
+    client returns a finite positive mark.
+    """
+    allowed = set(UNIVERSE if universe is None else universe)
+    fixture = fixture_sizing_marks(fixture_marks)
+    paper: dict[str, dict[str, Any]] = {}
+    wanted = [ticker for ticker in needed if ticker in allowed]
+    if client is not None and hasattr(client, "sizing_marks") and wanted:
+        if hasattr(client, "set_universe"):
+            client.set_universe(allowed)
+        try:
+            fetched = client.sizing_marks(wanted) or {}
+        except Exception:
+            fetched = {}
+        if isinstance(fetched, dict):
+            for ticker in wanted:
+                mark = _honest_paper_mark(fetched.get(ticker))
+                if mark is not None:
+                    paper[ticker] = mark
+    resolved: dict[str, dict[str, Any]] = {}
+    for ticker in needed:
+        if ticker not in allowed:
             continue
-        px = _sizing_px(row)
-        if px is None:
-            continue
-        kind = str(row.get("kind") or "last_trade")
-        source = str(row.get("source") or PAPER_SIZING_SOURCE)
-        if kind == "fixture_mark" or source == "fixture":
-            continue
-        resolved[ticker] = {"entry_px": px, "kind": kind, "source": source}
+        paper_row = paper.get(ticker)
+        fixture_row = fixture.get(ticker)
+        chosen = paper_row or fixture_row if prefer_paper else fixture_row or paper_row
+        if chosen is not None:
+            resolved[ticker] = chosen
     return resolved
 
 
@@ -435,11 +457,17 @@ def proposed_rebalance(
     intensity: bool = False,
     live: bool = False,
     live_events: list[Event] | None = None,
+    prefer_paper_marks: bool | None = None,
+    universe: tuple[str, ...] | None = None,
+    research: dict[str, Any] | None = None,
+    research_path: Path | str | None = None,
 ) -> dict[str, Any]:
-    """Read paper snapshot + fixture target book; return print-only tickets."""
+    """Read paper snapshot + target book; return print-only tickets."""
     if signal not in {"drift", "rank"}:
         raise ValueError("signal must be 'drift' or 'rank'")
-    if (intensity or live) and signal != "drift":
+    if intensity and not live and signal != "drift":
+        raise ValueError("intensity overlay requires the cluster-drift book")
+    if live and signal == "rank":
         raise ValueError("intensity overlay requires the cluster-drift book")
     if client is not None:
         if account is None:
@@ -466,30 +494,36 @@ def proposed_rebalance(
     extra_events: list[Event] = []
     intensity_when = None
     apply_intensity = bool(intensity or live)
+    research_report = None
+    operating = tuple(universe) if universe is not None else UNIVERSE
+    use_paper_marks = bool(live) if prefer_paper_marks is None else bool(prefer_paper_marks)
     if live:
-        if live_events is None:
-            quiver, world = fetch_live_feed_payloads()
-            extra_events = live_events_for_intensity(quiver, world)
-            live_summary = {
-                "quiver": summarize_feed(quiver),
-                "worldmonitor": summarize_feed(world),
-            }
-        else:
-            extra_events = list(live_events)
-            live_summary = {
-                "quiver": summarize_feed([]),
-                "worldmonitor": summarize_feed(extra_events),
-                "injected": True,
-            }
-        intensity_when = _intensity_cut(extra_events)
+        from .research import resolve_research_book
 
-    if signal == "drift":
+        research_report = resolve_research_book(
+            fixtures=root,
+            mark_book_path=resolved,
+            research=research,
+            research_path=research_path,
+            live_events=live_events,
+        )
+        operating = tuple(research_report["universe"]["operating"])
+        extra_events = []
+        live_summary = research_report.get("feeds")
+        intensity_when = _intensity_cut([])
+        candidates = list(research_report["proposed_book"]["targets"])
+        signal_name = RESEARCH_SIGNAL
+        signal_note = research_report.get("note") or NOTE
+        drift_book = {"intensity_note": research_report.get("note"), "intensity": research_report.get("intensity"), "intensity_cut": "now"}
+        apply_intensity = True
+    elif signal == "drift":
         drift_book = fixture_drift_book(
             root,
             resolved,
             intensity=apply_intensity,
             extra_events=extra_events or None,
             intensity_when=intensity_when,
+            universe=operating if universe is not None else None,
         )
         candidates = list(drift_book["targets"])
         signal_name = SIGNAL_DRIFT
@@ -497,15 +531,22 @@ def proposed_rebalance(
     else:
         with EventStore() as store:
             store.add_many(events)
-            candidates = rank_candidates(store.all(), window_end=book["decision_at"])
+            candidates = rank_candidates(store.all(), window_end=book["decision_at"], universe=operating)
         signal_name = SIGNAL_RANK
         signal_note = "Existing rank_candidates at the mark-book decision_at. Not a new alpha."
         drift_book = {}
 
     held, held_skips = paper_held(list(positions))
+    mark_universe = tuple(dict.fromkeys([*operating, *held]))
     needed = [str(row["ticker"]) for row in candidates]
     needed.extend(ticker for ticker in held if ticker not in needed)
-    sizing_marks = resolve_sizing_marks(needed, book["marks"], client)
+    sizing_marks = resolve_sizing_marks(
+        needed,
+        book["marks"],
+        client,
+        prefer_paper=use_paper_marks,
+        universe=mark_universe,
+    )
     fillable, pre_skips = _fillable_candidates(candidates, sizing_marks)
     targets, size_skips = size_targets(
         fillable,
@@ -564,6 +605,8 @@ def proposed_rebalance(
         "skipped": skipped,
         "n_tickets": len(tickets),
         "n_skipped": len(skipped),
+        "universe": list(operating),
+        "prefer_paper_marks": use_paper_marks,
         "marks": {
             "fixture": fixture_marked,
             "paper_data": paper_marked,
@@ -581,6 +624,9 @@ def proposed_rebalance(
         report["intensity_cut"] = drift_book.get("intensity_cut", "decision_at")
     if live_summary is not None:
         report["live_intel"] = live_summary
+    if research_report is not None:
+        report["research_date"] = research_report.get("date")
+        report["research_universe"] = research_report.get("universe")
     return report
 
 
@@ -720,12 +766,13 @@ def apply_local_rebalance(
     return out
 
 
-def clear_sizing_failure(ticket: dict[str, Any]) -> str | None:
+def clear_sizing_failure(ticket: dict[str, Any], universe: tuple[str, ...] | None = None) -> str | None:
     """Refuse a remote paper POST unless qty or notional is a clear size."""
     if not isinstance(ticket, dict):
         return "ticket must be a mapping"
     symbol = ticket.get("symbol") or ticket.get("ticker")
-    if symbol not in UNIVERSE:
+    allowed = UNIVERSE if universe is None else universe
+    if symbol not in allowed:
         return "ticker not in universe"
     side = ticket.get("side")
     if side not in {"buy", "sell"}:
@@ -766,11 +813,22 @@ def submit_paper_rebalance(
     if not isinstance(limit, int) or isinstance(limit, bool) or limit < 1:
         raise PaperSubmitRefused("rebalance --submit-paper --limit must be a positive integer")
 
+    operating = report.get("universe")
+    allowed = tuple(operating) if isinstance(operating, list) else UNIVERSE
+    ticket_names = []
+    for ticket in tickets:
+        if isinstance(ticket, dict):
+            name = ticket.get("symbol") or ticket.get("ticker")
+            if is_tradable_ticker(name) and name not in ticket_names:
+                ticket_names.append(str(name))
+    allowed = tuple(dict.fromkeys([*allowed, *ticket_names]))
+    if hasattr(client, "set_universe"):
+        client.set_universe(allowed)
     indexed: list[tuple[int, dict[str, Any]]] = []
     submit_skipped: list[dict[str, str]] = []
     for index, ticket in enumerate(tickets):
         row = dict(ticket) if isinstance(ticket, dict) else {}
-        reason = clear_sizing_failure(row)
+        reason = clear_sizing_failure(row, universe=allowed)
         if reason is not None:
             submit_skipped.append(
                 {"ticker": str(row.get("symbol") or "unknown"), "reason": reason}

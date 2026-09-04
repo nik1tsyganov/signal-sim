@@ -26,6 +26,7 @@ from signal_sim.rebalance import (
     plan_rebalance_tickets,
     proposed_rebalance,
     resolve_sizing_marks,
+    submit_paper_rebalance,
 )
 from signal_sim.sim import load_mark_book
 from signal_sim.sizer import size_targets
@@ -248,7 +249,7 @@ class RebalancePlannerTests(unittest.TestCase):
         )
         reasons = {row["ticker"]: row["reason"] for row in report["skipped"]}
         self.assertEqual(reasons["AAPL"], "held_no_mark")
-        self.assertEqual(reasons["TSLA"], "ticker_not_in_universe")
+        self.assertEqual(reasons["TSLA"], "held_no_mark")
         self.assertFalse(any(row["symbol"] == "AAPL" for row in report["tickets"]))
         self.assertFalse(any(row["symbol"] == "TSLA" for row in report["tickets"]))
 
@@ -441,20 +442,7 @@ class RebalancePlannerTests(unittest.TestCase):
         self.assertEqual(resolved["AAPL"]["kind"], "snapshot")
         self.assertNotIn("TSLA", resolved)
 
-    def test_live_intensity_shrinks_overlay_and_rationale(self):
-        plain = proposed_rebalance(
-            fixtures=FIXTURES,
-            account=_empty_account(),
-            positions=[],
-            clock=_clock(),
-        )
-        featured = proposed_rebalance(
-            fixtures=FIXTURES,
-            account=_empty_account(),
-            positions=[],
-            clock=_clock(),
-            intensity=True,
-        )
+    def test_live_research_book_drives_rebalance_without_pii(self):
         live = proposed_rebalance(
             fixtures=FIXTURES,
             account=_empty_account(),
@@ -463,16 +451,11 @@ class RebalancePlannerTests(unittest.TestCase):
             live=True,
             live_events=[_live_event()],
         )
+        self.assertEqual(live["signal"], "research-live")
         self.assertEqual(live["intensity_cut"], "now")
-        self.assertIn("live", live["intensity_note"].lower())
-        self.assertGreater(live["intensity"]["NVDA"], featured["intensity"]["NVDA"])
-        plain_nvda = next(row for row in plain["tickets"] if row["symbol"] == "NVDA")
-        featured_nvda = next(row for row in featured["tickets"] if row["symbol"] == "NVDA")
-        live_nvda = next(row for row in live["tickets"] if row["symbol"] == "NVDA")
-        self.assertLessEqual(featured_nvda["qty"], plain_nvda["qty"])
-        self.assertLessEqual(live_nvda["qty"], featured_nvda["qty"])
-        self.assertIn("intensity=", live_nvda["rationale"])
-        self.assertIn("scale=", live_nvda["rationale"])
+        self.assertTrue(live["prefer_paper_marks"])
+        self.assertIn("NVDA", live["universe"])
+        self.assertIn("NVDA", live["intensity"])
         dumped = json.dumps(live)
         self.assertNotIn("SECRET HEADLINE", dumped)
         self.assertNotIn("example.invalid", dumped)
@@ -480,6 +463,116 @@ class RebalancePlannerTests(unittest.TestCase):
         self.assertFalse(live["submitted"])
         self.assertFalse(live["local_applied"])
         self.assertEqual(live["order_post"], "disabled")
+        self.assertTrue(live["tickets"])
+
+    def test_submit_path_prefers_paper_mark_over_fixture_spy(self):
+        book = load_mark_book()
+        client = _FakeMarkClient(
+            {
+                "SPY": {
+                    "entry_px": 580.0,
+                    "kind": "last_trade",
+                    "source": "alpaca_paper_data",
+                },
+                "QQQ": {
+                    "entry_px": 480.0,
+                    "kind": "snapshot",
+                    "source": "alpaca_paper_data",
+                },
+            }
+        )
+        offline = proposed_rebalance(
+            fixtures=FIXTURES,
+            account=_empty_account(),
+            positions=[],
+            clock=_clock(),
+            client=client,
+            prefer_paper_marks=False,
+        )
+        live_sized = proposed_rebalance(
+            fixtures=FIXTURES,
+            account=_empty_account(),
+            positions=[],
+            clock=_clock(),
+            client=client,
+            prefer_paper_marks=True,
+        )
+        offline_spy = next(row for row in offline["tickets"] if row["symbol"] == "SPY")
+        live_spy = next(row for row in live_sized["tickets"] if row["symbol"] == "SPY")
+        self.assertAlmostEqual(offline_spy["mark_px"], book["marks"]["SPY"]["entry_px"])
+        self.assertAlmostEqual(live_spy["mark_px"], 580.0)
+        self.assertEqual(live_spy["mark_kind"], "last_trade")
+        self.assertLess(abs(live_spy["qty"]), abs(offline_spy["qty"]))
+        live_qqq = next(row for row in live_sized["tickets"] if row["symbol"] == "QQQ")
+        self.assertAlmostEqual(live_qqq["mark_px"], 480.0)
+
+    def test_leftover_close_sell_for_name_not_in_target(self):
+        client = _FakeMarkClient(
+            {
+                "TSLA": {
+                    "entry_px": 250.0,
+                    "kind": "last_trade",
+                    "source": "alpaca_paper_data",
+                }
+            },
+            positions=[{"symbol": "TSLA", "qty": "4", "side": "long"}],
+        )
+        report = proposed_rebalance(
+            fixtures=FIXTURES,
+            account=_empty_account(),
+            positions=[{"symbol": "TSLA", "qty": "4", "side": "long"}],
+            clock=_clock(),
+            client=client,
+            prefer_paper_marks=True,
+        )
+        tsla = next(row for row in report["tickets"] if row["symbol"] == "TSLA")
+        self.assertEqual(tsla["side"], "sell")
+        self.assertEqual(tsla["action"], "close")
+        self.assertAlmostEqual(tsla["qty"], -4.0)
+        self.assertIn("close leftover", tsla["rationale"])
+
+
+class RebalanceSubmitSellTests(unittest.TestCase):
+    def test_submit_paper_posts_a_leftover_sell(self):
+        posted = []
+
+        class _SubmitClient(_FakeMarkClient):
+            def post_paper_order(self, proposal, *, explicit):
+                posted.append(dict(proposal))
+                return {
+                    "id": "ord-sell-1",
+                    "status": "accepted",
+                    "symbol": proposal["symbol"],
+                    "side": proposal["side"],
+                    "qty": proposal["qty"],
+                    "submitted": True,
+                    "duplicate": False,
+                }
+
+        book = load_mark_book()
+        tickets, skipped = plan_rebalance_tickets(
+            targets=[],
+            marks=book["marks"],
+            held={"SPY": {"shares": 10.0, "side": "long"}},
+            cash=100000.0,
+            allocation=100000.0,
+            cost_bps=0.0,
+            signal=SIGNAL_DRIFT,
+            decision_at="2026-09-02T10:15:00Z",
+        )
+        self.assertEqual(skipped, [])
+        self.assertEqual(tickets[0]["side"], "sell")
+        report = {
+            "tickets": tickets,
+            "universe": ["SPY"],
+            "ok": True,
+        }
+        with mock.patch("signal_sim.rebalance.require_paper_submit"):
+            submitted = submit_paper_rebalance(report, _SubmitClient(), limit=1, explicit=True)
+        self.assertTrue(submitted["submitted"])
+        self.assertEqual(posted[0]["side"], "sell")
+        self.assertEqual(posted[0]["symbol"], "SPY")
+        self.assertEqual(submitted["n_paper_submitted"], 1)
 
 
 class RebalanceApplyLocalTests(unittest.TestCase):
@@ -727,6 +820,7 @@ class RebalanceCliTests(unittest.TestCase):
 
         printed = io.StringIO()
         error = io.StringIO()
+        missing = Path(tempfile.mkdtemp()) / "no-research.json"
         with mock.patch("signal_sim.paper.read_env", side_effect=env), mock.patch(
             "signal_sim.live_feeds.read_env", side_effect=env
         ), mock.patch(
@@ -735,13 +829,17 @@ class RebalanceCliTests(unittest.TestCase):
         ), mock.patch(
             "signal_sim.sources.worldmonitor.live", return_value=[_live_event("XLE", "wm-xle")]
         ), mock.patch(
+            "signal_sim.research.research_artifact_path", return_value=missing
+        ), mock.patch(
             "signal_sim.alpaca_paper.urllib.request.urlopen",
             side_effect=_paper_urlopen(calls),
         ), redirect_stdout(printed), redirect_stderr(error):
             code = cli.main(["rebalance", "--fixtures", "--live"])
         self.assertEqual(code, 0)
         payload = json.loads(printed.getvalue())
+        self.assertEqual(payload["signal"], "research-live")
         self.assertEqual(payload["intensity_cut"], "now")
+        self.assertTrue(payload["prefer_paper_marks"])
         self.assertIn("live_intel", payload)
         self.assertEqual(payload["live_intel"]["worldmonitor"]["tickers"], {"XLE": 1})
         dumped = printed.getvalue() + error.getvalue()
@@ -981,6 +1079,7 @@ class RebalanceCliTests(unittest.TestCase):
 
         printed = io.StringIO()
         error = io.StringIO()
+        missing = Path(tempfile.mkdtemp()) / "no-research.json"
         with mock.patch("signal_sim.paper.read_env", side_effect=env), mock.patch(
             "signal_sim.runtime_env.read_env", side_effect=env
         ), mock.patch("signal_sim.live_feeds.read_env", side_effect=env), mock.patch(
@@ -988,6 +1087,8 @@ class RebalanceCliTests(unittest.TestCase):
             return_value=[{"ticker": "NVDA", "person": "Rep. Hidden"}],
         ), mock.patch(
             "signal_sim.sources.worldmonitor.live", return_value=[_live_event("XLE", "wm-xle")]
+        ), mock.patch(
+            "signal_sim.research.research_artifact_path", return_value=missing
         ), mock.patch(
             "signal_sim.alpaca_paper.urllib.request.urlopen", side_effect=urlopen
         ), redirect_stdout(printed), redirect_stderr(error):

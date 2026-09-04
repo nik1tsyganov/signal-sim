@@ -651,6 +651,148 @@ class AlpacaPaperSubmitGateTests(unittest.TestCase):
         self.assertTrue(any(method == "POST" and url.endswith("/v2/orders") for url, method in calls))
         self.assertTrue(all(PAPER_BROKER_HOST in url for url, _method in calls))
 
+    def test_flag_zero_never_deletes(self):
+        calls = []
+
+        def env(name):
+            return _env(name, {"SIGNAL_SIM_ALPACA_PAPER_SUBMIT": "0"})
+
+        with mock.patch("signal_sim.paper.read_env", side_effect=env), mock.patch(
+            "signal_sim.runtime_env.read_env", side_effect=env
+        ), mock.patch(
+            "signal_sim.alpaca_paper.urllib.request.urlopen",
+            side_effect=lambda *a, **k: calls.append(a) or _json_response({}),
+        ) as urlopen:
+            client = paper_broker_client(PAPER_BROKER_HOST)
+            with self.assertRaises(PaperSubmitRefused):
+                client.cancel_paper_order(
+                    "11111111-1111-1111-1111-111111111111",
+                    explicit=True,
+                )
+        urlopen.assert_not_called()
+        self.assertEqual(calls, [])
+
+    def test_invalid_order_id_is_refused_before_http(self):
+        def env(name):
+            return _env(name, {"SIGNAL_SIM_ALPACA_PAPER_SUBMIT": "1"})
+
+        with mock.patch("signal_sim.paper.read_env", side_effect=env), mock.patch(
+            "signal_sim.runtime_env.read_env", side_effect=env
+        ), mock.patch(
+            "signal_sim.alpaca_paper.urllib.request.urlopen"
+        ) as urlopen:
+            client = paper_broker_client(PAPER_BROKER_HOST)
+            with self.assertRaises(ValueError) as error:
+                client.cancel_paper_order("../orders", explicit=True)
+        self.assertIn("UUID", str(error.exception))
+        urlopen.assert_not_called()
+
+    def test_paper_cancel_cli_flag_zero_never_deletes(self):
+        calls = []
+
+        def env(name):
+            return _env(name, {"SIGNAL_SIM_ALPACA_PAPER_SUBMIT": "0"})
+
+        printed = io.StringIO()
+        error = io.StringIO()
+        with mock.patch("signal_sim.paper.read_env", side_effect=env), mock.patch(
+            "signal_sim.runtime_env.read_env", side_effect=env
+        ), mock.patch(
+            "signal_sim.alpaca_paper.urllib.request.urlopen",
+            side_effect=lambda request, timeout=None: calls.append(request) or _json_response({}),
+        ) as urlopen, redirect_stdout(printed), redirect_stderr(error):
+            code = cli.main(
+                [
+                    "paper-cancel",
+                    "--order-id",
+                    "11111111-1111-1111-1111-111111111111",
+                ]
+            )
+        self.assertEqual(code, 2)
+        self.assertIn("SIGNAL_SIM_ALPACA_PAPER_SUBMIT", error.getvalue())
+        self.assertNotIn("paper-secret", printed.getvalue() + error.getvalue())
+        urlopen.assert_not_called()
+        self.assertEqual(calls, [])
+
+    def test_paper_cancel_cli_mocked_delete_when_flag_one(self):
+        calls = []
+        order_id = "22222222-2222-2222-2222-222222222222"
+
+        def env(name):
+            return _env(name, {"SIGNAL_SIM_ALPACA_PAPER_SUBMIT": "1"})
+
+        def urlopen(request, timeout=None):
+            calls.append((request.full_url, request.get_method()))
+            url = request.full_url
+            if request.get_method() == "DELETE" and url.endswith("/v2/orders/" + order_id):
+                response = mock.MagicMock()
+                response.read.return_value = b""
+                response.__enter__.return_value = response
+                response.__exit__.return_value = False
+                return response
+            raise AssertionError(url)
+
+        printed = io.StringIO()
+        error = io.StringIO()
+        with mock.patch("signal_sim.paper.read_env", side_effect=env), mock.patch(
+            "signal_sim.runtime_env.read_env", side_effect=env
+        ), mock.patch(
+            "signal_sim.alpaca_paper.urllib.request.urlopen", side_effect=urlopen
+        ), redirect_stdout(printed), redirect_stderr(error):
+            code = cli.main(["paper-cancel", "--order-id", order_id])
+        self.assertEqual(code, 0)
+        payload = json.loads(printed.getvalue())
+        self.assertTrue(payload["ok"])
+        self.assertTrue(payload["cancelled"])
+        self.assertFalse(payload["submitted"])
+        self.assertEqual(payload["n_cancelled"], 1)
+        self.assertEqual(payload["orders"][0]["id"], order_id)
+        dumped = printed.getvalue() + error.getvalue()
+        self.assertNotIn("paper-secret", dumped)
+        self.assertTrue(
+            any(method == "DELETE" and url.endswith("/v2/orders/" + order_id) for url, method in calls)
+        )
+        self.assertTrue(all(PAPER_BROKER_HOST in url for url, _method in calls))
+        self.assertFalse(any(method == "POST" for _url, method in calls))
+
+    def test_paper_cancel_open_limit_one_mocked(self):
+        calls = []
+        first = "33333333-3333-3333-3333-333333333333"
+        second = "44444444-4444-4444-4444-444444444444"
+
+        def env(name):
+            return _env(name, {"SIGNAL_SIM_ALPACA_PAPER_SUBMIT": "1"})
+
+        def urlopen(request, timeout=None):
+            calls.append((request.full_url, request.get_method()))
+            url = request.full_url
+            if request.get_method() == "GET" and "/v2/orders?" in url:
+                return _json_response(
+                    [
+                        {"id": first, "status": "new", "symbol": "QQQ", "qty": "278"},
+                        {"id": second, "status": "new", "symbol": "SPY", "qty": "250"},
+                    ]
+                )
+            if request.get_method() == "DELETE" and url.endswith("/v2/orders/" + first):
+                return _json_response({"id": first, "status": "canceled", "symbol": "QQQ"})
+            raise AssertionError(url)
+
+        printed = io.StringIO()
+        error = io.StringIO()
+        with mock.patch("signal_sim.paper.read_env", side_effect=env), mock.patch(
+            "signal_sim.runtime_env.read_env", side_effect=env
+        ), mock.patch(
+            "signal_sim.alpaca_paper.urllib.request.urlopen", side_effect=urlopen
+        ), redirect_stdout(printed), redirect_stderr(error):
+            code = cli.main(["paper-cancel", "--open", "--limit", "1"])
+        self.assertEqual(code, 0)
+        payload = json.loads(printed.getvalue())
+        self.assertEqual(payload["n_cancelled"], 1)
+        self.assertEqual(payload["orders"][0]["id"], first)
+        self.assertTrue(any(method == "GET" and "/v2/orders?" in url for url, method in calls))
+        self.assertEqual(sum(1 for _url, method in calls if method == "DELETE"), 1)
+        self.assertFalse(any(second in url for url, _method in calls))
+
 
 def _paper_keys_present():
     return bool(os.environ.get("ALPACA_PAPER_API_KEY", "").strip()) and bool(

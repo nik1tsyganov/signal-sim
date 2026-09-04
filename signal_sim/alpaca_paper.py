@@ -17,9 +17,11 @@ import math
 import urllib.error
 import urllib.parse
 import urllib.request
+import uuid
 from typing import Any
 
 from .indicators import UNIVERSE
+from .universe import is_tradable_ticker
 
 _USER_AGENT = "signal-sim-paper/0.1"
 _DATA_HOST_PREFIX = "data."
@@ -134,6 +136,15 @@ def sanitize_order(raw: Any) -> dict[str, Any]:
     return {field: raw.get(field) for field in _ORDER_FIELDS}
 
 
+def _paper_order_id(value: Any) -> str:
+    text = str(value or "").strip()
+    try:
+        uuid.UUID(text)
+    except (ValueError, AttributeError, TypeError):
+        raise ValueError("paper cancel: order id must be a UUID") from None
+    return text
+
+
 def sanitize_fill(raw: Any) -> dict[str, Any]:
     if not isinstance(raw, dict):
         return {}
@@ -159,11 +170,22 @@ class AlpacaPaperClient:
 
     mode = "alpaca-paper-read"
 
-    def __init__(self, base_url: str, api_key: str, api_secret: str):
+    def __init__(
+        self,
+        base_url: str,
+        api_key: str,
+        api_secret: str,
+        universe: tuple[str, ...] | None = None,
+    ):
         self._base_url = str(base_url).rstrip("/")
         self._data_base_url = "https://" + paper_data_host()
         self._api_key = api_key
         self._api_secret = api_secret
+        self._universe = frozenset(UNIVERSE if universe is None else universe)
+
+    def set_universe(self, universe: Any) -> None:
+        names = [item for item in (universe or ()) if is_tradable_ticker(item)]
+        self._universe = frozenset(names or UNIVERSE)
 
     def __repr__(self) -> str:
         return f"AlpacaPaperClient(mode={self.mode!r}, base_url={self._base_url!r})"
@@ -193,7 +215,7 @@ class AlpacaPaperClient:
             request.add_header("Content-Type", "application/json")
         try:
             with urllib.request.urlopen(request, timeout=15) as response:
-                payload = json.loads(response.read().decode("utf-8"))
+                raw_body = response.read().decode("utf-8")
         except urllib.error.HTTPError as error:
             code = error.code
             detail = ""
@@ -215,6 +237,12 @@ class AlpacaPaperClient:
             raise RuntimeError(f"{label} HTTP {code} for {path}{detail}") from None
         except urllib.error.URLError:
             raise RuntimeError(f"{label} request failed for {path}") from None
+        if not raw_body.strip():
+            if method == "DELETE":
+                return {}
+            raise RuntimeError(f"{label} returned empty body for {path}")
+        try:
+            payload = json.loads(raw_body)
         except json.JSONDecodeError:
             raise RuntimeError(f"{label} returned non-JSON for {path}") from None
         return payload
@@ -231,7 +259,7 @@ class AlpacaPaperClient:
     def _universe_symbols(self, symbols: Any) -> list[str]:
         names: list[str] = []
         for item in symbols or []:
-            if item in UNIVERSE and item not in names:
+            if item in self._universe and item not in names:
                 names.append(str(item))
         return names
 
@@ -326,7 +354,7 @@ class AlpacaPaperClient:
                 "reason": "proposal must be a mapping",
             }
         ticker = proposal.get("symbol") or proposal.get("ticker")
-        if ticker not in UNIVERSE:
+        if ticker not in self._universe:
             return {
                 "ok": False,
                 "submitted": False,
@@ -399,7 +427,7 @@ class AlpacaPaperClient:
                 "reason": "proposal must be a mapping",
             }
         ticker = proposal.get("ticker") or proposal.get("symbol")
-        if ticker not in UNIVERSE:
+        if ticker not in self._universe:
             return {
                 "ok": False,
                 "submitted": False,
@@ -511,6 +539,54 @@ class AlpacaPaperClient:
             **sanitize_order(raw),
             "submitted": True,
             "duplicate": False,
+        }
+
+    def cancel_paper_order(self, order_id: Any, *, explicit: bool) -> dict[str, Any]:
+        """DELETE /v2/orders/{id} on the paper host only after the hard rails pass."""
+        from .paper import require_paper_submit
+
+        require_paper_submit(explicit=explicit)
+        if not self._paper_host_ok():
+            raise ValueError(f"paper broker host refused: {self._base_url!r}")
+        oid = _paper_order_id(order_id)
+        path = f"/v2/orders/{oid}"
+        raw = self._request_json(
+            f"{self._base_url}{path}",
+            path,
+            "paper cancel",
+            method="DELETE",
+        )
+        sanitized = sanitize_order(raw) if isinstance(raw, dict) else {}
+        return {
+            **sanitized,
+            "id": sanitized.get("id") or oid,
+            "cancelled": True,
+            "submitted": False,
+        }
+
+    def cancel_open_paper_orders(self, *, explicit: bool, limit: int = 1) -> dict[str, Any]:
+        """DELETE up to ``limit`` open paper orders. Default limit 1. No all-flag."""
+        from .paper import require_paper_submit
+
+        require_paper_submit(explicit=explicit)
+        if not self._paper_host_ok():
+            raise ValueError(f"paper broker host refused: {self._base_url!r}")
+        if not isinstance(limit, int) or limit < 1:
+            raise ValueError("paper cancel --limit must be >= 1")
+        open_orders = self.orders(status="open", limit=limit)
+        cancelled: list[dict[str, Any]] = []
+        errors: list[dict[str, str]] = []
+        for row in open_orders[:limit]:
+            oid = row.get("id")
+            try:
+                cancelled.append(self.cancel_paper_order(oid, explicit=explicit))
+            except (RuntimeError, ValueError) as error:
+                errors.append({"id": str(oid or ""), "error": str(error)})
+        return {
+            "cancelled": cancelled,
+            "errors": errors,
+            "n_cancelled": len(cancelled),
+            "n_errors": len(errors),
         }
 
     def read_smoke(self, proposal: dict[str, Any] | None = None) -> dict[str, Any]:

@@ -17,27 +17,32 @@ def fixture_diagnostics(
     events: list[Event],
     *,
     decision_at: datetime | None = None,
+    extra_events: list[Event] | None = None,
+    universe: tuple[str, ...] | None = None,
 ) -> dict[str, Any]:
     """Diagnose fixture prints in the same decision window replay uses."""
-    if not events:
+    material = list(events)
+    if extra_events:
+        material.extend(extra_events)
+    if not material:
         raise ValueError("diagnose requires at least one fixture event")
     if decision_at is None:
         from .sim import load_mark_book
 
         decision_at = load_mark_book()["decision_at"]
-    window = [event for event in events if event.observed_at <= decision_at]
+    window = [event for event in material if event.observed_at <= decision_at]
     if not window:
         raise ValueError("diagnose requires at least one fixture event at or before decision_at")
-    intensities = intensity_map(window, decision_at)
-    clusters = online_clusters(window, decision_at)
+    intensities = intensity_map(window, decision_at, universe=universe)
+    clusters = online_clusters(window, decision_at, universe=universe)
     from .indicators import filed_confirm_features, filed_lag_features, intel_features, trendradar_features
     from .sources.worldmonitor import load_recorded
 
     recorded = [event for event in load_recorded() if event.observed_at <= decision_at]
-    intel = intel_features(window + recorded, decision_at)
-    hotspot = trendradar_features(window, decision_at)
-    lags = filed_lag_features(window, decision_at)
-    confirms = filed_confirm_features(window, decision_at)
+    intel = intel_features(window + recorded, decision_at, universe=universe)
+    hotspot = trendradar_features(window, decision_at, universe=universe)
+    lags = filed_lag_features(window, decision_at, universe=universe)
+    confirms = filed_confirm_features(window, decision_at, universe=universe)
     from .params import operate_stamp
 
     stamp = operate_stamp()
@@ -62,7 +67,7 @@ def fixture_diagnostics(
         "hawkes_log_likelihood": log_likelihood(window, end=decision_at),
         "stats": {
             "n_events": len(window),
-            "n_events_after_decision": len(events) - len(window),
+            "n_events_after_decision": len(material) - len(window),
             "n_clusters": len(clusters),
             "max_cluster_size": max((row["size"] for row in clusters), default=0),
             "n_intel": sum(1 for row in intel.values() if row.get("intel_brief")),

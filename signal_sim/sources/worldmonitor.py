@@ -14,6 +14,7 @@ from pathlib import Path
 from signal_sim.events import Event
 from signal_sim.indicators import UNIVERSE
 from signal_sim.secrets import read_env
+from signal_sim.universe import is_tradable_ticker
 
 
 _TICKER_HINTS = {
@@ -32,6 +33,15 @@ _TICKER_HINTS = {
     "SPY": ("spy",),
     "QQQ": ("qqq",),
     "XLK": ("xlk",),
+    "TSLA": ("tsla", "tesla"),
+    "AMD": ("amd",),
+    "AVGO": ("avgo", "broadcom"),
+    "ORCL": ("orcl", "oracle"),
+    "JPM": ("jpm", "jpmorgan", "j.p. morgan"),
+    "V": ("visa",),
+    "MA": ("mastercard",),
+    "WMT": ("wmt", "walmart"),
+    "COST": ("costco",),
 }
 
 
@@ -43,24 +53,54 @@ def _fetch_api(url: str, key: str) -> dict | list:
         return json.loads(response.read().decode("utf-8"))
 
 
-def _mentioned_tickers(text: str) -> list[str]:
+def _accept_set(accept) -> set[str]:
+    if accept is None:
+        return set(UNIVERSE)
+    return {ticker for ticker in accept if is_tradable_ticker(ticker)}
+
+
+def _iso_stamp(value, fallback: str) -> str:
+    if value in (None, ""):
+        return fallback
+    if isinstance(value, datetime):
+        return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        seconds = float(value)
+        if seconds > 1e12:
+            seconds /= 1000.0
+        return datetime.fromtimestamp(seconds, tz=timezone.utc).isoformat().replace("+00:00", "Z")
+    text = str(value).strip()
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return fallback
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.isoformat().replace("+00:00", "Z")
+
+
+def _mentioned_tickers(text: str, accept=None) -> list[str]:
     found = []
     blob = text.lower()
-    for ticker in UNIVERSE:
+    for ticker in _accept_set(accept):
         hints = _TICKER_HINTS.get(ticker, (ticker.lower(),))
         if any(re.search(r"\b" + re.escape(hint) + r"\b", blob) for hint in hints):
             found.append(ticker)
     return found
 
 
-def _map_list_payload(payload: list, observed_now: str) -> list[Event]:
+def _map_list_payload(payload: list, observed_now: str, accept=None) -> list[Event]:
+    allowed = _accept_set(accept)
     events = []
     for raw in payload:
+        ticker = raw.get("ticker", "UNKNOWN")
+        if ticker not in allowed:
+            continue
         event_dict = {
             "id": str(raw.get("id", "wm-unknown")),
             "source": "worldmonitor",
             "kind": "intel_brief",
-            "ticker": raw.get("ticker", "UNKNOWN"),
+            "ticker": ticker,
             "entities": raw.get("entities", []),
             "headline": raw.get("headline", ""),
             "url": raw.get("url", ""),
@@ -74,13 +114,15 @@ def _map_list_payload(payload: list, observed_now: str) -> list[Event]:
     return events
 
 
-def _map_intel_brief(payload: dict, observed_now: str) -> list[Event]:
+def _map_intel_brief(payload: dict, observed_now: str, accept=None) -> list[Event]:
     brief_text = str(payload.get("brief", ""))
     sources_text = str(payload.get("sources", ""))
     combined_text = brief_text + " " + sources_text
-    occurred_at = payload.get("generatedAt") or payload.get("fetchedAt") or observed_now
+    occurred_at = _iso_stamp(
+        payload.get("generatedAt") or payload.get("fetchedAt"), observed_now
+    )
     events = []
-    for ticker in _mentioned_tickers(combined_text):
+    for ticker in _mentioned_tickers(combined_text, accept=accept):
         events.append(
             Event.from_dict(
                 {
@@ -105,7 +147,7 @@ def _map_intel_brief(payload: dict, observed_now: str) -> list[Event]:
 def _map_chokepoints(payload: dict, observed_now: str) -> list[Event]:
     events = []
     for idx, cp in enumerate(payload.get("chokepoints", [])):
-        occurred_at = cp.get("fetchedAt") or cp.get("generatedAt") or observed_now
+        occurred_at = _iso_stamp(cp.get("fetchedAt") or cp.get("generatedAt"), observed_now)
         events.append(
             Event.from_dict(
                 {
@@ -147,7 +189,7 @@ def load_recorded(fixtures=None) -> list[Event]:
     return map_recorded(intel, choke if choke.is_file() else None, now=clock)
 
 
-def map_recorded(intel_path, chokepoint_path=None, now=None) -> list[Event]:
+def map_recorded(intel_path, chokepoint_path=None, now=None, accept=None) -> list[Event]:
     """Map checked-in World Monitor JSON. No HTTP."""
     if now is None:
         observed_now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
@@ -159,16 +201,16 @@ def map_recorded(intel_path, chokepoint_path=None, now=None) -> list[Event]:
         intel_payload = json.load(handle)
     events = []
     if isinstance(intel_payload, list):
-        events.extend(_map_list_payload(intel_payload, observed_now))
+        events.extend(_map_list_payload(intel_payload, observed_now, accept=accept))
     elif isinstance(intel_payload, dict):
-        events.extend(_map_intel_brief(intel_payload, observed_now))
+        events.extend(_map_intel_brief(intel_payload, observed_now, accept=accept))
     if chokepoint_path is not None:
         with Path(chokepoint_path).open(encoding="utf-8") as handle:
             events.extend(_map_chokepoints(json.load(handle), observed_now))
     return events
 
 
-def live() -> list[Event]:
+def live(accept=None) -> list[Event]:
     key = read_env("WORLD_MONITOR_KEY")
     if not key:
         raise ValueError("WORLD_MONITOR_KEY is missing")
@@ -179,8 +221,8 @@ def live() -> list[Event]:
 
     intel_payload = _fetch_api(intel_url, key)
     if isinstance(intel_payload, list):
-        return _map_list_payload(intel_payload, observed_now)
+        return _map_list_payload(intel_payload, observed_now, accept=accept)
 
-    events = _map_intel_brief(intel_payload, observed_now)
+    events = _map_intel_brief(intel_payload, observed_now, accept=accept)
     events.extend(_map_chokepoints(_fetch_api(chokepoint_url, key), observed_now))
     return events
