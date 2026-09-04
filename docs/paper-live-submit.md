@@ -99,7 +99,7 @@ Prior MSFT open: `db73cbdc-38f0-4cc1-8b06-d994e291a83c` filled 19.822784. Combin
 | SPY | 12.948755 @ avg `772.088455` |
 | Open orders | `n=0` |
 
-Compact copy: [2026-09-04-paper.json](research/2026-09-04-paper.json).
+Compact copy at submit time listed those ten equal-weight names. The dated file [2026-09-04-paper.json](research/2026-09-04-paper.json) was later overwritten by the [conviction submit](paper-conviction-submit.md).
 
 ## What this is not
 

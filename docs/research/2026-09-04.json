@@ -1,4 +1,21 @@
 {
+  "conviction": {
+    "formula": "score' = 0.75*log1p(news_breakout) + 3.0*congress_confirm + 3.0*insider_confirm + 2.0*gov_confirm + 3.0*log1p(quiver_count)/log1p(20) + 2.0*(intel_brief+wm_intel+chokepoint) + 2.0*exp(-lag_h/half_life_hours)",
+    "half_life_hours": 24.0,
+    "max_name_frac": 0.2,
+    "min_score": 1.0,
+    "note": "Declared research-live score' weights and paper name cap. Not fitted. Not searched. Not alpha. Replay rank_candidates and locked max_name_frac stay unchanged.",
+    "quiver_count_ref": 20.0,
+    "top_k": 10,
+    "trim_band": 0.02,
+    "w_congress": 3.0,
+    "w_gov": 2.0,
+    "w_insider": 3.0,
+    "w_news": 0.75,
+    "w_quiver": 3.0,
+    "w_recency": 2.0,
+    "w_wm": 2.0
+  },
   "date": "2026-09-04",
   "diagnose": {
     "confirms": {
@@ -118,11 +135,11 @@
         "insider_confirm": 0
       }
     },
-    "n_clusters": 15,
+    "n_clusters": 16,
     "stats": {
       "max_cluster_size": 13,
-      "n_clusters": 15,
-      "n_events": 282,
+      "n_clusters": 16,
+      "n_events": 283,
       "n_events_after_decision": 0,
       "n_filing_lags": 23,
       "n_gov_confirm": 1,
@@ -202,36 +219,36 @@
     }
   },
   "intensity": {
-    "AAPL": 11.293421976026508,
-    "ABT": 6.496241129158005,
-    "AMAT": 6.496241129158005,
-    "AMZN": 5.696710988013254,
-    "CMCSA": 2.498590423434252,
-    "CSCO": 4.097650705723753,
-    "CVX": 2.498590423434252,
-    "DIS": 2.498590423434252,
-    "GOOGL": 9.694361693737006,
-    "HD": 7.2957712703027555,
-    "INTC": 5.696710988013254,
-    "JNJ": 5.696710988013254,
-    "LLY": 4.097650705723753,
-    "MA": 4.097650705723753,
-    "META": 5.696710988013254,
-    "MSFT": 15.291072681750261,
-    "NFLX": 1.6990602822895013,
-    "NVDA": 12.09295211717126,
-    "PEP": 4.897180846868503,
-    "PG": 5.696710988013254,
+    "AAPL": 11.294681017638911,
+    "ABT": 6.496960581507949,
+    "AMAT": 6.496960581507949,
+    "AMZN": 5.6973405088194555,
+    "CMCSA": 2.4988602180654813,
+    "CSCO": 4.098100363442468,
+    "CVX": 2.4988602180654813,
+    "DIS": 2.4988602180654813,
+    "GOOGL": 9.695440872261925,
+    "HD": 7.296580654196442,
+    "INTC": 5.6973405088194555,
+    "JNJ": 5.6973405088194555,
+    "LLY": 4.098100363442468,
+    "MA": 4.098100363442468,
+    "META": 5.6973405088194555,
+    "MSFT": 15.29278138108138,
+    "NFLX": 1.6992401453769874,
+    "NVDA": 12.504950500010949,
+    "PEP": 4.897720436130962,
+    "PG": 5.6973405088194555,
     "QQQ": 0.1,
-    "SPY": 0.10000000001190378,
-    "T": 4.897180846868503,
-    "UNH": 6.496241129158005,
-    "XLE": 10.49999999712405,
+    "SPY": 0.10000000000570308,
+    "T": 4.897720436130962,
+    "UNH": 6.496960581507949,
+    "XLE": 10.49999999711731,
     "XLK": 0.1,
-    "XOM": 2.498590423434252
+    "XOM": 2.4988602180654813
   },
   "mode": "daily-research",
-  "note": "Daily live research book. Fixture universe union top-N allowlisted Quiver/World Monitor tickers. Rank plus cluster-drift, then the paper sizer. Not alpha. Not a broker fill. No PII. Paper only.",
+  "note": "Daily live research book. Fixture universe union top-N allowlisted Quiver/World Monitor tickers. Declared score' plus conviction weights. Not fitted. Not alpha. Not a broker fill. No PII. Paper only.",
   "ok": true,
   "params": {
     "cost_bps": 0.0,
@@ -250,118 +267,82 @@
   },
   "params_sha256": "f74f835690544b976e0ba67243caecdea26719001cbb33bc9ccdac5fc1a38ded",
   "proposed_book": {
+    "max_gross_frac": 1.0,
+    "max_name_frac": 0.2,
     "n_targets": 10,
+    "note": "Daily live research book. Fixture universe union top-N allowlisted Quiver/World Monitor tickers. Declared score' plus conviction weights. Not fitted. Not alpha. Not a broker fill. No PII. Paper only.",
     "signal": "research-live",
     "skipped": [
       {
-        "reason": "gross_frac_cap",
-        "ticker": "ABT"
+        "reason": "below_min_score",
+        "ticker": "SPY"
       },
       {
-        "reason": "gross_frac_cap",
-        "ticker": "AMAT"
-      },
-      {
-        "reason": "gross_frac_cap",
-        "ticker": "AMZN"
-      },
-      {
-        "reason": "gross_frac_cap",
-        "ticker": "CSCO"
-      },
-      {
-        "reason": "gross_frac_cap",
-        "ticker": "GOOGL"
-      },
-      {
-        "reason": "gross_frac_cap",
-        "ticker": "HD"
-      },
-      {
-        "reason": "gross_frac_cap",
-        "ticker": "INTC"
-      },
-      {
-        "reason": "gross_frac_cap",
-        "ticker": "JNJ"
-      },
-      {
-        "reason": "gross_frac_cap",
-        "ticker": "LLY"
-      },
-      {
-        "reason": "gross_frac_cap",
-        "ticker": "MA"
-      },
-      {
-        "reason": "gross_frac_cap",
-        "ticker": "META"
-      },
-      {
-        "reason": "gross_frac_cap",
-        "ticker": "PEP"
-      },
-      {
-        "reason": "gross_frac_cap",
-        "ticker": "PG"
-      },
-      {
-        "reason": "gross_frac_cap",
+        "reason": "below_min_score",
         "ticker": "QQQ"
       },
       {
-        "reason": "gross_frac_cap",
+        "reason": "below_min_score",
+        "ticker": "XLK"
+      },
+      {
+        "reason": "outside_top_k",
+        "ticker": "INTC"
+      },
+      {
+        "reason": "outside_top_k",
+        "ticker": "JNJ"
+      },
+      {
+        "reason": "outside_top_k",
+        "ticker": "META"
+      },
+      {
+        "reason": "outside_top_k",
+        "ticker": "PG"
+      },
+      {
+        "reason": "outside_top_k",
+        "ticker": "PEP"
+      },
+      {
+        "reason": "outside_top_k",
         "ticker": "T"
       },
       {
-        "reason": "gross_frac_cap",
-        "ticker": "UNH"
+        "reason": "outside_top_k",
+        "ticker": "NFLX"
       },
       {
-        "reason": "gross_frac_cap",
-        "ticker": "XLK"
+        "reason": "outside_top_k",
+        "ticker": "CMCSA"
+      },
+      {
+        "reason": "outside_top_k",
+        "ticker": "CVX"
+      },
+      {
+        "reason": "outside_top_k",
+        "ticker": "DIS"
+      },
+      {
+        "reason": "outside_top_k",
+        "ticker": "XOM"
+      },
+      {
+        "reason": "outside_top_k",
+        "ticker": "CSCO"
+      },
+      {
+        "reason": "outside_top_k",
+        "ticker": "LLY"
+      },
+      {
+        "reason": "outside_top_k",
+        "ticker": "MA"
       }
     ],
     "targets": [
-      {
-        "chokepoint": 1,
-        "congress_confirm": 0,
-        "gov_confirm": 0,
-        "horizon_hours": 34.75,
-        "insider_confirm": 0,
-        "intel_brief": 1,
-        "score": 15,
-        "side": "buy",
-        "target_frac": 0.1,
-        "ticker": "XLE",
-        "wm_intel": 1
-      },
-      {
-        "chokepoint": 0,
-        "congress_confirm": 1,
-        "gov_confirm": 0,
-        "horizon_hours": 34.75,
-        "insider_confirm": 1,
-        "intel_brief": 0,
-        "score": 3,
-        "side": "buy",
-        "target_frac": 0.1,
-        "ticker": "MSFT",
-        "wm_intel": 0
-      },
-      {
-        "chokepoint": 0,
-        "congress_confirm": 1,
-        "gov_confirm": 0,
-        "horizon_hours": 34.75,
-        "insider_confirm": 1,
-        "intel_brief": 0,
-        "score": 3,
-        "side": "buy",
-        "target_frac": 0.1,
-        "ticker": "NFLX",
-        "wm_intel": 0
-      },
       {
         "chokepoint": 0,
         "congress_confirm": 1,
@@ -369,258 +350,550 @@
         "horizon_hours": 34.75,
         "insider_confirm": 1,
         "intel_brief": 0,
-        "score": 3,
+        "lag_h": 2.75,
+        "news_breakout": 2,
+        "news_term": 1.0986122886681096,
+        "q_term": 0.910680994787812,
+        "quiver_count": 15,
+        "rec_term": 0.8917376238530736,
+        "score": 13.339477448570666,
         "side": "buy",
-        "target_frac": 0.1,
+        "target_frac": 0.2,
         "ticker": "NVDA",
-        "wm_intel": 0
+        "wm_intel": 0,
+        "wm_term": 0.0
       },
       {
-        "chokepoint": 0,
-        "congress_confirm": 1,
-        "gov_confirm": 0,
-        "horizon_hours": 34.75,
-        "insider_confirm": 1,
-        "intel_brief": 0,
-        "score": 2,
-        "side": "buy",
-        "target_frac": 0.1,
-        "ticker": "AAPL",
-        "wm_intel": 0
-      },
-      {
-        "chokepoint": 0,
-        "congress_confirm": 1,
-        "gov_confirm": 0,
-        "horizon_hours": 34.75,
-        "insider_confirm": 1,
-        "intel_brief": 0,
-        "score": 2,
-        "side": "buy",
-        "target_frac": 0.1,
-        "ticker": "CMCSA",
-        "wm_intel": 0
-      },
-      {
-        "chokepoint": 0,
-        "congress_confirm": 1,
-        "gov_confirm": 0,
-        "horizon_hours": 34.75,
-        "insider_confirm": 1,
-        "intel_brief": 0,
-        "score": 2,
-        "side": "buy",
-        "target_frac": 0.1,
-        "ticker": "CVX",
-        "wm_intel": 0
-      },
-      {
-        "chokepoint": 0,
-        "congress_confirm": 1,
-        "gov_confirm": 0,
-        "horizon_hours": 34.75,
-        "insider_confirm": 1,
-        "intel_brief": 0,
-        "score": 2,
-        "side": "buy",
-        "target_frac": 0.1,
-        "ticker": "DIS",
-        "wm_intel": 0
-      },
-      {
-        "chokepoint": 0,
+        "chokepoint": 1,
+        "cluster_size": 14,
         "congress_confirm": 0,
         "gov_confirm": 0,
         "horizon_hours": 34.75,
         "insider_confirm": 0,
-        "intel_brief": 0,
-        "score": 2,
+        "intel_brief": 1,
+        "intensity": 10.49999999711111,
+        "n_clusters": 2,
+        "news_breakout": 15,
+        "news_term": 2.772588722239781,
+        "q_term": 0.0,
+        "rec_term": 0.0,
+        "score": 8.079441541679836,
         "side": "buy",
-        "target_frac": 0.1,
-        "ticker": "SPY",
-        "wm_intel": 0
+        "state": 13.22005921183638,
+        "target_frac": 0.12293027463578436,
+        "ticker": "XLE",
+        "wm_intel": 1,
+        "wm_term": 3.0
       },
       {
         "chokepoint": 0,
         "congress_confirm": 1,
         "gov_confirm": 0,
         "horizon_hours": 34.75,
-        "insider_confirm": 1,
+        "insider_confirm": 0,
         "intel_brief": 0,
-        "score": 2,
+        "lag_h": 3710.666396873056,
+        "news_breakout": 2,
+        "news_term": 1.0986122886681096,
+        "q_term": 0.983974444213354,
+        "quiver_count": 19,
+        "rec_term": 7.132675816715043e-68,
+        "score": 6.775882549141144,
         "side": "buy",
-        "target_frac": 0.1,
-        "ticker": "XOM",
-        "wm_intel": 0
+        "target_frac": 0.10309637100147327,
+        "ticker": "MSFT",
+        "wm_intel": 0,
+        "wm_term": 0.0
+      },
+      {
+        "chokepoint": 0,
+        "congress_confirm": 1,
+        "gov_confirm": 0,
+        "horizon_hours": 34.75,
+        "insider_confirm": 0,
+        "intel_brief": 0,
+        "lag_h": 2894.666396873056,
+        "news_breakout": 1,
+        "news_term": 0.6931471805599453,
+        "q_term": 0.8894827535339782,
+        "quiver_count": 14,
+        "rec_term": 4.161643460904055e-53,
+        "score": 6.188308646021893,
+        "side": "buy",
+        "target_frac": 0.09415631977309945,
+        "ticker": "AAPL",
+        "wm_intel": 0,
+        "wm_term": 0.0
+      },
+      {
+        "chokepoint": 0,
+        "congress_confirm": 1,
+        "gov_confirm": 0,
+        "horizon_hours": 34.75,
+        "insider_confirm": 0,
+        "intel_brief": 0,
+        "lag_h": 2030.6663968730554,
+        "news_breakout": 0,
+        "news_term": 0.0,
+        "q_term": 0.8424800309172651,
+        "quiver_count": 12,
+        "rec_term": 1.794180857649548e-37,
+        "score": 5.527440092751795,
+        "side": "buy",
+        "target_frac": 0.08410107618571215,
+        "ticker": "GOOGL",
+        "wm_intel": 0,
+        "wm_term": 0.0
+      },
+      {
+        "chokepoint": 0,
+        "congress_confirm": 1,
+        "gov_confirm": 0,
+        "horizon_hours": 34.75,
+        "insider_confirm": 0,
+        "intel_brief": 0,
+        "lag_h": 4382.666396873055,
+        "news_breakout": 0,
+        "news_term": 0.0,
+        "q_term": 0.7563041955164012,
+        "quiver_count": 9,
+        "rec_term": 4.9318174429865696e-80,
+        "score": 5.268912586549203,
+        "side": "buy",
+        "target_frac": 0.08016752989115213,
+        "ticker": "HD",
+        "wm_intel": 0,
+        "wm_term": 0.0
+      },
+      {
+        "chokepoint": 0,
+        "congress_confirm": 1,
+        "gov_confirm": 0,
+        "horizon_hours": 34.75,
+        "insider_confirm": 0,
+        "intel_brief": 0,
+        "lag_h": 1550.6663968730554,
+        "news_breakout": 0,
+        "news_term": 0.0,
+        "q_term": 0.7216976134290604,
+        "quiver_count": 8,
+        "rec_term": 8.704741064020481e-29,
+        "score": 5.165092840287182,
+        "side": "buy",
+        "target_frac": 0.0785878922571933,
+        "ticker": "ABT",
+        "wm_intel": 0,
+        "wm_term": 0.0
+      },
+      {
+        "chokepoint": 0,
+        "congress_confirm": 1,
+        "gov_confirm": 0,
+        "horizon_hours": 34.75,
+        "insider_confirm": 0,
+        "intel_brief": 0,
+        "lag_h": 4382.666396873055,
+        "news_breakout": 0,
+        "news_term": 0.0,
+        "q_term": 0.7216976134290604,
+        "quiver_count": 8,
+        "rec_term": 4.9318174429865696e-80,
+        "score": 5.165092840287182,
+        "side": "buy",
+        "target_frac": 0.0785878922571933,
+        "ticker": "AMAT",
+        "wm_intel": 0,
+        "wm_term": 0.0
+      },
+      {
+        "chokepoint": 0,
+        "congress_confirm": 1,
+        "gov_confirm": 0,
+        "horizon_hours": 34.75,
+        "insider_confirm": 0,
+        "intel_brief": 0,
+        "lag_h": 4286.666396873055,
+        "news_breakout": 0,
+        "news_term": 0.0,
+        "q_term": 0.7216976134290604,
+        "quiver_count": 8,
+        "rec_term": 2.692681086882585e-78,
+        "score": 5.165092840287182,
+        "side": "buy",
+        "target_frac": 0.0785878922571933,
+        "ticker": "UNH",
+        "wm_intel": 0,
+        "wm_term": 0.0
+      },
+      {
+        "chokepoint": 0,
+        "congress_confirm": 1,
+        "gov_confirm": 0,
+        "horizon_hours": 34.75,
+        "insider_confirm": 0,
+        "intel_brief": 0,
+        "lag_h": 3710.666396873056,
+        "news_breakout": 0,
+        "news_term": 0.0,
+        "q_term": 0.6830107460908589,
+        "quiver_count": 7,
+        "rec_term": 7.132675816715043e-68,
+        "score": 5.049032238272577,
+        "side": "buy",
+        "target_frac": 0.07682200762191894,
+        "ticker": "AMZN",
+        "wm_intel": 0,
+        "wm_term": 0.0
       }
     ]
   },
   "rank": [
     {
-      "insider_confirm": 0,
-      "news_breakout": 15,
-      "score": 15,
-      "ticker": "XLE"
-    },
-    {
-      "insider_confirm": 1,
-      "news_breakout": 2,
-      "score": 3,
-      "ticker": "MSFT"
-    },
-    {
-      "insider_confirm": 1,
-      "news_breakout": 2,
-      "score": 3,
-      "ticker": "NFLX"
-    },
-    {
+      "congress_confirm": 1,
       "gov_confirm": 1,
       "insider_confirm": 1,
-      "news_breakout": 1,
-      "score": 3,
-      "ticker": "NVDA"
+      "lag_h": 2.75,
+      "news_breakout": 2,
+      "news_term": 1.0986122886681096,
+      "q_term": 0.910680994787812,
+      "quiver_count": 15,
+      "rec_term": 0.8917376238530736,
+      "score": 13.339477448570666,
+      "ticker": "NVDA",
+      "wm_term": 0.0
     },
     {
-      "insider_confirm": 1,
-      "news_breakout": 1,
-      "score": 2,
-      "ticker": "AAPL"
+      "congress_confirm": 0,
+      "insider_confirm": 0,
+      "news_breakout": 15,
+      "news_term": 2.772588722239781,
+      "q_term": 0.0,
+      "rec_term": 0.0,
+      "score": 8.079441541679836,
+      "ticker": "XLE",
+      "wm_term": 3.0
     },
     {
-      "insider_confirm": 1,
-      "news_breakout": 1,
-      "score": 2,
-      "ticker": "CMCSA"
+      "congress_confirm": 1,
+      "insider_confirm": 0,
+      "lag_h": 3710.666396873056,
+      "news_breakout": 2,
+      "news_term": 1.0986122886681096,
+      "q_term": 0.983974444213354,
+      "quiver_count": 19,
+      "rec_term": 7.132675816715043e-68,
+      "score": 6.775882549141144,
+      "ticker": "MSFT",
+      "wm_term": 0.0
     },
     {
-      "insider_confirm": 1,
+      "congress_confirm": 1,
+      "insider_confirm": 0,
+      "lag_h": 2894.666396873056,
       "news_breakout": 1,
-      "score": 2,
-      "ticker": "CVX"
+      "news_term": 0.6931471805599453,
+      "q_term": 0.8894827535339782,
+      "quiver_count": 14,
+      "rec_term": 4.161643460904055e-53,
+      "score": 6.188308646021893,
+      "ticker": "AAPL",
+      "wm_term": 0.0
     },
     {
-      "insider_confirm": 1,
-      "news_breakout": 1,
-      "score": 2,
-      "ticker": "DIS"
+      "congress_confirm": 1,
+      "insider_confirm": 0,
+      "lag_h": 2030.6663968730554,
+      "news_breakout": 0,
+      "news_term": 0.0,
+      "q_term": 0.8424800309172651,
+      "quiver_count": 12,
+      "rec_term": 1.794180857649548e-37,
+      "score": 5.527440092751795,
+      "ticker": "GOOGL",
+      "wm_term": 0.0
     },
     {
+      "congress_confirm": 1,
+      "insider_confirm": 0,
+      "lag_h": 4382.666396873055,
+      "news_breakout": 0,
+      "news_term": 0.0,
+      "q_term": 0.7563041955164012,
+      "quiver_count": 9,
+      "rec_term": 4.9318174429865696e-80,
+      "score": 5.268912586549203,
+      "ticker": "HD",
+      "wm_term": 0.0
+    },
+    {
+      "congress_confirm": 1,
+      "insider_confirm": 0,
+      "lag_h": 1550.6663968730554,
+      "news_breakout": 0,
+      "news_term": 0.0,
+      "q_term": 0.7216976134290604,
+      "quiver_count": 8,
+      "rec_term": 8.704741064020481e-29,
+      "score": 5.165092840287182,
+      "ticker": "ABT",
+      "wm_term": 0.0
+    },
+    {
+      "congress_confirm": 1,
+      "insider_confirm": 0,
+      "lag_h": 4382.666396873055,
+      "news_breakout": 0,
+      "news_term": 0.0,
+      "q_term": 0.7216976134290604,
+      "quiver_count": 8,
+      "rec_term": 4.9318174429865696e-80,
+      "score": 5.165092840287182,
+      "ticker": "AMAT",
+      "wm_term": 0.0
+    },
+    {
+      "congress_confirm": 1,
+      "insider_confirm": 0,
+      "lag_h": 4286.666396873055,
+      "news_breakout": 0,
+      "news_term": 0.0,
+      "q_term": 0.7216976134290604,
+      "quiver_count": 8,
+      "rec_term": 2.692681086882585e-78,
+      "score": 5.165092840287182,
+      "ticker": "UNH",
+      "wm_term": 0.0
+    },
+    {
+      "congress_confirm": 1,
+      "insider_confirm": 0,
+      "lag_h": 3710.666396873056,
+      "news_breakout": 0,
+      "news_term": 0.0,
+      "q_term": 0.6830107460908589,
+      "quiver_count": 7,
+      "rec_term": 7.132675816715043e-68,
+      "score": 5.049032238272577,
+      "ticker": "AMZN",
+      "wm_term": 0.0
+    },
+    {
+      "congress_confirm": 1,
+      "insider_confirm": 0,
+      "lag_h": 1910.6663968730554,
+      "news_breakout": 0,
+      "news_term": 0.0,
+      "q_term": 0.6830107460908589,
+      "quiver_count": 7,
+      "rec_term": 2.6628004908513974e-35,
+      "score": 5.049032238272577,
+      "ticker": "INTC",
+      "wm_term": 0.0
+    },
+    {
+      "congress_confirm": 1,
+      "insider_confirm": 0,
+      "lag_h": 3446.666396873056,
+      "news_breakout": 0,
+      "news_term": 0.0,
+      "q_term": 0.6830107460908589,
+      "quiver_count": 7,
+      "rec_term": 4.270628426585608e-63,
+      "score": 5.049032238272577,
+      "ticker": "JNJ",
+      "wm_term": 0.0
+    },
+    {
+      "congress_confirm": 1,
+      "insider_confirm": 0,
+      "lag_h": 3950.666396873056,
+      "news_breakout": 0,
+      "news_term": 0.0,
+      "q_term": 0.6830107460908589,
+      "quiver_count": 7,
+      "rec_term": 3.238229810974372e-72,
+      "score": 5.049032238272577,
+      "ticker": "META",
+      "wm_term": 0.0
+    },
+    {
+      "congress_confirm": 1,
+      "insider_confirm": 0,
+      "lag_h": 4382.666396873055,
+      "news_breakout": 0,
+      "news_term": 0.0,
+      "q_term": 0.6830107460908589,
+      "quiver_count": 7,
+      "rec_term": 4.9318174429865696e-80,
+      "score": 5.049032238272577,
+      "ticker": "PG",
+      "wm_term": 0.0
+    },
+    {
+      "congress_confirm": 1,
+      "insider_confirm": 0,
+      "lag_h": 4382.666396873055,
+      "news_breakout": 0,
+      "news_term": 0.0,
+      "q_term": 0.6391511932854698,
+      "quiver_count": 6,
+      "rec_term": 4.9318174429865696e-80,
+      "score": 4.917453579856409,
+      "ticker": "PEP",
+      "wm_term": 0.0
+    },
+    {
+      "congress_confirm": 1,
+      "insider_confirm": 0,
+      "lag_h": 3710.666396873056,
+      "news_breakout": 0,
+      "news_term": 0.0,
+      "q_term": 0.6391511932854698,
+      "quiver_count": 6,
+      "rec_term": 7.132675816715043e-68,
+      "score": 4.917453579856409,
+      "ticker": "T",
+      "wm_term": 0.0
+    },
+    {
+      "congress_confirm": 1,
+      "insider_confirm": 0,
+      "lag_h": 3950.666396873056,
+      "news_breakout": 2,
+      "news_term": 1.0986122886681096,
+      "q_term": 0.3608488067145301,
+      "quiver_count": 2,
+      "rec_term": 3.238229810974372e-72,
+      "score": 4.906505636644672,
+      "ticker": "NFLX",
+      "wm_term": 0.0
+    },
+    {
+      "congress_confirm": 1,
+      "insider_confirm": 0,
+      "lag_h": 1550.6663968730554,
+      "news_breakout": 1,
+      "news_term": 0.6931471805599453,
+      "q_term": 0.455340497393906,
+      "quiver_count": 3,
+      "rec_term": 8.704741064020481e-29,
+      "score": 4.885881877601677,
+      "ticker": "CMCSA",
+      "wm_term": 0.0
+    },
+    {
+      "congress_confirm": 1,
+      "insider_confirm": 0,
+      "lag_h": 1574.6663968730554,
+      "news_breakout": 1,
+      "news_term": 0.6931471805599453,
+      "q_term": 0.455340497393906,
+      "quiver_count": 3,
+      "rec_term": 3.2022952781739606e-29,
+      "score": 4.885881877601677,
+      "ticker": "CVX",
+      "wm_term": 0.0
+    },
+    {
+      "congress_confirm": 1,
+      "insider_confirm": 0,
+      "lag_h": 1094.6663968730554,
+      "news_breakout": 1,
+      "news_term": 0.6931471805599453,
+      "q_term": 0.455340497393906,
+      "quiver_count": 3,
+      "rec_term": 1.5536422143951185e-20,
+      "score": 4.885881877601677,
+      "ticker": "DIS",
+      "wm_term": 0.0
+    },
+    {
+      "congress_confirm": 1,
+      "insider_confirm": 0,
+      "lag_h": 1910.6663968730554,
+      "news_breakout": 1,
+      "news_term": 0.6931471805599453,
+      "q_term": 0.455340497393906,
+      "quiver_count": 3,
+      "rec_term": 2.6628004908513974e-35,
+      "score": 4.885881877601677,
+      "ticker": "XOM",
+      "wm_term": 0.0
+    },
+    {
+      "congress_confirm": 1,
+      "insider_confirm": 0,
+      "lag_h": 1382.6663968730554,
+      "news_breakout": 0,
+      "news_term": 0.0,
+      "q_term": 0.5885190554114832,
+      "quiver_count": 5,
+      "rec_term": 9.545907686338681e-26,
+      "score": 4.76555716623445,
+      "ticker": "CSCO",
+      "wm_term": 0.0
+    },
+    {
+      "congress_confirm": 1,
+      "insider_confirm": 0,
+      "lag_h": 3950.666396873056,
+      "news_breakout": 0,
+      "news_term": 0.0,
+      "q_term": 0.5885190554114832,
+      "quiver_count": 5,
+      "rec_term": 3.238229810974372e-72,
+      "score": 4.76555716623445,
+      "ticker": "LLY",
+      "wm_term": 0.0
+    },
+    {
+      "congress_confirm": 1,
+      "insider_confirm": 0,
+      "lag_h": 4382.666396873055,
+      "news_breakout": 0,
+      "news_term": 0.0,
+      "q_term": 0.5885190554114832,
+      "quiver_count": 5,
+      "rec_term": 4.9318174429865696e-80,
+      "score": 4.76555716623445,
+      "ticker": "MA",
+      "wm_term": 0.0
+    },
+    {
+      "congress_confirm": 0,
       "insider_confirm": 0,
       "news_breakout": 2,
-      "score": 2,
-      "ticker": "SPY"
+      "news_term": 1.0986122886681096,
+      "q_term": 0.0,
+      "rec_term": 0.0,
+      "score": 0.8239592165010822,
+      "ticker": "SPY",
+      "wm_term": 0.0
     },
     {
-      "insider_confirm": 1,
-      "news_breakout": 1,
-      "score": 2,
-      "ticker": "XOM"
-    },
-    {
-      "insider_confirm": 1,
-      "news_breakout": 0,
-      "score": 1,
-      "ticker": "ABT"
-    },
-    {
-      "insider_confirm": 1,
-      "news_breakout": 0,
-      "score": 1,
-      "ticker": "AMAT"
-    },
-    {
-      "insider_confirm": 1,
-      "news_breakout": 0,
-      "score": 1,
-      "ticker": "AMZN"
-    },
-    {
-      "insider_confirm": 1,
-      "news_breakout": 0,
-      "score": 1,
-      "ticker": "CSCO"
-    },
-    {
-      "insider_confirm": 1,
-      "news_breakout": 0,
-      "score": 1,
-      "ticker": "GOOGL"
-    },
-    {
-      "insider_confirm": 1,
-      "news_breakout": 0,
-      "score": 1,
-      "ticker": "HD"
-    },
-    {
-      "insider_confirm": 1,
-      "news_breakout": 0,
-      "score": 1,
-      "ticker": "INTC"
-    },
-    {
-      "insider_confirm": 1,
-      "news_breakout": 0,
-      "score": 1,
-      "ticker": "JNJ"
-    },
-    {
-      "insider_confirm": 1,
-      "news_breakout": 0,
-      "score": 1,
-      "ticker": "LLY"
-    },
-    {
-      "insider_confirm": 1,
-      "news_breakout": 0,
-      "score": 1,
-      "ticker": "MA"
-    },
-    {
-      "insider_confirm": 1,
-      "news_breakout": 0,
-      "score": 1,
-      "ticker": "META"
-    },
-    {
-      "insider_confirm": 1,
-      "news_breakout": 0,
-      "score": 1,
-      "ticker": "PEP"
-    },
-    {
-      "insider_confirm": 1,
-      "news_breakout": 0,
-      "score": 1,
-      "ticker": "PG"
-    },
-    {
+      "congress_confirm": 0,
       "insider_confirm": 0,
       "news_breakout": 1,
-      "score": 1,
-      "ticker": "QQQ"
+      "news_term": 0.6931471805599453,
+      "q_term": 0.0,
+      "rec_term": 0.0,
+      "score": 0.5198603854199589,
+      "ticker": "QQQ",
+      "wm_term": 0.0
     },
     {
-      "insider_confirm": 1,
-      "news_breakout": 0,
-      "score": 1,
-      "ticker": "T"
-    },
-    {
-      "insider_confirm": 1,
-      "news_breakout": 0,
-      "score": 1,
-      "ticker": "UNH"
-    },
-    {
+      "congress_confirm": 0,
       "insider_confirm": 0,
       "news_breakout": 1,
-      "score": 1,
-      "ticker": "XLK"
+      "news_term": 0.6931471805599453,
+      "q_term": 0.0,
+      "rec_term": 0.0,
+      "score": 0.5198603854199589,
+      "ticker": "XLK",
+      "wm_term": 0.0
     }
   ],
-  "research_at": "2026-09-04T13:55:51.681959Z",
+  "research_at": "2026-09-04T14:40:00.738822Z",
   "signal": "research-live",
   "universe": {
     "capped": true,
