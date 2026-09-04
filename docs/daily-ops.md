@@ -10,7 +10,7 @@ The research artifact is the next rebalance book. It is not a decorative JSON.
 python3 -m signal_sim research --live
 ```
 
-Pulls Quiver (congress, insider, gov contracts, news) and World Monitor, expands the operating universe to the frozen fixture set union top-N allowlisted intel tickers, then ranks with declared **score'** (un-lumped congress vs insider; not fitted) and writes a **conviction-weighted** `docs/research/YYYY-MM-DD.json`. Higher score' gets more of the gross, capped at paper `max_name_frac=0.20`. Each target stamps `target_frac`. No person names, headlines, or URLs. See [research-conviction.md](research-conviction.md).
+Pulls Quiver (congress, insider, gov contracts, news) and World Monitor, expands the operating universe to the frozen fixture set union top-N allowlisted intel tickers, then ranks with declared **score'** (un-lumped congress vs insider; small signed `sent_term` only when there is news; not fitted) and writes a **conviction-weighted** `docs/research/YYYY-MM-DD.json`. Higher score' gets more of `max_gross_invest=0.80` (cash reserve / dry powder), capped at paper `max_name_frac=0.20`. Each target stamps `target_frac`. No person names, headlines, or URLs. See [research-conviction.md](research-conviction.md).
 
 Safe to run every weekday morning. Missing intel keys exit 2.
 
@@ -20,7 +20,7 @@ Safe to run every weekday morning. Missing intel keys exit 2.
 python3 -m signal_sim rebalance --fixtures --live
 ```
 
-Loads today's research artifact when present (otherwise computes the same book). Diffs that conviction book against paper positions: **buys and sells**. Sell/reduce when a name drops out of the book, score' falls below `min_score`, or the held frac exceeds the new target by more than `trim_band`. Qty prefers an observed paper IEX last trade or snapshot `latestTrade` when one exists. Fixture `$36`/`$40` QQQ/SPY marks are not used to size a live or `--submit-paper` ticket when a paper mark is available. Never invents a price.
+Loads today's research artifact when present (otherwise computes the same book). Diffs that conviction book against paper positions: **buys and sells**. Sell priority when several exits fire: **soft_stop ≥ horizon_exit ≥ score_decay ≥ trim**. Also close leftovers that drop out of the book. Tickets stamp `sell_reason`. Qty prefers an observed paper IEX last trade or snapshot `latestTrade` when one exists. Soft-stop MTM uses that decision-time mark versus paper entry — no future bars. Fixture `$36`/`$40` QQQ/SPY marks are not used to size a live or `--submit-paper` ticket when a paper mark is available. Never invents a price.
 
 Print-only. No POST.
 
@@ -61,6 +61,14 @@ python3 -m signal_sim paper-performance --write
 ```
 
 Writes `docs/performance/YYYY-MM-DD.json`: sanitized paper equity/cash/positions, open orders, and fills. Not alpha.
+
+Morning-brief cite for “what data moved the book?” / “how did paper PnL move vs yesterday?”:
+
+```bash
+python3 -m signal_sim telemetry --write
+```
+
+Writes `docs/telemetry/YYYY-MM-DD.json` (optional `--md`): equity/cash/gross/`cash_reserve_frac`, research score'/`target_frac`, feed counts, score' term drivers, sell reasons, and equity Δ vs the prior day's paper snapshot. Same-day artifacts only. Read-only. Paper only. Not alpha.
 
 ## Kill switch
 

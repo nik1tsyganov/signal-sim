@@ -13,11 +13,14 @@
   "max_gross_frac": 1.0,
   "max_name_frac": 1.0,
   "conviction": {
-    "note": "Declared research-live score' weights and paper name cap. Not fitted. Not searched. Not alpha. Replay rank_candidates and locked max_name_frac stay unchanged.",
+    "note": "Declared research-live score' weights, cash reserve, and exits. Not fitted. Not searched. Not alpha. Replay rank_candidates and locked max_gross_frac/max_name_frac stay unchanged.",
     "max_name_frac": 0.2,
+    "max_gross_invest": 0.8,
     "top_k": 10,
     "min_score": 1.0,
     "trim_band": 0.02,
+    "decay_floor": 0.5,
+    "soft_stop": 0.08,
     "w_news": 0.75,
     "w_congress": 3.0,
     "w_insider": 3.0,
@@ -25,6 +28,8 @@
     "w_quiver": 3.0,
     "w_wm": 2.0,
     "w_recency": 2.0,
-    "quiver_count_ref": 20
+    "w_sent": 0.5,
+    "quiver_count_ref": 20,
+    "sentiment_cap_n": 20
   }
 }

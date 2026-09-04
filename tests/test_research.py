@@ -91,6 +91,11 @@ class ResearchArtifactTests(unittest.TestCase):
         self.assertIn("NVDA", tickers)
         proposed = {row["ticker"] for row in report["proposed_book"]["targets"]}
         self.assertTrue(proposed)
+        self.assertAlmostEqual(report["proposed_book"]["max_gross_invest"], 0.8)
+        self.assertAlmostEqual(report["proposed_book"]["cash_reserve_frac"], 0.2)
+        self.assertLessEqual(report["proposed_book"]["book_gross"], 0.8 + 1e-12)
+        self.assertIn("sentiment", report)
+        self.assertFalse(report["sentiment"]["llm"])
         dumped = json.dumps(report)
         self.assertNotIn("SECRET HEADLINE", dumped)
         self.assertNotIn("example.invalid", dumped)

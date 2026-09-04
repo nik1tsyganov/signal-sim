@@ -19,6 +19,7 @@ from .indicators import (
     intel_features,
 )
 from .params import (
+    CONVICTION_MAX_GROSS_INVEST,
     CONVICTION_MAX_NAME_FRAC,
     CONVICTION_MIN_SCORE,
     CONVICTION_QUIVER_COUNT_REF,
@@ -29,11 +30,12 @@ from .params import (
     CONVICTION_W_NEWS,
     CONVICTION_W_QUIVER,
     CONVICTION_W_RECENCY,
+    CONVICTION_W_SENT,
     CONVICTION_W_WM,
     HALF_LIFE_HOURS,
-    MAX_GROSS_FRAC,
     conviction_params,
 )
+from .sentiment import mean_signed_news
 
 NOTE = (
     "Declared score' research book. Conviction-weighted top-K. "
@@ -80,12 +82,16 @@ def score_prime_terms(
     wm_intel: float = 0,
     chokepoint: float = 0,
     lag_h: float | None = None,
+    sentiment: float | None = None,
     half_life_hours: float = HALF_LIFE_HOURS,
 ) -> dict[str, float]:
     """Math Eng score'. Declared weights. Not a fit.
 
     q_term is 0 when quiver_count is missing or non-positive.
     rec_term is 0 when lag_h is unknown.
+    sent_term is the signed mean of news prints only when news_breakout >= 1
+    and a tone exists. Unknown tone stays 0 so it does not double-count
+    news_term or World Monitor flags.
     """
     news_term = math.log1p(max(0.0, float(news_breakout)))
     count = _finite(quiver_count)
@@ -98,6 +104,11 @@ def score_prime_terms(
         rec_term = 0.0
     else:
         rec_term = math.exp(-float(lag_h) / float(half_life_hours))
+    signed = _finite(sentiment)
+    if signed is None or float(news_breakout) < 1:
+        sent_term = 0.0
+    else:
+        sent_term = max(-1.0, min(1.0, signed))
     score = (
         CONVICTION_W_NEWS * news_term
         + CONVICTION_W_CONGRESS * float(congress_confirm)
@@ -106,6 +117,7 @@ def score_prime_terms(
         + CONVICTION_W_QUIVER * q_term
         + CONVICTION_W_WM * wm_term
         + CONVICTION_W_RECENCY * rec_term
+        + CONVICTION_W_SENT * sent_term
     )
     return {
         "score": score,
@@ -113,6 +125,7 @@ def score_prime_terms(
         "q_term": q_term,
         "wm_term": wm_term,
         "rec_term": rec_term,
+        "sent_term": sent_term,
     }
 
 
@@ -166,6 +179,7 @@ def research_rank_rows(
     intel = intel_features(events, when, universe=names)
     quiver = quiver_counts(events, when, universe=names)
     news = news_breakouts(events, when, universe=names, window_start=window_start)
+    tones = mean_signed_news(events, when, universe=names)
     rows: list[dict[str, Any]] = []
     for ticker in names:
         feat = confirms.get(ticker) or {}
@@ -182,6 +196,7 @@ def research_rank_rows(
             wm_intel=int(brief.get("wm_intel") or 0),
             chokepoint=int(brief.get("chokepoint") or 0),
             lag_h=lag_h,
+            sentiment=tones.get(ticker),
         )
         if terms["score"] <= _EPS:
             continue
@@ -199,9 +214,12 @@ def research_rank_rows(
             "q_term": terms["q_term"],
             "wm_term": terms["wm_term"],
             "rec_term": terms["rec_term"],
+            "sent_term": terms["sent_term"],
         }
         if q_count is not None:
             row["quiver_count"] = int(q_count)
+        if ticker in tones:
+            row["sentiment"] = tones[ticker]
         if lag_h is not None:
             row["lag_h"] = lag_h
             lag_row = lags.get(ticker) or {}
@@ -217,16 +235,26 @@ def conviction_targets(
     rows: list[dict[str, Any]],
     *,
     horizon_hours: float,
-    max_gross_frac: float = MAX_GROSS_FRAC,
+    max_gross_invest: float | None = None,
+    max_gross_frac: float | None = None,
     max_name_frac: float = CONVICTION_MAX_NAME_FRAC,
     top_k: int = CONVICTION_TOP_K,
     min_score: float = CONVICTION_MIN_SCORE,
 ) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
-    """K = top names by score'; target_frac_i = min(name cap, gross * score_i / sum_K)."""
+    """K = top names by score'; one-lever research-live gross.
+
+    target_frac_i = min(max_name_frac, max_gross_invest * score_i / sum_K).
+    No post-hoc shrink of every name. Locked replay ``max_gross_frac`` stays
+    on the mark book; ``max_gross_frac`` here is only an alias for tests.
+    """
     if horizon_hours <= 0:
         raise ValueError("horizon_hours must be positive")
-    if max_gross_frac <= 0:
-        raise ValueError("max_gross_frac must be positive")
+    if max_gross_invest is None:
+        max_gross_invest = (
+            float(max_gross_frac) if max_gross_frac is not None else CONVICTION_MAX_GROSS_INVEST
+        )
+    if max_gross_invest <= 0:
+        raise ValueError("max_gross_invest must be positive")
     if max_name_frac <= 0:
         raise ValueError("max_name_frac must be positive")
     if top_k < 1:
@@ -253,14 +281,14 @@ def conviction_targets(
         if total <= _EPS:
             skipped.append({"ticker": ticker, "reason": "non_positive_target"})
             continue
-        frac = min(float(max_name_frac), float(max_gross_frac) * score / total)
+        frac = min(float(max_name_frac), float(max_gross_invest) * score / total)
         if frac <= _EPS:
             skipped.append({"ticker": ticker, "reason": "non_positive_target"})
             continue
         if frac - max_name_frac > _EPS:
             skipped.append({"ticker": ticker, "reason": "max_name_frac"})
             continue
-        if gross + frac - max_gross_frac > _EPS:
+        if gross + frac - max_gross_invest > _EPS:
             skipped.append({"ticker": ticker, "reason": "gross_frac_cap"})
             continue
         target = dict(row)
@@ -319,6 +347,7 @@ def score_features_from_research_artifact(raw: dict[str, Any]) -> list[dict[str,
         wm = wm_rows.get(ticker) or {}
         q_raw = quiver.get(ticker)
         q_count = _finite(q_raw)
+        sentiment = _finite(ranked.get("sentiment") if "sentiment" in ranked else wm.get("sentiment"))
         terms = score_prime_terms(
             news_breakout=int(ranked.get("news_breakout") or 0),
             congress_confirm=int(feat.get("congress_confirm") or 0),
@@ -329,6 +358,7 @@ def score_features_from_research_artifact(raw: dict[str, Any]) -> list[dict[str,
             wm_intel=int(wm.get("wm_intel") or 0),
             chokepoint=int(wm.get("chokepoint") or 0),
             lag_h=None,
+            sentiment=sentiment,
         )
         if terms["score"] <= _EPS:
             continue
@@ -346,6 +376,8 @@ def score_features_from_research_artifact(raw: dict[str, Any]) -> list[dict[str,
         }
         if q_count is not None:
             row["quiver_count"] = int(q_count)
+        if sentiment is not None:
+            row["sentiment"] = sentiment
         rows.append(row)
     return sorted(rows, key=lambda item: (-float(item["score"]), str(item["ticker"])))
 

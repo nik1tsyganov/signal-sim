@@ -16,10 +16,12 @@ from signal_sim.conviction import (
 )
 from signal_sim.events import Event
 from signal_sim.params import (
+    CONVICTION_MAX_GROSS_INVEST,
     CONVICTION_MAX_NAME_FRAC,
     CONVICTION_MIN_SCORE,
     CONVICTION_W_CONGRESS,
     CONVICTION_W_INSIDER,
+    CONVICTION_W_SENT,
     HALF_LIFE_HOURS,
     conviction_params,
 )
@@ -80,12 +82,34 @@ class ScorePrimeTests(unittest.TestCase):
             + 2.0
         )
         self.assertAlmostEqual(terms["score"], expected)
+        self.assertAlmostEqual(terms["sent_term"], 0.0)
+
+    def test_signed_sentiment_can_go_negative_only_with_news(self):
+        nonews = score_prime_terms(sentiment=-1.0)
+        self.assertAlmostEqual(nonews["sent_term"], 0.0)
+        self.assertAlmostEqual(nonews["score"], 0.0)
+        bear = score_prime_terms(news_breakout=2, sentiment=-1.0)
+        bull = score_prime_terms(news_breakout=2, sentiment=1.0)
+        self.assertAlmostEqual(bear["sent_term"], -1.0)
+        self.assertAlmostEqual(bull["sent_term"], 1.0)
+        self.assertLess(bear["score"], bull["score"])
+        self.assertAlmostEqual(bull["score"] - bear["score"], 2.0 * CONVICTION_W_SENT)
 
     def test_missing_quiver_and_lag_are_zero_terms(self):
         terms = score_prime_terms(news_breakout=1)
         self.assertAlmostEqual(terms["q_term"], 0.0)
         self.assertAlmostEqual(terms["rec_term"], 0.0)
         self.assertAlmostEqual(terms["score"], 0.75 * math.log1p(1))
+
+    def test_research_rank_stamps_negative_sent_term(self):
+        when = datetime(2026, 9, 4, 16, 0, tzinfo=UTC)
+        events = [
+            _event("NFLX", kind="news", event_id="nflx-n", headline="lawsuit crash"),
+        ]
+        ranked = research_rank_rows(events, when, universe=("NFLX",))
+        self.assertEqual(len(ranked), 1)
+        self.assertLess(ranked[0]["sent_term"], 0)
+        self.assertLess(ranked[0]["sentiment"], 0)
 
     def test_unlumps_congress_from_insider(self):
         congress = score_prime_terms(congress_confirm=1)
@@ -108,12 +132,16 @@ class ConvictionSizerTests(unittest.TestCase):
             {"ticker": "HD", "score": 5.0},
             {"ticker": "SPY", "score": 1.2},
         ]
-        uncapped, skipped = conviction_targets(rows, horizon_hours=24.0, max_name_frac=1.0)
+        uncapped, skipped = conviction_targets(
+            rows, horizon_hours=24.0, max_name_frac=1.0, max_gross_invest=1.0
+        )
         self.assertEqual(skipped, [])
         by_ticker = {row["ticker"]: row["target_frac"] for row in uncapped}
         self.assertGreater(by_ticker["NVDA"], by_ticker["HD"])
         self.assertGreater(by_ticker["HD"], by_ticker["SPY"])
         self.assertAlmostEqual(sum(by_ticker.values()), 1.0)
+        reserved, _ = conviction_targets(rows, horizon_hours=24.0, max_name_frac=1.0)
+        self.assertAlmostEqual(sum(row["target_frac"] for row in reserved), CONVICTION_MAX_GROSS_INVEST)
         capped, _ = conviction_targets(rows, horizon_hours=24.0)
         self.assertTrue(all(row["target_frac"] <= CONVICTION_MAX_NAME_FRAC + 1e-12 for row in capped))
         self.assertGreater(capped[0]["target_frac"], 0.0)
@@ -154,12 +182,16 @@ class ArtifactABTests(unittest.TestCase):
             set(comparison["exit"]),
             {"NFLX", "CMCSA", "CVX", "DIS", "SPY", "XOM"},
         )
-        self.assertAlmostEqual(comparison["nvda_frac"], 0.18, delta=0.03)
+        self.assertAlmostEqual(comparison["nvda_frac"], 0.144, delta=0.03)
         self.assertGreater(comparison["nvda_frac"], comparison["xle_frac"])
         self.assertLess(comparison["xle_frac"], 0.15)
         nvda = next(row for row in comparison["targets"] if row["ticker"] == "NVDA")
         self.assertGreater(nvda["target_frac"], 0.1)
         self.assertTrue(all(row["target_frac"] <= 0.2 + 1e-12 for row in comparison["targets"]))
+        self.assertLessEqual(
+            sum(row["target_frac"] for row in comparison["targets"]),
+            CONVICTION_MAX_GROSS_INVEST + 1e-12,
+        )
 
     def test_live_ops_artifact_stays_conviction_book(self):
         raw = json.loads(ARTIFACT.read_text(encoding="utf-8"))
@@ -232,6 +264,10 @@ class ResearchConvictionTests(unittest.TestCase):
         self.assertIn("not fitted", report["conviction"]["note"].lower())
         self.assertIn("score'", report["conviction"]["formula"])
         self.assertAlmostEqual(report["proposed_book"]["max_name_frac"], 0.2)
+        self.assertAlmostEqual(report["proposed_book"]["max_gross_invest"], 0.8)
+        self.assertAlmostEqual(report["proposed_book"]["cash_reserve_frac"], 0.2)
+        self.assertLessEqual(report["proposed_book"]["book_gross"], 0.8 + 1e-12)
+        self.assertFalse(report["sentiment"]["llm"])
         targets = report["proposed_book"]["targets"]
         self.assertTrue(targets)
         self.assertTrue(all("target_frac" in row for row in targets))
@@ -240,6 +276,7 @@ class ResearchConvictionTests(unittest.TestCase):
         hd_rank = next(row for row in report["rank"] if row["ticker"] == "HD")
         self.assertGreaterEqual(hd_rank["congress_confirm"], 1)
         self.assertEqual(hd_rank["insider_confirm"], 0)
+        self.assertIn("sent_term", hd_rank)
 
 
 class SellRuleTests(unittest.TestCase):
@@ -268,6 +305,7 @@ class SellRuleTests(unittest.TestCase):
         by_symbol = {row["symbol"]: row for row in tickets}
         self.assertEqual(by_symbol["NFLX"]["action"], "close")
         self.assertEqual(by_symbol["NFLX"]["side"], "sell")
+        self.assertEqual(by_symbol["NFLX"]["sell_reason"], "drop_from_book")
         self.assertAlmostEqual(by_symbol["NFLX"]["qty"], -5.0)
         self.assertIn("close leftover", by_symbol["NFLX"]["rationale"])
         self.assertEqual(by_symbol["NVDA"]["action"], "adjust")
@@ -292,6 +330,7 @@ class SellRuleTests(unittest.TestCase):
         )
         self.assertEqual(skipped, [])
         self.assertEqual(tickets[0]["action"], "close")
+        self.assertEqual(tickets[0]["sell_reason"], "below_min_score")
         self.assertIn("score below min_score", tickets[0]["rationale"])
 
     def test_within_band_does_not_trim(self):
@@ -312,6 +351,101 @@ class SellRuleTests(unittest.TestCase):
         self.assertEqual(tickets, [])
         self.assertEqual(skipped, [])
 
+    def test_horizon_exit_uses_entry_decision_clock(self):
+        from datetime import datetime, timezone
+
+        marks = {"NVDA": {"entry_px": 100.0, "kind": "fixture_mark", "source": "fixture"}}
+        tickets, skipped = plan_rebalance_tickets(
+            targets=[{"ticker": "NVDA", "target_frac": 0.10, "score": 8.0}],
+            marks=marks,
+            held={"NVDA": {"shares": 10.0, "side": "long"}},
+            cash=100000.0,
+            allocation=100000.0,
+            cost_bps=0.0,
+            signal="research-live",
+            decision_at="2026-09-04T16:00:00Z",
+            session="20260904",
+            min_score=1.0,
+            now=datetime(2026, 9, 4, 16, 0, tzinfo=timezone.utc),
+            horizon_hours=24.0,
+            entry_decision_at={"NVDA": datetime(2026, 9, 3, 15, 0, tzinfo=timezone.utc)},
+        )
+        self.assertEqual(skipped, [])
+        self.assertEqual(tickets[0]["sell_reason"], "horizon_exit")
+        self.assertIn("horizon exit", tickets[0]["rationale"])
+
+    def test_score_decay_vs_entry_floor(self):
+        from datetime import datetime, timezone
+
+        marks = {"NVDA": {"entry_px": 100.0, "kind": "fixture_mark", "source": "fixture"}}
+        tickets, skipped = plan_rebalance_tickets(
+            targets=[{"ticker": "NVDA", "target_frac": 0.10, "score": 2.0}],
+            marks=marks,
+            held={"NVDA": {"shares": 10.0, "side": "long"}},
+            cash=100000.0,
+            allocation=100000.0,
+            cost_bps=0.0,
+            signal="research-live",
+            decision_at="2026-09-04T16:00:00Z",
+            session="20260904",
+            min_score=1.0,
+            decay_floor=0.5,
+            entry_scores={"NVDA": 8.0},
+            now=datetime(2026, 9, 4, 16, 0, tzinfo=timezone.utc),
+        )
+        self.assertEqual(skipped, [])
+        self.assertEqual(tickets[0]["sell_reason"], "score_decay")
+        self.assertIn("decay vs entry", tickets[0]["rationale"])
+
+    def test_soft_stop_uses_decision_mark_not_future_bar(self):
+        from datetime import datetime, timezone
+
+        marks = {"NVDA": {"entry_px": 92.0, "kind": "last_trade", "source": "alpaca_paper_data"}}
+        tickets, skipped = plan_rebalance_tickets(
+            targets=[{"ticker": "NVDA", "target_frac": 0.10, "score": 8.0}],
+            marks=marks,
+            held={"NVDA": {"shares": 10.0, "side": "long", "entry_px": 100.0}},
+            cash=100000.0,
+            allocation=100000.0,
+            cost_bps=0.0,
+            signal="research-live",
+            decision_at="2026-09-04T16:00:00Z",
+            session="20260904",
+            min_score=1.0,
+            soft_stop=0.08,
+            now=datetime(2026, 9, 4, 16, 0, tzinfo=timezone.utc),
+        )
+        self.assertEqual(skipped, [])
+        self.assertEqual(tickets[0]["sell_reason"], "soft_stop")
+        self.assertIn("soft stop", tickets[0]["rationale"])
+
+    def test_sell_priority_prefers_soft_stop(self):
+        from datetime import datetime, timezone
+
+        marks = {"NVDA": {"entry_px": 90.0, "kind": "fixture_mark", "source": "fixture"}}
+        tickets, skipped = plan_rebalance_tickets(
+            targets=[{"ticker": "NVDA", "target_frac": 0.10, "score": 2.0}],
+            marks=marks,
+            held={"NVDA": {"shares": 80.0, "side": "long", "entry_px": 100.0}},
+            cash=100000.0,
+            allocation=100000.0,
+            cost_bps=0.0,
+            signal="research-live",
+            decision_at="2026-09-04T16:00:00Z",
+            session="20260904",
+            min_score=1.0,
+            trim_band=0.02,
+            decay_floor=0.5,
+            soft_stop=0.08,
+            horizon_hours=1.0,
+            entry_scores={"NVDA": 8.0},
+            entry_decision_at={"NVDA": datetime(2026, 9, 3, 15, 0, tzinfo=timezone.utc)},
+            now=datetime(2026, 9, 4, 16, 0, tzinfo=timezone.utc),
+        )
+        self.assertEqual(skipped, [])
+        self.assertEqual(tickets[0]["sell_reason"], "soft_stop")
+        self.assertEqual(tickets[0]["action"], "close")
+
 
 class ConvictionParamTests(unittest.TestCase):
     def test_declared_constants_are_not_in_locked_digest(self):
@@ -322,7 +456,12 @@ class ConvictionParamTests(unittest.TestCase):
         self.assertNotIn("w_news", frozen)
         stamp = conviction_params()
         self.assertAlmostEqual(stamp["max_name_frac"], 0.2)
+        self.assertAlmostEqual(stamp["max_gross_invest"], 0.8)
+        self.assertAlmostEqual(stamp["cash_reserve_frac"], 0.2)
+        self.assertIn("soft_stop", stamp["sell_priority"])
         self.assertIn("not fitted", stamp["note"].lower())
+        self.assertNotIn("max_gross_invest", frozen)
+        self.assertNotIn("w_sent", frozen)
         self.assertNotEqual(params_sha256(), params_sha256(stamp))
 
 
