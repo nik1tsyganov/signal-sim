@@ -1,0 +1,122 @@
+"""Fixture-only online news-cluster drift stub (docs method #3).
+
+Not a fitted model. Not alpha. Emits a signed target book from
+online_clusters at the mark-book decision_at. Rank stays unchanged.
+"""
+
+from __future__ import annotations
+
+from datetime import datetime
+from pathlib import Path
+from typing import Any
+
+from .clusters import online_clusters
+from .events import Event
+from .fixture_load import load_fixture_events
+from .sizer import MAX_GROSS_FRAC
+
+
+# Declared, not fitted. Do not treat as a calibrated half-life.
+HALF_LIFE_HOURS = 24.0
+NOTE = (
+    "Stub. Fixture cluster count only. Declared half-life, not a fitted drift. "
+    "Not alpha. Target book for the paper ledger."
+)
+
+
+def _aware(value: datetime | str) -> datetime:
+    if isinstance(value, datetime):
+        return value
+    return datetime.fromisoformat(value.replace("Z", "+00:00"))
+
+
+def cluster_state(events: list[Event], when: datetime) -> dict[str, dict[str, Any]]:
+    """Recency-weighted cluster size per ticker. Sign is +1: fixtures have no negative tone."""
+    by_ticker: dict[str, dict[str, Any]] = {}
+    for row in online_clusters(events, when):
+        ticker = str(row["ticker"])
+        last = _aware(str(row["last_seen_at"]))
+        age_hours = max(0.0, (when - last).total_seconds() / 3600.0)
+        decay = 0.5 ** (age_hours / HALF_LIFE_HOURS)
+        signed = float(row["size"]) * decay
+        current = by_ticker.get(ticker)
+        if current is None:
+            by_ticker[ticker] = {
+                "ticker": ticker,
+                "state": signed,
+                "cluster_size": int(row["size"]),
+                "n_clusters": 1,
+                "last_seen_at": row["last_seen_at"],
+            }
+            continue
+        current["state"] = float(current["state"]) + signed
+        current["cluster_size"] = int(current["cluster_size"]) + int(row["size"])
+        current["n_clusters"] = int(current["n_clusters"]) + 1
+        if str(row["last_seen_at"]) > str(current["last_seen_at"]):
+            current["last_seen_at"] = row["last_seen_at"]
+    return by_ticker
+
+
+def drift_targets(
+    events: list[Event],
+    *,
+    when: datetime,
+    size_frac: float,
+    horizon_hours: float,
+) -> list[dict[str, Any]]:
+    """Turn cluster state into a signed target book. Not a return forecast.
+
+    Gross and name caps stay with the paper sizer so no_mark names do not
+    consume budget before replay refuses them.
+    """
+    states = cluster_state(events, when)
+    peak = max((abs(float(row["state"])) for row in states.values()), default=0.0)
+    ranked: list[dict[str, Any]] = []
+    for row in sorted(states.values(), key=lambda item: (-abs(float(item["state"])), str(item["ticker"]))):
+        if peak <= 0:
+            continue
+        signed = float(row["state"]) / peak
+        ranked.append(
+            {
+                "ticker": row["ticker"],
+                "score": float(row["state"]),
+                "target_frac": size_frac * abs(signed),
+                "side": "buy" if signed >= 0 else "sell",
+                "horizon_hours": float(horizon_hours),
+                "cluster_size": row["cluster_size"],
+                "n_clusters": row["n_clusters"],
+                "state": float(row["state"]),
+            }
+        )
+    return ranked
+
+
+def fixture_drift_book(
+    fixtures: Path | None = None,
+    mark_book_path: Path | str | None = None,
+) -> dict[str, Any]:
+    """Score fixture prints at the mark-book decision. No vendor bars."""
+    from .sim import load_mark_book
+
+    root = fixtures if fixtures is not None else Path(__file__).resolve().parent.parent / "fixtures"
+    book = load_mark_book(mark_book_path)
+    events = [event for event in load_fixture_events(root) if event.observed_at <= book["decision_at"]]
+    horizon_hours = (book["exit_at"] - book["decision_at"]).total_seconds() / 3600.0
+    targets = drift_targets(
+        events,
+        when=book["decision_at"],
+        size_frac=float(book["size_frac"]),
+        horizon_hours=horizon_hours,
+    )
+    decision_at = book["decision_at"].isoformat().replace("+00:00", "Z")
+    return {
+        "mode": "local-paper-drift",
+        "note": NOTE,
+        "method": "online-news-cluster-drift-stub",
+        "half_life_hours": HALF_LIFE_HOURS,
+        "decision_at": decision_at,
+        "horizon_hours": horizon_hours,
+        "max_gross_frac": float(book.get("max_gross_frac", MAX_GROSS_FRAC)),
+        "mark_path": book.get("path"),
+        "targets": targets,
+    }

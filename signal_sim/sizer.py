@@ -34,20 +34,27 @@ def size_targets(
     gross = 0.0
     for row in candidates:
         ticker = str(row["ticker"])
-        if size_frac > max_name_frac:
+        requested = row.get("target_frac")
+        frac = float(size_frac) if requested is None else float(requested)
+        if frac <= 0:
+            skipped.append({"ticker": ticker, "reason": "non_positive_target"})
+            continue
+        if frac > max_name_frac:
             skipped.append({"ticker": ticker, "reason": "max_name_frac"})
             continue
-        if gross + size_frac > max_gross_frac:
+        if gross + frac > max_gross_frac:
             skipped.append({"ticker": ticker, "reason": "gross_frac_cap"})
             continue
-        targets.append(
-            {
-                "ticker": ticker,
-                "target_frac": float(size_frac),
-                "side": "buy",
-                "horizon_hours": float(horizon_hours),
-                "score": row.get("score"),
-            }
-        )
-        gross += size_frac
+        target = {
+            "ticker": ticker,
+            "target_frac": frac,
+            "side": str(row.get("side") or "buy"),
+            "horizon_hours": float(row.get("horizon_hours") or horizon_hours),
+            "score": row.get("score"),
+        }
+        for key in ("cluster_size", "n_clusters", "state"):
+            if key in row:
+                target[key] = row[key]
+        targets.append(target)
+        gross += frac
     return targets, skipped

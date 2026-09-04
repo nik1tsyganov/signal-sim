@@ -61,6 +61,19 @@ def _parser() -> argparse.ArgumentParser:
     )
     serve = commands.add_parser("serve", help="serve the local paper-only desk")
     serve.add_argument("--port", type=int, default=8765, help="local desk port")
+    drift = commands.add_parser(
+        "drift",
+        help="emit a fixture-only cluster-drift target book (stub, not alpha)",
+    )
+    drift.add_argument(
+        "--fixtures",
+        action="store_true",
+        help="load local fixture events (required; the only supported input)",
+    )
+    drift.add_argument(
+        "--marks",
+        help="fixture mark book JSON or alias: liquid (default), two-name",
+    )
     replay = commands.add_parser(
         "replay",
         help="replay fixture ranks through the local paper ledger",
@@ -83,12 +96,17 @@ def _parser() -> argparse.ArgumentParser:
         "--marks",
         help="fixture mark book JSON or alias: liquid (default), two-name",
     )
+    replay.add_argument(
+        "--drift",
+        action="store_true",
+        help="size from the cluster-drift stub instead of rank (rank stays unchanged)",
+    )
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
-    if args.command in {"rank", "intensity", "diagnose", "marks", "replay"} and not args.fixtures:
+    if args.command in {"rank", "intensity", "diagnose", "marks", "drift", "replay"} and not args.fixtures:
         print(
             f"{args.command} requires --fixtures; only local fixture events are supported",
             file=sys.stderr,
@@ -120,6 +138,14 @@ def main(argv: list[str] | None = None) -> int:
 
         print(json.dumps(fixture_mark_map(), separators=(",", ":")))
         return 0
+    if args.command == "drift":
+        from .drift import fixture_drift_book
+        from .sim import resolve_mark_book_path
+
+        fixtures = Path(__file__).resolve().parent.parent / "fixtures"
+        mark_book_path = resolve_mark_book_path(args.marks) if args.marks else None
+        print(json.dumps(fixture_drift_book(fixtures, mark_book_path), separators=(",", ":")))
+        return 0
     if args.command == "serve":
         from .serve import serve
 
@@ -133,6 +159,9 @@ def main(argv: list[str] | None = None) -> int:
         ledger = args.ledger
         if not ledger:
             ledger = tempfile.NamedTemporaryFile(prefix="paper-replay-", suffix=".sqlite", delete=False).name
+        if args.path and getattr(args, "drift", False):
+            print("replay --path cannot be combined with --drift", file=sys.stderr)
+            return 2
         if args.path:
             from .sim import run_fixture_path
 
@@ -141,11 +170,20 @@ def main(argv: list[str] | None = None) -> int:
             from .sim import resolve_mark_book_path
 
             mark_book_path = resolve_mark_book_path(args.marks) if args.marks else None
+            candidates = None
+            if getattr(args, "drift", False):
+                from .drift import fixture_drift_book
+
+                candidates = fixture_drift_book(fixtures, mark_book_path)["targets"]
             summary = run_fixture_replay(
                 fixtures=fixtures,
                 ledger_path=ledger,
                 mark_book_path=mark_book_path,
+                candidates=candidates,
             )
+            if getattr(args, "drift", False):
+                summary = dict(summary)
+                summary["signal"] = "cluster-drift-stub"
         stats = summary.get("stats", {})
         print(
             f"{summary.get('mode', 'replay')}: total_pnl={summary.get('total_pnl')} "

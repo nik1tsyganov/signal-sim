@@ -588,6 +588,19 @@ class SizerTests(unittest.TestCase):
         self.assertEqual(len(skipped), 5)
         self.assertTrue(all(row["reason"] == "max_name_frac" for row in skipped))
 
+    def test_honors_signed_target_frac_from_a_candidate(self):
+        targets, skipped = size_targets(
+            [
+                {"ticker": "NVDA", "score": 2, "target_frac": 0.2, "side": "buy"},
+                {"ticker": "XLE", "score": 1, "target_frac": 0.05, "side": "buy"},
+            ],
+            size_frac=0.1,
+            horizon_hours=24.0,
+        )
+        self.assertEqual(skipped, [])
+        self.assertEqual([row["target_frac"] for row in targets], [0.2, 0.05])
+        self.assertEqual([row["ticker"] for row in targets], ["NVDA", "XLE"])
+
 
 class ReplayCliTests(unittest.TestCase):
     def test_replay_requires_fixtures_flag(self):

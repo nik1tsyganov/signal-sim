@@ -26,7 +26,7 @@ python3 -m unittest discover -s tests -v
 
 ## Operate (paper only)
 
-`rank`, `intensity`, `diagnose`, `marks`, and `replay` require `--fixtures`. Omitting that flag exits with status 2. Those commands read checked-in files under `fixtures/`. `rank --fixtures` and `GET /api/rank` cut at the default mark-book `decision_at`, the same window replay uses. Prints first seen after that decision do not change the rank. There is no live broker, no vendor bars, and no Quiver live path.
+`rank`, `intensity`, `diagnose`, `marks`, `drift`, and `replay` require `--fixtures`. Omitting that flag exits with status 2. Those commands read checked-in files under `fixtures/`. `rank --fixtures` and `GET /api/rank` cut at the default mark-book `decision_at`, the same window replay uses. Prints first seen after that decision do not change the rank. There is no live broker, no vendor bars, and no Quiver live path.
 
 Every name in `fixtures/universe.json` either has a real fixture mark or cannot fill. Default `replay --fixtures` sizes the liquid sector book in `fixtures/marks/liquid.json`: tagged `fixture_mark` rows for NVDA/MSFT (tech), XLE/XOM (energy), DIS/NFLX (media), and SPY/QQQ (ETF). `--marks liquid` is the same book. `--marks two-name` (or `fixtures/marks/universe.json`) is the older NVDA/XLE book. Other ranked names are refused with `no_mark`. That skip is honest: the allocator does not invent a 100.0 fill. AAPL, CVX, CMCSA, and XLK have checked-in fixture news so each sector gap can enter the rank cut; they still have no fixture mark. AMZN, GOOGL, and META have no checked-in print at `decision_at` and are listed as `no_print` by `marks --fixtures` — they cannot rank until a fixture print exists. These are research fixtures, not Yahoo/Stooq/vendor bars. Prints are admitted on `observed_at` / `first_seen_at` only; `occurred_at` and congress trade dates do not fill.
 
@@ -36,7 +36,11 @@ python3 -m signal_sim replay --fixtures --ledger paper-replay.sqlite
 python3 -m signal_sim replay --fixtures --marks liquid
 python3 -m signal_sim replay --fixtures --marks two-name
 python3 -m signal_sim replay --fixtures --path
+python3 -m signal_sim drift --fixtures
+python3 -m signal_sim replay --fixtures --drift
 ```
+
+`drift --fixtures` is the first directional baseline stub (docs method #3). It scores online news clusters at the mark-book `decision_at` and emits a signed `target_frac` + horizon. The half-life is declared, not fitted. The output is a target book for the paper ledger. It is not alpha and not a fitted return model. `rank` is unchanged. `replay --fixtures --drift` sizes that book; unmarked names are still `no_mark`.
 
 `--path` walks `fixtures/marks/path.json`: three fixture steps on one ledger across the sector mark set (open NVDA/XOM/DIS/QQQ → rotate in MSFT/NFLX → hold MSFT/SPY). AAPL is `no_mark` on every step. Rankings on that path are a test input. Marks stay fixtures. Ordering is `observed_at` / `decision_at`. This is not a market and not a live result. After the run, `account` and `positions` are the latest snapshot (last step). `account_history` keeps one row per step; those `ending_equity` values match `equity_curve`. `position_history` keeps the held book per step so a mid-path open and later reduce/close stay visible. `<ledger>.run.jsonl` still appends each step JSON.
 
