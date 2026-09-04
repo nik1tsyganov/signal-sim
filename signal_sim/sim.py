@@ -26,10 +26,17 @@ from .sizer import MAX_GROSS_FRAC, size_targets
 from .store import EventStore
 
 
-DEFAULT_MARKS = Path(__file__).resolve().parent.parent / "fixtures" / "marks" / "universe.json"
+TWO_NAME_MARKS = Path(__file__).resolve().parent.parent / "fixtures" / "marks" / "universe.json"
 DEFAULT_LIQUID = Path(__file__).resolve().parent.parent / "fixtures" / "marks" / "liquid.json"
+DEFAULT_MARKS = DEFAULT_LIQUID
 DEFAULT_PATH = Path(__file__).resolve().parent.parent / "fixtures" / "marks" / "path.json"
 FILL_RULE = "decision-time fixture mark; size_frac of starting_cash"
+MARK_ALIASES = {
+    "default": DEFAULT_MARKS,
+    "liquid": DEFAULT_LIQUID,
+    "two-name": TWO_NAME_MARKS,
+    "universe": TWO_NAME_MARKS,
+}
 _PNL_SCHEMA = """
 CREATE TABLE IF NOT EXISTS account (
     starting_cash REAL NOT NULL,
@@ -183,8 +190,18 @@ def _parse_book_candidates(raw: Any) -> list[dict[str, Any]] | None:
     return parsed
 
 
-def load_mark_book(path: Path | None = None) -> dict[str, Any]:
-    marks_path = DEFAULT_MARKS if path is None else path
+def resolve_mark_book_path(path: Path | str | None = None) -> Path:
+    """Resolve a mark-book path or alias. Default is the liquid sector book."""
+    if path is None:
+        return DEFAULT_MARKS
+    text = str(path)
+    if text in MARK_ALIASES:
+        return MARK_ALIASES[text]
+    return Path(text)
+
+
+def load_mark_book(path: Path | str | None = None) -> dict[str, Any]:
+    marks_path = resolve_mark_book_path(path)
     with marks_path.open(encoding="utf-8") as handle:
         raw = json.load(handle)
     return _parse_mark_book(raw, marks_path)
@@ -200,6 +217,11 @@ def fixture_mark_map() -> dict[str, Any]:
     liquid = {
         ticker
         for ticker, row in load_mark_book(DEFAULT_LIQUID)["marks"].items()
+        if not row.get("unused")
+    }
+    two_name = {
+        ticker
+        for ticker, row in load_mark_book(TWO_NAME_MARKS)["marks"].items()
         if not row.get("unused")
     }
     universe = set(UNIVERSE)
@@ -221,6 +243,7 @@ def fixture_mark_map() -> dict[str, Any]:
         "universe": list(UNIVERSE),
         "default_fillable": sorted(default),
         "liquid_fillable": sorted(liquid),
+        "two_name_fillable": sorted(two_name),
         "no_mark_default": sorted(universe - default),
         "no_mark_liquid": sorted(universe - liquid),
         "no_print": no_print,

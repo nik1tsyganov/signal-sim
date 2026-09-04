@@ -24,8 +24,8 @@ _FALLBACK = (
     b"GET /api/rank ranked fixture events at decision_at\n"
     b"GET /api/diagnose Hawkes and clusters; not a ranking input\n"
     b"GET /api/marks who can fill vs no_mark\n"
-    b"POST /api/replay default NVDA/XLE book\n"
-    b"POST /api/liquid eight-name sector book\n"
+    b"POST /api/replay default liquid sector book\n"
+    b"POST /api/liquid same eight-name sector book\n"
     b"POST /api/path three-step path\n"
     b"GET on replay/liquid/path returns 405 and does not place orders\n"
 )

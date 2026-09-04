@@ -211,7 +211,12 @@ class DiagnoseCliTests(unittest.TestCase):
         fills_after = [(row["ticker"], row["side"], row["fill_px"]) for row in second["orders"]]
         self.assertEqual(rank_before, rank_after)
         self.assertEqual(fills_before, fills_after)
-        self.assertEqual(fills_before, [("NVDA", "buy", 178.5), ("XLE", "buy", 90.0)])
+        self.assertEqual(
+            {(row[0], row[1]) for row in fills_before},
+            {("NVDA", "buy"), ("MSFT", "buy"), ("XLE", "buy"), ("XOM", "buy"),
+             ("DIS", "buy"), ("NFLX", "buy"), ("SPY", "buy"), ("QQQ", "buy")},
+        )
+        self.assertEqual(dict(fills_before)["NVDA"], 178.5)
         self.assertTrue(all(value == 99.0 for value in diagnose["intensity"].values()))
         self.assertNotIn("sharpe", json.dumps(diagnose).lower())
 

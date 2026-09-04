@@ -81,7 +81,7 @@ def _parser() -> argparse.ArgumentParser:
     )
     replay.add_argument(
         "--marks",
-        help="fixture mark book JSON (default: fixtures/marks/universe.json)",
+        help="fixture mark book JSON or alias: liquid (default), two-name",
     )
     return parser
 
@@ -138,7 +138,9 @@ def main(argv: list[str] | None = None) -> int:
 
             summary = run_fixture_path(fixtures=fixtures, ledger_path=ledger)
         else:
-            mark_book_path = Path(args.marks) if args.marks else None
+            from .sim import resolve_mark_book_path
+
+            mark_book_path = resolve_mark_book_path(args.marks) if args.marks else None
             summary = run_fixture_replay(
                 fixtures=fixtures,
                 ledger_path=ledger,

@@ -1,7 +1,7 @@
 """Replay fixture ranks through the paper-order choke at the fixture book mark.
 
 This is a harness check, not a strategy or a market backtest. The fill price
-comes from fixtures/marks/universe.json (a research fixture, not a vendor feed).
+comes from the default liquid fixture book (a research fixture, not a vendor feed).
 """
 
 import os

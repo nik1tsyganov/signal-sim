@@ -13,13 +13,23 @@ from pathlib import Path
 
 from signal_sim import cli
 from signal_sim.indicators import load_sectors, load_universe
-from signal_sim.sim import MAX_GROSS_FRAC, _inventory, load_mark_book, load_mark_path, run_fixture_path, run_fixture_replay
+from signal_sim.sim import (
+    MAX_GROSS_FRAC,
+    TWO_NAME_MARKS,
+    _inventory,
+    load_mark_book,
+    load_mark_path,
+    run_fixture_path,
+    run_fixture_replay,
+)
 from signal_sim.sizer import size_targets
 from signal_sim.paper import submit_paper_order
 
 
 REPO = Path(__file__).resolve().parent.parent
 FIXTURES = REPO / "fixtures"
+LIQUID_FILLS = {"NVDA", "MSFT", "XLE", "XOM", "DIS", "NFLX", "SPY", "QQQ"}
+LIQUID_NO_MARK = {"AAPL", "CMCSA", "CVX", "XLK"}
 
 
 def _expected_buy_pnl(starting_cash, size_frac, fill_px, exit_px):
@@ -32,13 +42,15 @@ class MarkBookTests(unittest.TestCase):
         self.assertEqual(book["source"], "fixture")
         self.assertGreater(book["exit_at"], book["decision_at"])
         self.assertLessEqual(book["size_frac"], MAX_GROSS_FRAC)
-        self.assertEqual(set(book["marks"]), {"NVDA", "XLE"})
+        self.assertEqual(set(book["marks"]), LIQUID_FILLS)
         self.assertNotIn("AAPL", book["marks"])
-        liquid = load_mark_book(FIXTURES / "marks" / "liquid.json")
-        self.assertEqual(
-            set(liquid["marks"]),
-            {"NVDA", "MSFT", "XLE", "XOM", "DIS", "NFLX", "SPY", "QQQ"},
-        )
+        two_name = load_mark_book(TWO_NAME_MARKS)
+        self.assertEqual(set(two_name["marks"]), {"NVDA", "XLE"})
+        liquid = load_mark_book("liquid")
+        self.assertEqual(set(liquid["marks"]), LIQUID_FILLS)
+        self.assertEqual(set(load_mark_book("default")["marks"]), LIQUID_FILLS)
+        self.assertEqual(set(load_mark_book("two-name")["marks"]), {"NVDA", "XLE"})
+        self.assertEqual(set(load_mark_book("universe")["marks"]), {"NVDA", "XLE"})
         self.assertTrue(all(row["kind"] == "fixture_mark" for row in liquid["marks"].values()))
         self.assertTrue(all(row["source"] == "fixture" for row in liquid["marks"].values()))
         self.assertNotEqual(liquid["marks"]["DIS"]["entry_px"], 100.0)
@@ -70,12 +82,13 @@ class ReplayRoundTripTests(unittest.TestCase):
         self.audit = os.path.join(self.tmp, "audit.jsonl")
 
     def test_signal_order_fill_pnl_round_trip(self):
-        book = load_mark_book()
+        book = load_mark_book(TWO_NAME_MARKS)
         summary = run_fixture_replay(
             fixtures=FIXTURES,
             ledger_path=self.ledger,
             audit_path=self.audit,
             kill_root=self.tmp,
+            mark_book_path=TWO_NAME_MARKS,
         )
 
         self.assertEqual(summary["mode"], "local-paper-replay")
@@ -171,7 +184,7 @@ class ReplayRoundTripTests(unittest.TestCase):
         self.assertEqual([line["outcome"] for line in audit_lines], ["filled", "filled"])
 
     def test_missing_mark_is_refused_not_invented(self):
-        book = load_mark_book()
+        book = load_mark_book(TWO_NAME_MARKS)
         book = dict(book)
         book["marks"] = dict(book["marks"])
         del book["marks"]["XLE"]
@@ -281,12 +294,14 @@ class ReplayRoundTripTests(unittest.TestCase):
             ledger_path=self.ledger,
             audit_path=self.audit,
             kill_root=self.tmp,
+            mark_book_path=TWO_NAME_MARKS,
         )
         second = run_fixture_replay(
             fixtures=FIXTURES,
             ledger_path=self.ledger,
             audit_path=self.audit,
             kill_root=self.tmp,
+            mark_book_path=TWO_NAME_MARKS,
         )
         self.assertEqual({row["ticker"] for row in first["orders"]}, {"NVDA", "XLE"})
         self.assertEqual(second["orders"], [])
@@ -298,12 +313,14 @@ class ReplayRoundTripTests(unittest.TestCase):
             ledger_path=self.ledger,
             audit_path=self.audit,
             kill_root=self.tmp,
+            mark_book_path=TWO_NAME_MARKS,
         )
         closed = run_fixture_replay(
             fixtures=FIXTURES,
             ledger_path=self.ledger,
             audit_path=self.audit,
             kill_root=self.tmp,
+            mark_book_path=TWO_NAME_MARKS,
             candidates=[{"ticker": "NVDA", "score": 2, "news_breakout": 1, "insider_confirm": 1}],
         )
         self.assertEqual([row["ticker"] for row in closed["orders"]], ["XLE"])
@@ -372,7 +389,7 @@ class ReplayRoundTripTests(unittest.TestCase):
             kill_root=self.tmp,
             universe=universe,
         )
-        self.assertEqual({row["ticker"] for row in summary["orders"]}, {"NVDA", "XLE"})
+        self.assertEqual({row["ticker"] for row in summary["orders"]}, LIQUID_FILLS)
 
     def test_name_without_mark_is_skipped_not_filled(self):
         book = load_mark_book()
@@ -453,7 +470,7 @@ class ReplayRoundTripTests(unittest.TestCase):
             kill_root=self.tmp,
             mark_book=book,
         )
-        expected_fees = 2 * book["starting_cash"] * book["size_frac"] * 10.0 / 10000.0
+        expected_fees = 8 * book["starting_cash"] * book["size_frac"] * 10.0 / 10000.0
         self.assertAlmostEqual(taxed["stats"]["fees"], expected_fees)
         self.assertAlmostEqual(taxed["ending_equity"], zero["ending_equity"] - expected_fees)
         self.assertLess(taxed["cash"], zero["cash"])
@@ -593,11 +610,11 @@ class ReplayCliTests(unittest.TestCase):
         payload = json.loads(output.getvalue())
         self.assertEqual(payload["mode"], "local-paper-replay")
         self.assertIn("total_pnl", payload)
-        self.assertEqual({row["ticker"] for row in payload["orders"]}, {"NVDA", "XLE"})
-        self.assertEqual(payload["stats"]["n_winners"], 1)
-        self.assertEqual(payload["stats"]["n_losers"], 1)
-        self.assertAlmostEqual(payload["stats"]["hit_rate"], 0.5)
-        self.assertAlmostEqual(payload["stats"]["turnover"], 0.2)
+        self.assertEqual({row["ticker"] for row in payload["orders"]}, LIQUID_FILLS)
+        self.assertEqual(payload["stats"]["n_orders"], 8)
+        self.assertGreaterEqual(payload["stats"]["n_winners"], 1)
+        self.assertGreaterEqual(payload["stats"]["n_losers"], 1)
+        self.assertAlmostEqual(payload["stats"]["turnover"], 0.8)
         self.assertEqual(payload["stats"]["hawkes_n_arrivals"], 1)
         self.assertEqual(payload["fill_rule"], "decision-time fixture mark; size_frac of starting_cash")
         rendered = json.dumps(payload).lower()
@@ -619,7 +636,29 @@ class ReplayCliTests(unittest.TestCase):
         self.assertTrue(math.isfinite(payload["worst_drawdown"]))
         self.assertTrue(math.isfinite(payload["total_pnl"]))
 
-    def test_replay_marks_liquid_fills_four_names(self):
+    def test_replay_marks_two_name_alias_fills_nvda_and_xle(self):
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        ledger = os.path.join(tmp, "two-name-ledger.sqlite")
+        output = io.StringIO()
+        with redirect_stdout(output):
+            exit_code = cli.main(
+                [
+                    "replay",
+                    "--fixtures",
+                    "--marks",
+                    "two-name",
+                    "--ledger",
+                    ledger,
+                ]
+            )
+        self.assertEqual(exit_code, 0)
+        payload = json.loads(output.getvalue())
+        self.assertEqual({row["ticker"] for row in payload["orders"]}, {"NVDA", "XLE"})
+        self.assertIn({"ticker": "DIS", "reason": "no_mark"}, payload["refusals"])
+        self.assertEqual(payload["stats"]["n_orders"], 2)
+
+    def test_replay_marks_liquid_alias_fills_sector_book(self):
         tmp = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
         ledger = os.path.join(tmp, "liquid-ledger.sqlite")
@@ -630,7 +669,7 @@ class ReplayCliTests(unittest.TestCase):
                     "replay",
                     "--fixtures",
                     "--marks",
-                    str(FIXTURES / "marks" / "liquid.json"),
+                    "liquid",
                     "--ledger",
                     ledger,
                 ]

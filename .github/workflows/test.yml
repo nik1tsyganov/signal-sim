@@ -24,7 +24,9 @@ jobs:
         run: python -m signal_sim marks --fixtures
       - name: Run fixture paper replay
         run: python -m signal_sim replay --fixtures
-      - name: Run fixture sector mark book
-        run: python -m signal_sim replay --fixtures --marks fixtures/marks/liquid.json
+      - name: Run fixture sector mark book alias
+        run: python -m signal_sim replay --fixtures --marks liquid
+      - name: Run fixture two-name mark book
+        run: python -m signal_sim replay --fixtures --marks two-name
       - name: Run fixture three-step mark path
         run: python -m signal_sim replay --fixtures --path

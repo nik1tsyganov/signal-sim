@@ -82,7 +82,12 @@ class ServeTests(unittest.TestCase):
         self.assertEqual(content_type, "application/json")
         payload = json.loads(body)
         self.assertEqual(payload["mode"], "local-paper-marks")
-        self.assertEqual(set(payload["default_fillable"]), {"NVDA", "XLE"})
+        self.assertEqual(
+            set(payload["default_fillable"]),
+            {"NVDA", "MSFT", "XLE", "XOM", "DIS", "NFLX", "SPY", "QQQ"},
+        )
+        self.assertEqual(set(payload["default_fillable"]), set(payload["liquid_fillable"]))
+        self.assertEqual(set(payload["two_name_fillable"]), {"NVDA", "XLE"})
         self.assertIn("MSFT", payload["liquid_fillable"])
         self.assertIn("AAPL", payload["no_mark_default"])
         self.assertIn("AAPL", payload["no_mark_liquid"])
@@ -210,7 +215,10 @@ class ServeTests(unittest.TestCase):
         payload = json.loads(body)
         self.assertEqual(content_type, "application/json")
         self.assertEqual(payload["mode"], "local-paper-replay")
-        self.assertEqual({row["ticker"] for row in payload["orders"]}, {"NVDA", "XLE"})
+        self.assertEqual(
+            {row["ticker"] for row in payload["orders"]},
+            {"NVDA", "MSFT", "XLE", "XOM", "DIS", "NFLX", "SPY", "QQQ"},
+        )
         self.assertIn("total_pnl", payload)
 
     def test_root_serves_browser_file(self):
