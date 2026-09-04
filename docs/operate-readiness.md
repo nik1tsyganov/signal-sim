@@ -4,6 +4,13 @@ What the paper loop can do today, how to run it, what is still blocked on the ow
 
 This is not a live desk. Every `total_pnl` / `ending_equity` is **fixture-mark PnL**. That is not alpha, not a broker fill, and not a search target.
 
+## Owner wake checklist
+
+1. Review [PR 1](https://github.com/nik1tsyganov/signal-sim/pull/1). The agent will not merge it.
+2. Run `python3 -m signal_sim smoke --fixtures` locally (`python -m` on Windows). Confirm `ok=True` and that every PnL is fixture-mark.
+3. Decide merge yourself. Do not ask the agent to merge.
+4. Only after you merge, consider an Alpaca paper signup and keys. Not before. No keys in this repo.
+
 ## What the paper loop can do today
 
 Without an owner-created broker account or a paid intel key, the repo can:
@@ -46,7 +53,7 @@ python3 -m signal_sim serve
 
 Then `GET /api/params`, `GET /api/rails`, `GET /api/smoke`, `GET /api/drift`, `GET /api/walkforward`, `GET /api/shadow`, or `POST /api/replay`. `GET /api/replay` returns 405 and does not place orders.
 
-`rails --fixtures` and `GET /api/rails` are the fast local check: live host construct raises, a temp `KILL` refuses an order, a research/vendor mark refuses a fill. `smoke --fixtures` and `GET /api/smoke` run that rails step first and then the rest of the frozen-params pass. They do not place live calls and do not write the repo-root `KILL` file. The desk loads rails on page load; smoke stays click-only.
+`rails --fixtures` and `GET /api/rails` are the fast local check: live host construct raises, a temp `KILL` refuses an order, a research/vendor mark refuses a fill. `smoke --fixtures` and `GET /api/smoke` run that rails step first and then the rest of the frozen-params pass. They do not place live calls and do not write the repo-root `KILL` file. The desk loads rails on page load; smoke stays click-only. CI runs both commands after unittest on ubuntu-latest with no secrets.
 
 ## Locked policy vs book fields
 

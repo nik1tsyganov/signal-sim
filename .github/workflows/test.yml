@@ -42,3 +42,7 @@ jobs:
         run: python -m signal_sim walkforward --fixtures
       - name: Frozen shadow-paper walk-forward report
         run: python -m signal_sim shadow --fixtures
+      - name: Local paper rails
+        run: python -m signal_sim rails --fixtures
+      - name: Frozen-params paper smoke
+        run: python -m signal_sim smoke --fixtures

@@ -95,6 +95,15 @@ class SmokeTests(unittest.TestCase):
         self.assertTrue(report["ok"])
         self.assertEqual(report["params_sha256"], params_sha256())
 
+    def test_ci_workflow_runs_rails_and_smoke_without_secrets(self):
+        workflow = (REPO / ".github" / "workflows" / "test.yml").read_text(encoding="utf-8")
+        self.assertIn("python -m signal_sim rails --fixtures", workflow)
+        self.assertIn("python -m signal_sim smoke --fixtures", workflow)
+        self.assertNotIn("secrets", workflow.lower())
+        self.assertNotIn("ALPACA", workflow)
+        self.assertNotIn("WORLD_MONITOR_KEY", workflow)
+        self.assertNotIn("QUIVER", workflow)
+
 
 if __name__ == "__main__":
     unittest.main()

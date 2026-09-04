@@ -24,6 +24,8 @@ python -m unittest discover -s tests -v
 python3 -m unittest discover -s tests -v
 ```
 
+CI (`.github/workflows/test.yml`) runs that suite, then `rails --fixtures` and `smoke --fixtures`. No secrets. Local only.
+
 ## Paper operate
 
 All of these require `--fixtures`. Omitting that flag exits with status 2. Every `total_pnl` / `ending_equity` is **fixture-mark PnL**, not a live or vendor-bar result. There is no live broker and no Yahoo/Stooq execution mark.
