@@ -208,6 +208,65 @@ class AlpacaPaperClientUnitTests(unittest.TestCase):
         self.assertFalse(hasattr(client, "submit_order"))
         self.assertEqual(client.mode, "alpaca-paper-read")
 
+    def test_last_trade_and_snapshot_are_get_only_and_never_invent(self):
+        calls = []
+
+        def urlopen(request, timeout=None):
+            calls.append((request.full_url, request.get_method()))
+            url = request.full_url
+            self.assertIn("feed=iex", url)
+            if "/v2/stocks/trades/latest" in url:
+                return _json_response(
+                    {
+                        "trades": {
+                            "AAPL": {"p": 220.5, "t": "2026-09-04T16:00:00Z"},
+                            "XLK": {"p": 0},
+                            "CMCSA": {"price": "not-a-number"},
+                        }
+                    }
+                )
+            if "/v2/stocks/snapshots" in url:
+                return _json_response(
+                    {
+                        "XLK": {"latestTrade": {"p": 41.25}},
+                        "CMCSA": {"latestQuote": {"ap": 32.0, "bp": 31.5}},
+                        "CVX": {"dailyBar": {"c": 150.0}},
+                    }
+                )
+            raise AssertionError(url)
+
+        with mock.patch("signal_sim.paper.read_env", side_effect=_env), mock.patch(
+            "signal_sim.alpaca_paper.urllib.request.urlopen", side_effect=urlopen
+        ):
+            client = paper_broker_client(paper_host())
+            marks = client.sizing_marks(["AAPL", "XLK", "CMCSA", "CVX", "TSLA"])
+
+        self.assertEqual(marks["AAPL"]["entry_px"], 220.5)
+        self.assertEqual(marks["AAPL"]["kind"], "last_trade")
+        self.assertEqual(marks["XLK"]["entry_px"], 41.25)
+        self.assertEqual(marks["XLK"]["kind"], "snapshot")
+        self.assertNotIn("CMCSA", marks)
+        self.assertNotIn("CVX", marks)
+        self.assertNotIn("TSLA", marks)
+        self.assertTrue(all(method == "GET" for _url, method in calls))
+        self.assertTrue(all("/v2/orders" not in url for url, _method in calls))
+        self.assertTrue(all(( "data." + "alpaca" + ".markets") in url for url, _method in calls))
+        from signal_sim.paper import execution_mark_failure
+
+        self.assertEqual(
+            execution_mark_failure(marks["AAPL"]["kind"], marks["AAPL"]["source"]),
+            "execution mark must be fixture_mark",
+        )
+
+    def test_empty_last_trades_do_not_open_a_socket(self):
+        with mock.patch("signal_sim.paper.read_env", side_effect=_env), mock.patch(
+            "signal_sim.alpaca_paper.urllib.request.urlopen"
+        ) as urlopen:
+            client = paper_broker_client(PAPER_BROKER_HOST)
+            self.assertEqual(client.sizing_marks([]), {})
+            self.assertEqual(client.last_trades(["TSLA"]), {})
+        urlopen.assert_not_called()
+
     def test_fixture_mark_gate_is_unchanged_when_paper_client_exists(self):
         import os
         import tempfile

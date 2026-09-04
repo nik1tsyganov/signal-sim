@@ -30,7 +30,7 @@ With owner keys on a local machine (never committed):
 
 - **Live intel:** `python3 -m signal_sim feeds --live` pulls Quiver and World Monitor, then prints event counts and a ticker histogram only. It does not dump person names, headlines, URLs, or raw payloads. Missing `QUIVER_API_KEY` or `WORLD_MONITOR_KEY` exits 2 with the missing env names. `QUIVER_USERNAME` is unused by this path.
 - **Alpaca paper read smoke:** `python3 -m signal_sim paper-account` constructs the paper-host client when `ALPACA_PAPER_API_KEY` and `ALPACA_PAPER_API_SECRET` are set. It GETs `/v2/account`, `/v2/positions`, and `/v2/clock` on the paper host. `ALPACA_PAPER_API_BASE_URL` is optional and defaults to the paper HTTPS origin. A non-paper Alpaca host or IBKR live port still raises `LiveEndpointError`. Add `--dry-run` to validate a sample order payload in memory. This path does not POST an order.
-- **Proposed rebalance dry-run:** `python3 -m signal_sim rebalance --fixtures` reads that same paper account and positions, sizes the existing fixture cluster-drift target book (or `rank_candidates` with `--rank`), and prints intended tickets: symbol, side, qty, notional, rationale. Qty uses fixture `entry_px`, not a live quote. Names without a fixture mark stay `no_mark`. This path does not POST an order and does not call `submit_paper_order`.
+- **Proposed rebalance dry-run:** `python3 -m signal_sim rebalance --fixtures` reads that same paper account and positions, sizes the existing fixture cluster-drift target book (or `rank_candidates` with `--rank`), and prints intended tickets: symbol, side, qty, notional, rationale. Qty prefers fixture `entry_px`. If a ranked name has no fixture mark, the client may GET a paper IEX last trade or snapshot `latestTrade` and size from that observed price. It never invents a quote. Names still unmarked stay `no_mark`. `--live` reuses `feeds --live` and folds Quiver / World Monitor events into the existing Hawkes overlay (drift book only). This path does not POST an order and does not call `submit_paper_order`. Paper last-trade marks are not execution marks.
 
 Fills go through `submit_paper_order` only. A fill must be `kind=fixture_mark` and `source=fixture`. Research or vendor mark kinds refuse. Constructing a live Alpaca host or IBKR live ports raises and does not open a socket. A present or unreadable `KILL` file refuses the order. Every fill writes an R8 provenance line that cites `params_sha256`. The local ledger fill gate is unchanged: Alpaca paper reads do not become execution marks.
 
@@ -71,6 +71,7 @@ python3 -m signal_sim feeds --live
 python3 -m signal_sim paper-account
 python3 -m signal_sim paper-account --dry-run
 python3 -m signal_sim rebalance --fixtures
+python3 -m signal_sim rebalance --fixtures --live
 ```
 
 `runtime-env` prints presence booleans only. It never prints secret values.
@@ -81,7 +82,7 @@ Unittest integration cases are marked with `skipUnless` the relevant env names a
 python3 -m unittest tests.test_live_feeds tests.test_alpaca_paper tests.test_rebalance -v
 ```
 
-`SIGNAL_SIM_ALPACA_PAPER_SUBMIT` defaults to `0`. `1` is reserved for a later paper-order POST. This build still refuses remote submits even if that flag is set. Default is read-only account smoke. `rebalance --fixtures` is print-only. Fills stay on the local ledger.
+`SIGNAL_SIM_ALPACA_PAPER_SUBMIT` defaults to `0`. `1` is reserved for a later paper-order POST. This build still refuses remote submits even if that flag is set. Default is read-only account smoke. `rebalance --fixtures` is print-only. `--live` needs intel keys and still does not POST. Fills stay on the local ledger.
 
 A 2026-09-04 Cloud Runtime Secrets pass (presence only; no secret values) is recorded in [paper smoke results](paper-smoke-results.md). That run kept the submit flag at `0`.
 
@@ -148,7 +149,7 @@ There is no TrendRadar live client and no GPL/AGPL vendoring.
 - Intel flags (gov-contract, World Monitor recorded JSON, TrendRadar fixture, filing lags) are feature-only on the drift book and diagnose unless a test already documents a rank count.
 - `feeds --live` counts are a connectivity check, not a rank input and not a live trading signal.
 - `paper-account` is a paper-host read smoke. It is not a live-money balance, not a fill, and not permission to trade live.
-- `rebalance --fixtures` tickets are a proposed book versus paper positions. They are not a broker fill, not alpha, and not permission to POST.
+- `rebalance --fixtures` tickets are a proposed book versus paper positions. They are not a broker fill, not alpha, and not permission to POST. A paper last trade or snapshot used for qty is a sizing mark only, not a `fixture_mark` fill.
 - The desk is paper-only and loopback-only. It is not a production broker UI.
 
 See [the changelog](../CHANGELOG.md), [paper trading and quant research](paper-trading-and-quant.md), and [alternative data and safety](alt-data-and-safety.md).

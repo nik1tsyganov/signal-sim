@@ -11,7 +11,7 @@ from .diagnose import fixture_diagnostics
 from .fixture_load import load_fixture_events
 from .hawkes import fixture_intensity
 from .indicators import rank_candidates
-from .live_feeds import LiveFeedConfigError, pull_live_feeds
+from .live_feeds import LiveFeedConfigError, missing_live_feed_keys, pull_live_feeds
 from .paper import (
     LiveEndpointError,
     missing_paper_keys,
@@ -202,6 +202,11 @@ def _parser() -> argparse.ArgumentParser:
         "--intensity",
         action="store_true",
         help="apply declared Hawkes intensity overlay on the drift book",
+    )
+    rebalance.add_argument(
+        "--live",
+        action="store_true",
+        help="pull Quiver/World Monitor into the Hawkes overlay (print-only)",
     )
     commands.add_parser(
         "runtime-env",
@@ -426,9 +431,22 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(report, separators=(",", ":")))
         return 0 if report.get("ok") is True else 1
     if args.command == "rebalance":
-        if getattr(args, "intensity", False) and getattr(args, "rank", False):
-            print("rebalance --intensity requires the drift book (omit --rank)", file=sys.stderr)
+        live = getattr(args, "live", False)
+        intensity = getattr(args, "intensity", False)
+        if (intensity or live) and getattr(args, "rank", False):
+            print(
+                "rebalance --intensity/--live requires the drift book (omit --rank)",
+                file=sys.stderr,
+            )
             return 2
+        if live:
+            missing_intel = missing_live_feed_keys()
+            if missing_intel:
+                print(
+                    "rebalance --live missing env: " + ", ".join(missing_intel),
+                    file=sys.stderr,
+                )
+                return 2
         missing = missing_paper_keys()
         if missing:
             print(
@@ -451,8 +469,12 @@ def main(argv: list[str] | None = None) -> int:
                 mark_book_path=mark_book_path,
                 client=client,
                 signal="rank" if getattr(args, "rank", False) else "drift",
-                intensity=getattr(args, "intensity", False),
+                intensity=intensity or live,
+                live=live,
             )
+        except LiveFeedConfigError as error:
+            print(str(error), file=sys.stderr)
+            return 2
         except LiveEndpointError as error:
             print(str(error), file=sys.stderr)
             return 2

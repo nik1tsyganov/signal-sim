@@ -2,9 +2,15 @@
 
 What landed in the paper operate loop. This is not a live trading log. Every PnL number the loop prints is **fixture-mark PnL**, not alpha.
 
+## Unreleased — rebalance marks + live intensity
+
+- **Sizing marks:** `rebalance --fixtures` still prefers fixture `entry_px`. Names without a fixture mark may use a paper IEX last trade or snapshot `latestTrade`. Missing or unreadable prices stay `no_mark`. Paper data marks are print-only and are not execution marks.
+- **Live intensity:** `rebalance --fixtures --live` reuses `feeds --live` (Quiver + World Monitor) and feeds those events into the existing Hawkes overlay. Tickets stay print-only. `--live` still requires the drift book (omit `--rank`).
+- **Fills:** still local-ledger only. No broker POST. `SIGNAL_SIM_ALPACA_PAPER_SUBMIT` stays `0`.
+
 ## Unreleased — proposed rebalance dry-run
 
-- **Rebalance dry-run:** `python3 -m signal_sim rebalance --fixtures` reads the Alpaca paper account and positions, sizes the existing fixture cluster-drift target book (or rank with `--rank`), and prints intended tickets. No remote paper POST. No `submit_paper_order`. Qty uses fixture `entry_px`.
+- **Rebalance dry-run:** `python3 -m signal_sim rebalance --fixtures` reads the Alpaca paper account and positions, sizes the existing fixture cluster-drift target book (or rank with `--rank`), and prints intended tickets. No remote paper POST. No `submit_paper_order`. Qty prefers fixture `entry_px`.
 - **Fills:** still local-ledger only. `SIGNAL_SIM_ALPACA_PAPER_SUBMIT` stays `0` and still does not enable a POST.
 
 ## Unreleased — live intel + Alpaca paper read

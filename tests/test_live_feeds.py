@@ -11,6 +11,8 @@ from signal_sim import cli
 from signal_sim.events import Event
 from signal_sim.live_feeds import (
     LiveFeedConfigError,
+    intensity_event,
+    live_events_for_intensity,
     missing_live_feed_keys,
     pull_live_feeds,
     ticker_histogram,
@@ -84,6 +86,15 @@ class LiveFeedUnitTests(unittest.TestCase):
         self.assertNotIn("example.invalid", dumped)
         self.assertNotIn("raw-pii-ref", dumped)
         self.assertNotIn("should-not-print", dumped)
+
+    def test_intensity_event_skips_incomplete_rows(self):
+        news = _event("NVDA", source="quiver", kind="news")
+        events = live_events_for_intensity(
+            [{"ticker": "NVDA", "person": "Rep. Hidden"}, news],
+            [_event("XLE"), {"ticker": "TSLA", "kind": "news"}],
+        )
+        self.assertEqual([item.ticker for item in events], ["NVDA", "XLE"])
+        self.assertIsNone(intensity_event({"ticker": "NVDA", "person": "hidden"}))
 
 
 class LiveFeedCliTests(unittest.TestCase):

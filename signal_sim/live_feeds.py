@@ -8,7 +8,8 @@ from __future__ import annotations
 from collections import Counter
 from typing import Any
 
-from .events import Event
+from .events import Event, EventValidationError
+from .indicators import UNIVERSE
 from .secrets import read_env
 from .sources import altdata, worldmonitor
 
@@ -52,15 +53,50 @@ def summarize_feed(events: list[Any]) -> dict[str, Any]:
     return {"n": len(events), "tickers": ticker_histogram(events)}
 
 
-def pull_live_feeds() -> dict[str, Any]:
+def fetch_live_feed_payloads() -> tuple[list[Any], list[Any]]:
+    """Same Quiver / World Monitor pull as feeds --live. No PII summary."""
     missing = missing_live_feed_keys()
     if missing:
         raise LiveFeedConfigError(missing)
-    quiver = altdata.live()
-    world = worldmonitor.live()
+    return list(altdata.live()), list(worldmonitor.live())
+
+
+def intensity_event(item: Any) -> Event | None:
+    """Coerce a live feed row into a Hawkes Event. Skip rows that are not events."""
+    if isinstance(item, Event):
+        return item if item.ticker in UNIVERSE else None
+    if not isinstance(item, dict):
+        return None
+    ticker = item.get("ticker")
+    if ticker not in UNIVERSE:
+        return None
+    payload = dict(item)
+    payload.setdefault("entities", [])
+    payload.setdefault("headline", "")
+    payload.setdefault("url", "")
+    payload.setdefault("confidence", 0.0)
+    payload.setdefault("raw_ref", f"live:{ticker}")
+    try:
+        event = Event.from_dict(payload)
+    except EventValidationError:
+        return None
+    return event
+
+
+def live_events_for_intensity(quiver: list[Any], world: list[Any]) -> list[Event]:
+    events: list[Event] = []
+    for item in list(quiver) + list(world):
+        event = intensity_event(item)
+        if event is not None:
+            events.append(event)
+    return events
+
+
+def pull_live_feeds() -> dict[str, Any]:
+    quiver, world = fetch_live_feed_payloads()
     return {
         "mode": "live-intel",
-        "quiver": summarize_feed(list(quiver)),
-        "worldmonitor": summarize_feed(list(world)),
+        "quiver": summarize_feed(quiver),
+        "worldmonitor": summarize_feed(world),
         "ok": True,
     }
