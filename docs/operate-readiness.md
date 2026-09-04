@@ -81,6 +81,8 @@ python3 -m unittest tests.test_live_feeds tests.test_alpaca_paper -v
 
 `SIGNAL_SIM_ALPACA_PAPER_SUBMIT` defaults to `0`. `1` is reserved for a later paper-order POST. This build still refuses remote submits even if that flag is set. Default is read-only account smoke. Fills stay on the local ledger.
 
+A 2026-09-04 Cloud Runtime Secrets pass (presence only; no secret values) is recorded in [paper smoke results](paper-smoke-results.md). That run kept the submit flag at `0`.
+
 ## Cursor Cloud Runtime Secrets
 
 Cloud agents do not read a repo `.env`. Paper keys belong in **Dashboard Runtime Secrets** on a saved environment.
