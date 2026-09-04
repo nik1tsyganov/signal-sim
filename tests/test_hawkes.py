@@ -216,7 +216,7 @@ class DiagnoseCliTests(unittest.TestCase):
             {("NVDA", "buy"), ("MSFT", "buy"), ("XLE", "buy"), ("XOM", "buy"),
              ("DIS", "buy"), ("NFLX", "buy"), ("SPY", "buy"), ("QQQ", "buy")},
         )
-        self.assertEqual(dict(fills_before)["NVDA"], 178.5)
+        self.assertEqual({ticker: px for ticker, _side, px in fills_before}["NVDA"], 178.5)
         self.assertTrue(all(value == 99.0 for value in diagnose["intensity"].values()))
         self.assertNotIn("sharpe", json.dumps(diagnose).lower())
 
