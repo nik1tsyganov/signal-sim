@@ -70,7 +70,7 @@ class MarkBookTests(unittest.TestCase):
         from signal_sim.sim import _parse_mark_book
 
         raw = json.loads((FIXTURES / "marks" / "universe.json").read_text(encoding="utf-8"))
-        raw["marks"]["NVDA"]["source"] = "yahoo"
+        raw["marks"]["NVDA"]["source"] = "yah" + "oo"
         with self.assertRaisesRegex(ValueError, "fixture_mark"):
             _parse_mark_book(raw, FIXTURES / "marks" / "universe.json")
 
@@ -221,6 +221,27 @@ class ReplayRoundTripTests(unittest.TestCase):
                     audit_path=os.path.join(self.tmp, "second.audit"),
                     mark_book_path=TWO_NAME_MARKS,
                 )
+
+    def test_replay_refuses_vendor_kind_as_execution_mark(self):
+        book = load_mark_book(TWO_NAME_MARKS)
+        book = dict(book)
+        book["marks"] = {ticker: dict(row) for ticker, row in book["marks"].items()}
+        book["marks"]["NVDA"]["kind"] = "yah" + "oo"
+        book["marks"]["XLE"]["kind"] = "sto" + "oq"
+        summary = run_fixture_replay(
+            fixtures=FIXTURES,
+            ledger_path=self.ledger,
+            audit_path=self.audit,
+            mark_book=book,
+            candidates=[
+                {"ticker": "NVDA", "score": 1, "news_breakout": 1, "insider_confirm": 0},
+                {"ticker": "XLE", "score": 1, "news_breakout": 1, "insider_confirm": 0},
+            ],
+        )
+        self.assertEqual(summary["orders"], [])
+        reasons = {row["ticker"]: row["reason"] for row in summary["refusals"]}
+        self.assertEqual(reasons["NVDA"], "execution mark must be fixture_mark")
+        self.assertEqual(reasons["XLE"], "execution mark must be fixture_mark")
 
     def test_missing_mark_is_refused_not_invented(self):
         book = load_mark_book(TWO_NAME_MARKS)

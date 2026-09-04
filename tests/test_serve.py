@@ -178,6 +178,32 @@ class ServeTests(unittest.TestCase):
         self.assertEqual(payload["folds"][0]["comparisons"]["no_news"]["total_pnl"], 0)
         self.assertNotIn("sharpe", json.dumps(payload).lower())
 
+    def test_api_smoke_matches_smoke_fixtures_without_writing(self):
+        expected = io.StringIO()
+        with redirect_stdout(expected):
+            cli.main(["smoke", "--fixtures"])
+        cli_payload = json.loads(expected.getvalue())
+
+        with patch.object(serve.safety, "PAPER_ONLY", True), patch.object(
+            serve.safety, "kill_switch_ok", return_value=True
+        ):
+            with serve._make_server(0) as server:
+                thread = threading.Thread(target=server.handle_request)
+                thread.start()
+                host, port = server.server_address
+                with urlopen(f"http://{host}:{port}/api/smoke", timeout=30) as response:
+                    body = response.read()
+                    content_type = response.headers.get_content_type()
+                thread.join(timeout=30)
+        payload = json.loads(body)
+        self.assertEqual(content_type, "application/json")
+        self.assertEqual(payload["mode"], "local-paper-smoke")
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["params_sha256"], cli_payload["params_sha256"])
+        self.assertEqual(set(payload["steps"]), set(cli_payload["steps"]))
+        self.assertIn("fixture-mark", payload["pnl_note"].lower())
+        self.assertNotIn("sharpe", json.dumps(payload).lower())
+
     def test_api_shadow_matches_shadow_fixtures_without_writing(self):
         expected = io.StringIO()
         with redirect_stdout(expected):
@@ -318,7 +344,9 @@ class ServeTests(unittest.TestCase):
         self.assertIn(b"/api/shadow", body)
         self.assertIn(b"/api/params", body)
         self.assertIn(b"/api/intensity", body)
+        self.assertIn(b"/api/smoke", body)
         self.assertIn(b"Frozen params", body)
+        self.assertIn(b"Run smoke", body)
         self.assertIn(b"params_sha256", body)
         self.assertIn(b"Drift targets", body)
         self.assertIn(b"Walk-forward", body)
@@ -355,6 +383,7 @@ class ServeTests(unittest.TestCase):
         self.assertIn(b"/api/shadow", body)
         self.assertIn(b"/api/params", body)
         self.assertIn(b"/api/intensity", body)
+        self.assertIn(b"/api/smoke", body)
         self.assertIn(b"/api/replay", body)
         self.assertIn(b"/api/liquid", body)
         self.assertIn(b"/api/path", body)

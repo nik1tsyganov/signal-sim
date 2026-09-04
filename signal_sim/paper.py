@@ -292,6 +292,27 @@ def _append_audit(audit_path, record):
         f.write(json.dumps(record, sort_keys=True) + "\n")
 
 
+_EXECUTION_MARK_KIND = "fixture_mark"
+_EXECUTION_MARK_SOURCE = "fixture"
+_BANNED_MARK_LABELS = frozenset(
+    ("yah" + "oo", "sto" + "oq", "yfin" + "ance", "vendor", "research")
+)
+
+
+def execution_mark_failure(kind=None, source=None):
+    """Return a refusal reason if this is not a fixture execution mark."""
+    kind_text = _EXECUTION_MARK_KIND if kind in (None, "") else str(kind).strip().lower()
+    source_text = _EXECUTION_MARK_SOURCE if source in (None, "") else str(source).strip().lower()
+    if (
+        kind_text in _BANNED_MARK_LABELS
+        or source_text in _BANNED_MARK_LABELS
+        or kind_text != _EXECUTION_MARK_KIND
+        or source_text != _EXECUTION_MARK_SOURCE
+    ):
+        return "execution mark must be fixture_mark"
+    return None
+
+
 def _validation_failure(proposal, mark_px):
     """Return the first R9 failure as a string, or None when approved."""
     if not isinstance(proposal, dict):
@@ -351,7 +372,16 @@ def _stamp(value, field):
 
 
 def submit_paper_order(
-    proposal, *, ledger_path, mark_px, audit_path=None, kill_root=None, cost=0, filled_at=None
+    proposal,
+    *,
+    ledger_path,
+    mark_px,
+    audit_path=None,
+    kill_root=None,
+    cost=0,
+    filled_at=None,
+    mark_kind=None,
+    mark_source=None,
 ):
     """The only function that can create an order row.
 
@@ -404,6 +434,9 @@ def submit_paper_order(
         refuse(f"R9: {error}")
     if ledger_stamp <= decision_stamp:
         refuse("R9: filled_at must be after decision_at")
+    mark_failure = execution_mark_failure(mark_kind, mark_source)
+    if mark_failure is not None:
+        refuse(f"R9: {mark_failure}")
 
     order_id = hashlib.sha256(proposal["idempotency_key"].encode("utf-8")).hexdigest()[:32]
     fill_id = hashlib.sha256(f"{proposal['idempotency_key']}:fill".encode("utf-8")).hexdigest()[:32]

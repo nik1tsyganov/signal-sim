@@ -133,6 +133,15 @@ def _parser() -> argparse.ArgumentParser:
         "--out",
         help="write the JSON report here (default: artifacts dir or stdout only)",
     )
+    smoke = commands.add_parser(
+        "smoke",
+        help="one frozen-params pass of rank/diagnose/intensity/drift/replay/walkforward/shadow",
+    )
+    smoke.add_argument(
+        "--fixtures",
+        action="store_true",
+        help="load local fixture events and marks (required; the only supported input)",
+    )
     return parser
 
 
@@ -147,6 +156,7 @@ def main(argv: list[str] | None = None) -> int:
         "replay",
         "walkforward",
         "shadow",
+        "smoke",
     } and not args.fixtures:
         print(
             f"{args.command} requires --fixtures; only local fixture events are supported",
@@ -279,6 +289,17 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(json.dumps(report, separators=(",", ":")))
         return 0
+    if args.command == "smoke":
+        import tempfile
+
+        from .smoke import run_smoke
+
+        fixtures = Path(__file__).resolve().parent.parent / "fixtures"
+        ledger_dir = tempfile.mkdtemp(prefix="paper-smoke-")
+        report = run_smoke(fixtures=fixtures, ledger_dir=ledger_dir, write_artifact=False)
+        print(f"smoke params_sha256={report.get('params_sha256')} ok={report.get('ok')}", file=sys.stderr)
+        print(json.dumps(report, separators=(",", ":")))
+        return 0 if report.get("ok") is True else 1
     return 2
 
 

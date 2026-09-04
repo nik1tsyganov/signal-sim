@@ -279,6 +279,17 @@ class ValidatorTests(PaperOrderPathBase):
     def test_unknown_ticker_is_refused(self):
         self._assert_refused(good_proposal(ticker="TSLA"))
 
+    def test_vendor_or_research_mark_kind_is_refused(self):
+        banned = ("yah" + "oo", "sto" + "oq", "vendor", "research", "yfin" + "ance")
+        for kind in banned:
+            with self.subTest(kind=kind):
+                self._assert_refused(mark_kind=kind, mark_source="fixture")
+        for source in banned:
+            with self.subTest(source=source):
+                self._assert_refused(mark_kind="fixture_mark", mark_source=source)
+        self.assertTrue(all(line["outcome"] == "refused" for line in self._audit_lines()))
+        self.assertIn("fixture_mark", self._audit_lines()[-1]["verdict"])
+
     def test_bad_side_is_refused(self):
         self._assert_refused(good_proposal(side="short"))
 

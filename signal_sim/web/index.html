@@ -150,6 +150,14 @@
             <p>GET /api/shadow. Frozen operate report of walkforward --fixtures. Declared params only. GET does not write artifacts and does not place desk orders. Not a search. Not a live result.</p>
             <div id="shadow-result">Loading shadow-paper…</div>
         </section>
+        <section id="smoke">
+            <h2>Smoke</h2>
+            <p>GET /api/smoke. One frozen-params pass of rank/diagnose/intensity/drift/replay/walkforward/shadow. GET does not write artifacts and does not place desk orders. Every PnL is fixture-mark.</p>
+            <div class="actions">
+                <button type="button" id="smoke-btn">Run smoke (read-only)</button>
+            </div>
+            <div id="smoke-result"></div>
+        </section>
         <section id="paper">
             <h2>Paper replay</h2>
             <p>Fixture marks only. GET does not place orders. Default replay fills the liquid sector book (tech/energy/media/ETF). Unmarked ranked names are no_mark. Path walks the three-step ledger.</p>
@@ -515,6 +523,27 @@
             }
         }
 
+        async function loadSmoke() {
+            const box = document.getElementById('smoke-result');
+            box.textContent = 'Running…';
+            try {
+                const response = await fetch('/api/smoke');
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                const data = await response.json();
+                box.innerHTML = renderJson({
+                    mode: data.mode,
+                    ok: data.ok,
+                    params_sha256: data.params_sha256,
+                    pnl_note: data.pnl_note,
+                    steps: data.steps || {},
+                });
+            } catch (err) {
+                box.innerHTML = renderError('Smoke failed', err);
+            }
+        }
+
         document.addEventListener('DOMContentLoaded', () => {
             loadRanks();
             loadMarks();
@@ -527,9 +556,11 @@
             const replay = document.getElementById('replay-btn');
             const liquid = document.getElementById('liquid-btn');
             const path = document.getElementById('path-btn');
+            const smoke = document.getElementById('smoke-btn');
             if (replay) replay.addEventListener('click', () => postPaper('/api/replay'));
             if (liquid) liquid.addEventListener('click', () => postPaper('/api/liquid'));
             if (path) path.addEventListener('click', () => postPaper('/api/path'));
+            if (smoke) smoke.addEventListener('click', () => loadSmoke());
         });
     </script>
 </body>

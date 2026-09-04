@@ -1,0 +1,143 @@
+"""One frozen-params operate pass over the paper fixture loop.
+
+Runs rank, diagnose, intensity, drift, replay, walkforward, and shadow.
+Any step failure makes the report not ok. PnL is fixture-mark only.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Any
+
+from .diagnose import fixture_diagnostics
+from .drift import fixture_drift_book
+from .fixture_load import load_fixture_events
+from .hawkes import fixture_intensity
+from .indicators import rank_candidates
+from .params import operate_stamp
+from .shadow import run_shadow_report
+from .sim import load_mark_book, run_fixture_replay
+from .store import EventStore
+from .walkforward import run_fixture_walkforward
+
+
+NOTE = (
+    "Frozen-params smoke of the paper fixture operate loop. "
+    "Every total_pnl / ending_equity is fixture-mark PnL. "
+    "Not a live result. Not a search. Not a functional claim."
+)
+STEP_NAMES = (
+    "rank",
+    "diagnose",
+    "intensity",
+    "drift",
+    "replay",
+    "walkforward",
+    "shadow",
+)
+
+
+def run_smoke(
+    *,
+    fixtures: Path,
+    ledger_dir: str,
+    write_artifact: bool = False,
+) -> dict[str, Any]:
+    stamp = operate_stamp()
+    Path(ledger_dir).mkdir(parents=True, exist_ok=True)
+    report: dict[str, Any] = {
+        "mode": "local-paper-smoke",
+        "note": NOTE,
+        "params": stamp["params"],
+        "params_sha256": stamp["params_sha256"],
+        "ok": True,
+        "steps": {},
+        "pnl_note": "fixture-mark PnL. Not a live result. Not a search target.",
+    }
+    try:
+        events = load_fixture_events(fixtures)
+        decision_at = load_mark_book()["decision_at"]
+        with EventStore() as store:
+            store.add_many(events)
+            ranked = rank_candidates(store.all(), window_end=decision_at)
+        report["steps"]["rank"] = {
+            "n": len(ranked),
+            "ok": True,
+        }
+        events = load_fixture_events(fixtures)
+        diagnose = fixture_diagnostics(events)
+        report["steps"]["diagnose"] = {
+            "mode": diagnose["mode"],
+            "params_sha256": diagnose["params_sha256"],
+            "ok": diagnose.get("params_sha256") == stamp["params_sha256"],
+        }
+        intensity = fixture_intensity(fixtures)
+        report["steps"]["intensity"] = {
+            "mode": intensity["mode"],
+            "cut": intensity["cut"],
+            "params_sha256": intensity["params_sha256"],
+            "ok": intensity.get("params_sha256") == stamp["params_sha256"],
+        }
+        drift = fixture_drift_book(fixtures)
+        report["steps"]["drift"] = {
+            "mode": drift["mode"],
+            "n_targets": len(drift.get("targets") or []),
+            "params_sha256": drift["params_sha256"],
+            "ok": drift.get("params_sha256") == stamp["params_sha256"],
+        }
+        replay = run_fixture_replay(
+            fixtures=fixtures,
+            ledger_path=str(Path(ledger_dir) / "smoke-replay.sqlite"),
+        )
+        report["steps"]["replay"] = {
+            "mode": replay["mode"],
+            "n_orders": replay["stats"]["n_orders"],
+            "total_pnl": replay["total_pnl"],
+            "ending_equity": replay["ending_equity"],
+            "pnl_note": "fixture-mark PnL",
+            "params_sha256": replay["params_sha256"],
+            "ok": replay.get("params_sha256") == stamp["params_sha256"],
+        }
+        walk_dir = Path(ledger_dir) / "smoke-walkforward"
+        walk_dir.mkdir(parents=True, exist_ok=True)
+        walkforward = run_fixture_walkforward(
+            fixtures=fixtures,
+            ledger_dir=str(walk_dir),
+        )
+        report["steps"]["walkforward"] = {
+            "mode": walkforward["mode"],
+            "n_folds": walkforward["n_folds"],
+            "params_sha256": walkforward["params_sha256"],
+            "folds": [
+                {
+                    "fold": row["fold"],
+                    "total_pnl": row["total_pnl"],
+                    "pnl_note": row.get("pnl_note") or "fixture-mark PnL",
+                }
+                for row in walkforward["folds"]
+            ],
+            "ok": walkforward.get("params_sha256") == stamp["params_sha256"],
+        }
+        shadow_dir = Path(ledger_dir) / "smoke-shadow"
+        shadow_dir.mkdir(parents=True, exist_ok=True)
+        shadow = run_shadow_report(
+            fixtures=fixtures,
+            ledger_dir=str(shadow_dir),
+            write_artifact=write_artifact,
+        )
+        report["steps"]["shadow"] = {
+            "mode": shadow["mode"],
+            "params_sha256": shadow["params_sha256"],
+            "n_folds": shadow["walkforward"]["n_folds"],
+            "ok": shadow.get("params_sha256") == stamp["params_sha256"],
+        }
+    except Exception as error:
+        report["ok"] = False
+        report["error"] = str(error)
+        return report
+    missing = [name for name in STEP_NAMES if name not in report["steps"]]
+    if missing or any(step.get("ok") is not True for step in report["steps"].values()):
+        report["ok"] = False
+        if missing:
+            report["error"] = f"missing smoke steps: {missing}"
+    return report

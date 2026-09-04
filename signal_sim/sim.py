@@ -21,7 +21,12 @@ from .clusters import online_clusters
 from .events import Event
 from .hawkes import log_likelihood
 from .indicators import SECTORS, UNIVERSE, rank_candidates
-from .paper import OrderRefused, assert_fills_have_provenance, submit_paper_order
+from .paper import (
+    OrderRefused,
+    assert_fills_have_provenance,
+    execution_mark_failure,
+    submit_paper_order,
+)
 from .params import COST_BPS, DECISION_DELAY_HOURS, operate_stamp
 from .sizer import MAX_GROSS_FRAC, size_targets
 from .store import EventStore
@@ -468,6 +473,8 @@ def _place(
     cost: float,
     filled_at,
     decision_at: datetime | str | None = None,
+    mark_kind: str | None = None,
+    mark_source: str | None = None,
 ) -> dict[str, Any]:
     return submit_paper_order(
         proposal_from_candidate(
@@ -485,6 +492,8 @@ def _place(
         kill_root=kill_root,
         cost=cost,
         filled_at=filled_at,
+        mark_kind=mark_kind,
+        mark_source=mark_source,
     )
 
 
@@ -537,6 +546,8 @@ def run_fixture_replay(
         mark = book["marks"].get(ticker)
         if mark is None or mark.get("unused"):
             refusals.append({"ticker": ticker, "reason": "no_mark"})
+        elif execution_mark_failure(mark.get("kind"), mark.get("source")) is not None:
+            refusals.append({"ticker": ticker, "reason": "execution mark must be fixture_mark"})
         else:
             fillable.append(row)
     targets, skipped = size_targets(
@@ -565,6 +576,10 @@ def run_fixture_replay(
             mark = book["marks"].get(ticker)
             if mark is None:
                 raise ValueError(f"held ticker missing fixture mark: {ticker!r}")
+            mark_failure = execution_mark_failure(mark.get("kind"), mark.get("source"))
+            if mark_failure is not None:
+                refuse(ticker, mark_failure)
+                continue
             sell_px = mark["entry_px"]
             trade_frac = position["shares"] * sell_px / starting_cash
             if trade_frac <= 1e-12:
@@ -579,6 +594,10 @@ def run_fixture_replay(
         mark = book["marks"].get(ticker)
         if mark is None or mark.get("unused"):
             refuse(ticker, "no_mark")
+            continue
+        mark_failure = execution_mark_failure(mark.get("kind"), mark.get("source"))
+        if mark_failure is not None:
+            refuse(ticker, mark_failure)
             continue
         mark_px = mark["entry_px"]
         have_shares = float(held.get(ticker, {}).get("shares", 0.0))
@@ -624,6 +643,8 @@ def run_fixture_replay(
                 filled_at=fill_at,
                 decision_at=decision_key,
                 cost=starting_cash * frac * cost_bps / 10000.0,
+                mark_kind=book["marks"].get(ticker, {}).get("kind"),
+                mark_source=book["marks"].get(ticker, {}).get("source"),
             )
         except OrderRefused as error:
             refuse(ticker, str(error))
