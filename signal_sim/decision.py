@@ -14,8 +14,14 @@ from typing import Any, Literal
 
 from .params import (
     CONVICTION_MAX_GROSS_INVEST,
+    CONVICTION_MIN_REALIZE_LOSS_BPS,
     go_nogo_params,
     operate_stamp,
+)
+from .sells import (
+    SELL_BLOCKED_UNDERWATER,
+    paper_row_pnl_frac,
+    underwater_vs_entry,
 )
 from .performance import default_snapshot_path
 from .research import load_research_artifact, research_artifact_path
@@ -199,6 +205,15 @@ def _held_names(performance: dict[str, Any] | None) -> set[str]:
         if isinstance(symbol, str) and symbol:
             names.add(symbol)
     return names
+
+
+def _position_by_symbol(performance: dict[str, Any] | None) -> dict[str, dict[str, Any]]:
+    rows: dict[str, dict[str, Any]] = {}
+    for row in _position_rows(performance):
+        symbol = row.get("symbol") or row.get("ticker")
+        if isinstance(symbol, str) and symbol:
+            rows[symbol] = row
+    return rows
 
 
 def _target_fracs(research: dict[str, Any] | None) -> dict[str, float]:
@@ -395,30 +410,47 @@ def build_go_nogo(
     held = _held_names(loaded_performance)
     if not held:
         held = set(weights)
+    positions = _position_by_symbol(loaded_performance)
+    loss_bps = float(
+        thresholds.get("min_realize_loss_bps", CONVICTION_MIN_REALIZE_LOSS_BPS)
+    )
     off_target: list[dict[str, Any]] = []
+    deferred_exits: list[dict[str, Any]] = []
     for ticker, target in targets.items():
         held_frac = float(weights.get(ticker, 0.0))
-        if abs(held_frac - target) > trim_band + _EPS:
-            off_target.append(
-                {
-                    "ticker": ticker,
-                    "held_frac": held_frac,
-                    "target_frac": target,
-                    "abs_delta": abs(held_frac - target),
-                    "reason": "weight_band",
-                }
-            )
+        if abs(held_frac - target) <= trim_band + _EPS:
+            continue
+        row: dict[str, Any] = {
+            "ticker": ticker,
+            "held_frac": held_frac,
+            "target_frac": target,
+            "abs_delta": abs(held_frac - target),
+            "reason": "weight_band",
+        }
+        if held_frac > target + trim_band + _EPS:
+            row["sell_reason"] = "overweight_band"
+            pnl = paper_row_pnl_frac(positions.get(ticker))
+            if underwater_vs_entry(pnl, loss_bps):
+                row["sell_blocked_reason"] = SELL_BLOCKED_UNDERWATER
+                deferred_exits.append(row)
+                continue
+        off_target.append(row)
     for ticker in sorted(held - set(targets)):
         held_frac = float(weights.get(ticker, 0.0))
-        off_target.append(
-            {
-                "ticker": ticker,
-                "held_frac": held_frac,
-                "target_frac": 0.0,
-                "abs_delta": held_frac,
-                "reason": "drop_from_book",
-            }
-        )
+        row = {
+            "ticker": ticker,
+            "held_frac": held_frac,
+            "target_frac": 0.0,
+            "abs_delta": held_frac,
+            "reason": "drop_from_book",
+            "sell_reason": "drop_from_book",
+        }
+        pnl = paper_row_pnl_frac(positions.get(ticker))
+        if underwater_vs_entry(pnl, loss_bps):
+            row["sell_blocked_reason"] = SELL_BLOCKED_UNDERWATER
+            deferred_exits.append(row)
+            continue
+        off_target.append(row)
     book = (loaded_research or {}).get("proposed_book") or {} if isinstance(loaded_research, dict) else {}
     max_gross = _finite(book.get("max_gross_invest"))
     if max_gross is None:
@@ -433,7 +465,13 @@ def build_go_nogo(
         if not weights:
             held_gross = held_from_cash
     target_gross = float(book_gross) if book_gross is not None else float(max_gross)
-    if (targets or held) and abs(held_gross - target_gross) > trim_band + _EPS:
+    actionable_gross = held_gross
+    for row in deferred_exits:
+        if row.get("reason") == "drop_from_book":
+            actionable_gross -= float(row.get("held_frac") or 0.0)
+        elif row.get("reason") == "weight_band":
+            actionable_gross -= float(row.get("abs_delta") or 0.0)
+    if (targets or held) and abs(actionable_gross - target_gross) > trim_band + _EPS:
         off_target.append(
             {
                 "ticker": "_gross",
@@ -443,7 +481,7 @@ def build_go_nogo(
                 "reason": "gross_band",
             }
         )
-    if held_gross - float(max_gross) > trim_band + _EPS:
+    if actionable_gross - float(max_gross) > trim_band + _EPS:
         off_target.append(
             {
                 "ticker": "_max_gross",
@@ -454,6 +492,11 @@ def build_go_nogo(
             }
         )
     trade = bool(off_target)
+    if deferred_exits:
+        reasons.append(
+            f"{len(deferred_exits)} name(s) held underwater "
+            f"(sell_blocked_reason={SELL_BLOCKED_UNDERWATER}; no score-rotation loss)"
+        )
     if trade:
         reasons.append(
             f"book is off-target ({len(off_target)} name/gross band(s) beyond trim_band={trim_band})"
@@ -489,6 +532,7 @@ def build_go_nogo(
         "recommend_submit": recommend,
         "reasons": reasons,
         "off_target": off_target,
+        "deferred_exits": deferred_exits,
         "feeds": {
             "live": bool(live),
             "quiver_n": quiver_n,
@@ -580,6 +624,13 @@ def go_nogo_markdown(report: dict[str, Any]) -> str:
     names = ", ".join(
         f"{row.get('ticker')} {row.get('reason')}" for row in off if isinstance(row, dict)
     )
+    deferred = report.get("deferred_exits") or []
+    held = ", ".join(
+        f"{row.get('ticker')} {row.get('sell_reason') or row.get('reason')}"
+        f" blocked={row.get('sell_blocked_reason')}"
+        for row in deferred
+        if isinstance(row, dict)
+    )
     return (
         f"# Paper go/no-go {report.get('date')}\n\n"
         f"Not alpha. Paper only. Declared thresholds. Not fitted.\n\n"
@@ -587,6 +638,7 @@ def go_nogo_markdown(report: dict[str, Any]) -> str:
         f"- equity_delta={report.get('equity_delta')} drawdown={report.get('drawdown')}\n"
         f"- feeds quiver_n={((report.get('feeds') or {}).get('quiver_n'))} "
         f"worldmonitor_n={((report.get('feeds') or {}).get('worldmonitor_n'))}\n"
-        f"- off_target: {names or '(none)'}\n\n"
+        f"- off_target: {names or '(none)'}\n"
+        f"- deferred_exits: {held or '(none)'}\n\n"
         f"Reasons:\n{reasons}\n"
     )

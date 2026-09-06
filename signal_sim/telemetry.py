@@ -153,11 +153,48 @@ def _sell_reasons_from_tickets(tickets: list[Any] | None) -> dict[str, list[str]
             continue
         ticker = str(row.get("symbol") or row.get("ticker") or "")
         reason = row.get("sell_reason")
-        if not ticker or not isinstance(reason, str) or not reason:
+        blocked = row.get("sell_blocked_reason")
+        if not ticker:
             continue
         reasons.setdefault(ticker, [])
-        if reason not in reasons[ticker]:
+        if isinstance(reason, str) and reason and reason not in reasons[ticker]:
             reasons[ticker].append(reason)
+        if isinstance(blocked, str) and blocked and blocked not in reasons[ticker]:
+            reasons[ticker].append(blocked)
+        if not reasons[ticker]:
+            del reasons[ticker]
+    return reasons
+
+
+def _sell_reasons_from_rebalance(rebalance: dict[str, Any] | None) -> dict[str, list[str]]:
+    if not isinstance(rebalance, dict):
+        return {}
+    reasons = _sell_reasons_from_tickets(list(rebalance.get("tickets") or []))
+    extra: list[Any] = []
+    extra.extend(rebalance.get("deferred_exits") or [])
+    extra.extend(rebalance.get("skipped") or [])
+    for row in extra:
+        if not isinstance(row, dict):
+            continue
+        ticker = str(row.get("symbol") or row.get("ticker") or "")
+        blocked = row.get("sell_blocked_reason")
+        reason = row.get("reason")
+        sell_reason = row.get("sell_reason")
+        if not ticker:
+            continue
+        if blocked != "underwater_hold" and reason not in {
+            "hold_underwater",
+            "underwater_hold",
+        }:
+            continue
+        fired = reasons.setdefault(ticker, [])
+        if isinstance(sell_reason, str) and sell_reason and sell_reason not in fired:
+            fired.append(sell_reason)
+        if isinstance(reason, str) and reason in {"hold_underwater", "underwater_hold"}:
+            if reason not in fired:
+                fired.append(reason)
+        if "underwater_hold" not in fired:
+            fired.append("underwater_hold")
     return reasons
 
 
@@ -223,8 +260,7 @@ def build_telemetry_pack(
     equity_delta = None if equity is None or prior_equity is None else equity - prior_equity
     cash_delta = None if cash is None or prior_cash is None else cash - prior_cash
 
-    tickets = list((rebalance or {}).get("tickets") or []) if isinstance(rebalance, dict) else []
-    reasons = _sell_reasons_from_tickets(tickets)
+    reasons = _sell_reasons_from_rebalance(rebalance if isinstance(rebalance, dict) else None)
     rank_rows = list((loaded_research or {}).get("rank") or [])
     research_at = None
     if isinstance(loaded_research, dict):

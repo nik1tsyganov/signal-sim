@@ -69,22 +69,33 @@ these conviction keys.
 Rebalance `--live` diffs the conviction book against paper positions. Tickets
 stamp `sell_reason`. When more than one exit fires, priority is:
 
-**soft_stop ≥ horizon_exit ≥ score_decay ≥ trim**
+**soft_stop ≥ horizon_exit (hard) ≥ score_decay ≥ trim / drop_from_book (discretionary)**
+
+Hard exits still sell when paper MTM is red. Discretionary / rank exits do
+**not** crystallize a loss versus paper avg entry beyond declared
+`min_realize_loss_bps=5`. Flat or green MTM may realize a gain or scratch.
+Rebalance prefers free cash / `max_gross_invest` room before selling; if the
+book needs room for higher-conviction adds, it trims **winners** that are
+overweight versus target.
 
 1. **soft_stop** (declared 0.08): decision-time MTM from a fixture_mark or
    paper IEX sizing mark versus paper `avg_entry_price`. Close if
-   `pnl_frac <= -soft_stop`. No post-decision prints or future bars.
+   `pnl_frac <= -soft_stop`. No post-decision prints or future bars. **Hard.**
 2. **horizon_exit**: `now >= entry_decision_at + horizon_hours`. `now` is the
    research cut. `entry_decision_at` is the first research-live decision that
-   booked the name (entry clock), not a future label.
+   booked the name (entry clock), not a future label. **Hard.**
 3. **score_decay**: `score'_t < min_score` (`below_min_score`) **or**
    `score'_t / score'_entry < decay_floor` (0.50). Recomputed from events with
-   `observed_at <= decision_at` only.
+   `observed_at <= decision_at` only. **Discretionary — underwater hold.**
 4. **trim** (`overweight_band`): held frac exceeds target by more than
-   `trim_band` (0.02). Moves inside the band are not ticketed.
+   `trim_band` (0.02). Moves inside the band are not ticketed. Prefer
+   trimming positive-MTM names. **Discretionary — underwater hold.**
 
-A name that drops out of K is `drop_from_book`. If a higher-priority exit also
-fires, that reason wins.
+A name that drops out of K is `drop_from_book` (**discretionary — underwater
+hold**). Blocked names stamp `sell_blocked_reason=underwater_hold` /
+`hold_underwater` on skipped / go-nogo `deferred_exits` (no POST). If a
+higher-priority hard exit also fires, that reason wins and the sell still
+goes.
 
 Print-only planner tests emit a sample of each reason (`soft_stop`,
 `horizon_exit`, `score_decay`, `below_min_score`, `drop_from_book`, trim).

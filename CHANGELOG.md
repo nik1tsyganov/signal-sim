@@ -2,6 +2,12 @@
 
 What landed in the paper operate loop. This is not a live trading log. Every PnL number the loop prints is **fixture-mark PnL**, not alpha.
 
+## Unreleased — loss-aware sell guards (PnL over name rotation)
+
+- **Underwater hold:** discretionary / rank exits (`drop_from_book`, `score_decay` / `below_min_score`, overweight `trim`) do **not** sell when decision-time MTM versus paper avg entry is red beyond declared `min_realize_loss_bps=5` (noise buffer in `fixtures/params.json` `conviction`; not fitted). Flat or green MTM may realize a gain or scratch. Soft-stop and horizon hard exits still sell underwater. Tickets stamp `sell_reason`; blocked names stamp `sell_blocked_reason=underwater_hold` / `hold_underwater` on skipped + go-nogo `deferred_exits` (no POST).
+- **Funding:** new buys prefer free cash / unused `max_gross_invest` room. If the book needs room, trim **winners** that are overweight versus target — do not dump leftover losers just because they left top-k. Rebalance aims to improve paper PnL, not rotate names.
+- **Docs:** [daily-ops.md](docs/daily-ops.md), [research-conviction.md](docs/research-conviction.md). Paper only. Flag-gated submit unchanged.
+
 ## Unreleased — daily go/no-go + walk-forward vs equal-weight
 
 - **Go/no-go:** `python3 -m signal_sim go-nogo` (alias `decision-check`) reads today's research book plus the latest paper snapshot and writes `docs/decision/YYYY-MM-DD.json`. Verdict `TRADE` | `HOLD` | `WAIT_OPEN` | `NO_GO`. Declared thresholds in `fixtures/params.json` `go_nogo` (not fitted; `trim_band` reused from conviction). `--live` fail-closes on missing intel keys. `rebalance --submit-paper` refuses `NO_GO`/`HOLD`/`WAIT_OPEN` unless `--force-submit` (owner override; still paper rails). Daily ops: research → go-nogo → print rebalance → submit only if `recommend_submit`.

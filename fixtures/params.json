@@ -13,7 +13,7 @@
   "max_gross_frac": 1.0,
   "max_name_frac": 1.0,
   "conviction": {
-    "note": "Declared research-live score' weights, cash reserve, and exits. Not fitted. Not searched. Not alpha. Replay rank_candidates and locked max_gross_frac/max_name_frac stay unchanged.",
+    "note": "Declared research-live score' weights, cash reserve, and exits. Not fitted. Not searched. Not alpha. Replay rank_candidates and locked max_gross_frac/max_name_frac stay unchanged. min_realize_loss_bps is a noise buffer on discretionary sells, not a fitted stop.",
     "max_name_frac": 0.2,
     "max_gross_invest": 0.8,
     "top_k": 10,
@@ -21,6 +21,7 @@
     "trim_band": 0.02,
     "decay_floor": 0.5,
     "soft_stop": 0.08,
+    "min_realize_loss_bps": 5,
     "w_news": 0.75,
     "w_congress": 3.0,
     "w_insider": 3.0,

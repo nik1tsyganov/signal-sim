@@ -447,6 +447,108 @@ class SellRuleTests(unittest.TestCase):
         self.assertEqual(tickets[0]["action"], "close")
 
 
+class LossAwareSellGuardTests(unittest.TestCase):
+    def test_drop_from_book_negative_mtm_does_not_sell(self):
+        tickets, skipped = plan_rebalance_tickets(
+            targets=[{"ticker": "NVDA", "target_frac": 0.10, "score": 8.0}],
+            marks={
+                "NFLX": {"entry_px": 90.0, "kind": "fixture_mark", "source": "fixture"},
+                "NVDA": {"entry_px": 200.0, "kind": "fixture_mark", "source": "fixture"},
+            },
+            held={
+                "NFLX": {"shares": 5.0, "side": "long", "entry_px": 100.0},
+            },
+            cash=100000.0,
+            allocation=100000.0,
+            cost_bps=0.0,
+            signal="research-live",
+            decision_at="2026-09-04T16:00:00Z",
+            session="20260904",
+            min_score=1.0,
+            trim_band=0.02,
+            min_realize_loss_bps=5.0,
+        )
+        self.assertFalse(any(row["symbol"] == "NFLX" for row in tickets))
+        blocked = next(row for row in skipped if row["ticker"] == "NFLX")
+        self.assertEqual(blocked["reason"], "hold_underwater")
+        self.assertEqual(blocked["sell_reason"], "drop_from_book")
+        self.assertEqual(blocked["sell_blocked_reason"], "underwater_hold")
+
+    def test_soft_stop_negative_mtm_still_sells(self):
+        tickets, skipped = plan_rebalance_tickets(
+            targets=[{"ticker": "NVDA", "target_frac": 0.10, "score": 8.0}],
+            marks={"NVDA": {"entry_px": 90.0, "kind": "fixture_mark", "source": "fixture"}},
+            held={"NVDA": {"shares": 10.0, "side": "long", "entry_px": 100.0}},
+            cash=100000.0,
+            allocation=100000.0,
+            cost_bps=0.0,
+            signal="research-live",
+            decision_at="2026-09-04T16:00:00Z",
+            session="20260904",
+            min_score=1.0,
+            soft_stop=0.08,
+            min_realize_loss_bps=5.0,
+        )
+        self.assertEqual(skipped, [])
+        self.assertEqual(tickets[0]["symbol"], "NVDA")
+        self.assertEqual(tickets[0]["sell_reason"], "soft_stop")
+        self.assertEqual(tickets[0]["action"], "close")
+        self.assertNotIn("sell_blocked_reason", tickets[0])
+
+    def test_drop_from_book_positive_mtm_sells(self):
+        tickets, skipped = plan_rebalance_tickets(
+            targets=[],
+            marks={"DIS": {"entry_px": 110.0, "kind": "fixture_mark", "source": "fixture"}},
+            held={"DIS": {"shares": 4.0, "side": "long", "entry_px": 100.0}},
+            cash=100000.0,
+            allocation=100000.0,
+            cost_bps=0.0,
+            signal="research-live",
+            decision_at="2026-09-04T16:00:00Z",
+            session="20260904",
+            min_score=1.0,
+            min_realize_loss_bps=5.0,
+        )
+        self.assertEqual(skipped, [])
+        self.assertEqual(tickets[0]["symbol"], "DIS")
+        self.assertEqual(tickets[0]["sell_reason"], "drop_from_book")
+        self.assertEqual(tickets[0]["side"], "sell")
+
+    def test_trim_prefers_winners_when_both_overweight(self):
+        tickets, skipped = plan_rebalance_tickets(
+            targets=[
+                {"ticker": "MSFT", "target_frac": 0.10, "score": 6.0},
+                {"ticker": "AAPL", "target_frac": 0.10, "score": 5.0},
+            ],
+            marks={
+                "MSFT": {"entry_px": 120.0, "kind": "fixture_mark", "source": "fixture"},
+                "AAPL": {"entry_px": 90.0, "kind": "fixture_mark", "source": "fixture"},
+            },
+            held={
+                "MSFT": {"shares": 200.0, "side": "long", "entry_px": 100.0},
+                "AAPL": {"shares": 200.0, "side": "long", "entry_px": 100.0},
+            },
+            cash=100000.0,
+            allocation=100000.0,
+            cost_bps=0.0,
+            signal="research-live",
+            decision_at="2026-09-04T16:00:00Z",
+            session="20260904",
+            min_score=1.0,
+            trim_band=0.02,
+            min_realize_loss_bps=5.0,
+        )
+        by_symbol = {row["symbol"]: row for row in tickets}
+        self.assertIn("MSFT", by_symbol)
+        self.assertEqual(by_symbol["MSFT"]["side"], "sell")
+        self.assertEqual(by_symbol["MSFT"]["sell_reason"], "overweight_band")
+        self.assertNotIn("AAPL", by_symbol)
+        blocked = next(row for row in skipped if row["ticker"] == "AAPL")
+        self.assertEqual(blocked["reason"], "hold_underwater")
+        self.assertEqual(blocked["sell_reason"], "overweight_band")
+        self.assertEqual(blocked["sell_blocked_reason"], "underwater_hold")
+
+
 class ConvictionParamTests(unittest.TestCase):
     def test_declared_constants_are_not_in_locked_digest(self):
         from signal_sim.params import frozen_operate_params, params_sha256
