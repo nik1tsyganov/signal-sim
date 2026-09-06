@@ -52,7 +52,8 @@ class BaselineCompareTests(unittest.TestCase):
         self.assertTrue(report["paper_only"])
         self.assertEqual(report["source"], "fixtures")
         self.assertGreaterEqual(report["n_steps"], 2)
-        self.assertTrue(report["live_history_thin"])
+        self.assertGreaterEqual(report["live_history_days"], 2)
+        self.assertFalse(report["live_history_thin"])
         self.assertIn("accumulate", report["live_history_note"].lower())
         conv = report["equity_delta_conviction"]
         eqw = report["equity_delta_equal"]

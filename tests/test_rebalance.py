@@ -1073,6 +1073,8 @@ class RebalanceCliTests(unittest.TestCase):
         with mock.patch("signal_sim.paper.read_env", side_effect=env), mock.patch(
             "signal_sim.runtime_env.read_env", side_effect=env
         ), mock.patch(
+            "signal_sim.cli.decision_submit_block", return_value=None
+        ), mock.patch(
             "signal_sim.alpaca_paper.urllib.request.urlopen", side_effect=urlopen
         ), redirect_stdout(printed), redirect_stderr(error):
             code = cli.main(
@@ -1140,6 +1142,8 @@ class RebalanceCliTests(unittest.TestCase):
             "signal_sim.sources.worldmonitor.live", return_value=[_live_event("XLE", "wm-xle")]
         ), mock.patch(
             "signal_sim.research.research_artifact_path", return_value=missing
+        ), mock.patch(
+            "signal_sim.cli.decision_submit_block", return_value=None
         ), mock.patch(
             "signal_sim.alpaca_paper.urllib.request.urlopen", side_effect=urlopen
         ), redirect_stdout(printed), redirect_stderr(error):
