@@ -32,6 +32,7 @@ from .paper import (
 )
 from .params import (
     CONVICTION_DECAY_FLOOR,
+    CONVICTION_MIN_REALIZE_LOSS_BPS,
     CONVICTION_MIN_SCORE,
     CONVICTION_SOFT_STOP,
     CONVICTION_TRIM_BAND,
@@ -41,7 +42,10 @@ from .params import (
 )
 from .research import default_research_dir, load_entry_state, resolve_research_book
 from .sells import (
+    HOLD_UNDERWATER,
+    SELL_BLOCKED_UNDERWATER,
     SellReason,
+    allow_sell,
     decision_pnl_frac,
     parse_aware,
     select_close_reason,
@@ -53,7 +57,9 @@ from .store import EventStore
 
 NOTE = (
     "Print-only dry-run. Target book versus paper positions (opens, adjusts, "
-    "and leftover closes). Not alpha. Not a broker fill. Offline fixture-only "
+    "and leftover closes). Discretionary / rank exits hold when paper MTM is "
+    "red; soft_stop and other hard exits still sell. Not alpha. Not a broker "
+    "fill. Offline fixture-only "
     "qty prefers fixture entry_px. --live and --submit-paper prefer an observed "
     "paper IEX last trade or snapshot latestTrade when one exists, then the "
     "fixture mark. Never invents a price. Names still unmarked stay skipped. "
@@ -407,12 +413,17 @@ def plan_rebalance_tickets(
     entry_scores: dict[str, float] | None = None,
     entry_decision_at: dict[str, datetime] | None = None,
     entry_px: dict[str, float] | None = None,
+    min_realize_loss_bps: float | None = None,
+    max_gross_invest: float | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
     """Share-accurate tickets. Same delta as fixture replay; print-only.
 
     Research-live passes a score floor, overweight band, and declared exits.
     Default ``min_score=None`` / ``trim_band=0`` keeps the fixture drift planner.
     Soft-stop MTM uses the decision-time sizing mark versus paper entry_px.
+    Discretionary sells (rank / score / trim) hold when that MTM is red.
+    Hard exits still sell underwater. New buys prefer free cash / gross room;
+    if the book needs room, winner trims fire before leftover-loser dumps.
     """
     tickets: list[dict[str, Any]] = []
     skipped: list[dict[str, str]] = []
@@ -422,9 +433,20 @@ def plan_rebalance_tickets(
     scores = dict(entry_scores or {})
     entries = dict(entry_decision_at or {})
     cost_px = dict(entry_px or {})
+    loss_bps = (
+        CONVICTION_MIN_REALIZE_LOSS_BPS
+        if min_realize_loss_bps is None
+        else float(min_realize_loss_bps)
+    )
+    gross_cap = None if max_gross_invest is None else float(max_gross_invest)
 
-    def skip(ticker: str, reason: str) -> None:
-        skipped.append({"ticker": ticker, "reason": reason})
+    def skip(ticker: str, reason: str, **extra: Any) -> None:
+        row: dict[str, str] = {"ticker": ticker, "reason": reason}
+        for key, value in extra.items():
+            if value is None:
+                continue
+            row[key] = str(value)
+        skipped.append(row)
 
     def emit(
         ticker: str,
@@ -479,15 +501,25 @@ def plan_rebalance_tickets(
             }
         )
 
+    def position_cost(ticker: str) -> float | None:
+        cost = cost_px.get(ticker)
+        if cost is None:
+            cost = _finite_number((held.get(ticker) or {}).get("entry_px"))
+        return cost
+
+    def position_pnl(ticker: str, have_shares: float, mark_px: float | None) -> float | None:
+        return decision_pnl_frac(
+            entry_px=position_cost(ticker),
+            mark_px=mark_px,
+            shares=have_shares,
+        )
+
     def close_reason(ticker: str, have_shares: float, mark_px: float | None) -> SellReason | None:
         row = wanted.get(ticker)
         position = held.get(ticker) or {}
         opened = entries.get(ticker)
         if opened is None:
             opened = parse_aware(position.get("entry_decision_at"))
-        cost = cost_px.get(ticker)
-        if cost is None:
-            cost = _finite_number(position.get("entry_px"))
         prior_score = scores.get(ticker)
         if prior_score is None:
             prior_score = _finite_number(position.get("entry_score"))
@@ -500,13 +532,30 @@ def plan_rebalance_tickets(
             now=now,
             entry_decision_at=opened,
             horizon_hours=horizon_hours,
-            pnl_frac=decision_pnl_frac(
-                entry_px=cost,
-                mark_px=mark_px,
-                shares=have_shares,
-            ),
+            pnl_frac=position_pnl(ticker, have_shares, mark_px),
             soft_stop=soft_stop,
         )
+
+    def defer_underwater(ticker: str, reason: SellReason) -> None:
+        skip(
+            ticker,
+            HOLD_UNDERWATER,
+            sell_reason=reason,
+            sell_blocked_reason=SELL_BLOCKED_UNDERWATER,
+        )
+
+    def apply_sell_proceeds(trade_frac: float, mark_px: float, shares: float) -> None:
+        nonlocal reserved_cash, invested_frac
+        fee = allocation * trade_frac * cost_bps / 10000.0
+        reserved_cash += abs(shares) * mark_px - fee
+        invested_frac = max(0.0, invested_frac - trade_frac)
+
+    invested_frac = 0.0
+    for ticker, position in held.items():
+        px = _sizing_px(marks.get(ticker))
+        if px is None:
+            continue
+        invested_frac += abs(float(position["shares"])) * px / allocation
 
     for ticker, position in list(held.items()):
         mark = marks.get(ticker)
@@ -518,15 +567,24 @@ def plan_rebalance_tickets(
         if sell_px is None:
             skip(ticker, "held_no_mark")
             continue
+        pnl = position_pnl(ticker, have_shares, sell_px)
+        if not allow_sell(
+            reason=sell_reason,
+            pnl_frac=pnl,
+            min_realize_loss_bps=loss_bps,
+        ):
+            defer_underwater(ticker, sell_reason)
+            continue
         trade_frac = abs(have_shares) * sell_px / allocation
         if trade_frac <= _EPS:
             continue
         qty = -have_shares if have_shares > 0 else abs(have_shares)
         side = "sell" if have_shares > 0 else "buy"
-        fee = allocation * trade_frac * cost_bps / 10000.0
-        reserved_cash += abs(have_shares) * sell_px - fee
+        apply_sell_proceeds(trade_frac, sell_px, have_shares)
         emit(ticker, side, trade_frac, sell_px, "close", have_shares, None, qty, sell_reason)
 
+    planned_sells: list[dict[str, Any]] = []
+    planned_buys: list[dict[str, Any]] = []
     for row in targets:
         ticker = str(row["ticker"])
         have_shares = float(held.get(ticker, {}).get("shares", 0.0))
@@ -555,26 +613,92 @@ def plan_rebalance_tickets(
             and trade_frac <= band + _EPS
         ):
             continue
-        if delta_shares > 0:
-            notional = trade_frac * allocation
-            fee = notional * cost_bps / 10000.0
-            if notional + fee - reserved_cash > 1e-9:
-                skip(ticker, "cash_constraint")
-                continue
-            reserved_cash -= notional + fee
-        side = "buy" if delta_shares > 0 else "sell"
         action = "open" if abs(have_shares) <= _EPS else "adjust"
-        sell_reason = "overweight_band" if side == "sell" and band > 0 else None
+        if delta_shares < 0:
+            sell_reason: SellReason | None = (
+                "overweight_band" if band > 0 else None
+            )
+            if sell_reason is not None and not allow_sell(
+                reason=sell_reason,
+                pnl_frac=position_pnl(ticker, have_shares, mark_px),
+                min_realize_loss_bps=loss_bps,
+            ):
+                defer_underwater(ticker, sell_reason)
+                continue
+            planned_sells.append(
+                {
+                    "ticker": ticker,
+                    "side": "sell",
+                    "trade_frac": trade_frac,
+                    "mark_px": mark_px,
+                    "action": action,
+                    "have_shares": have_shares,
+                    "target_frac": float(row["target_frac"]),
+                    "qty": delta_shares,
+                    "sell_reason": sell_reason,
+                    "pnl": position_pnl(ticker, have_shares, mark_px),
+                }
+            )
+            continue
+        planned_buys.append(
+            {
+                "ticker": ticker,
+                "side": "buy",
+                "trade_frac": trade_frac,
+                "mark_px": mark_px,
+                "action": action,
+                "have_shares": have_shares,
+                "target_frac": float(row["target_frac"]),
+                "qty": delta_shares,
+            }
+        )
+
+    # Winner trims before new buys so proceeds / gross room fund higher-conviction adds.
+    planned_sells.sort(
+        key=lambda item: (
+            0 if item.get("pnl") is not None and float(item["pnl"]) > _EPS else 1,
+            -(item.get("pnl") if item.get("pnl") is not None else -1.0),
+            str(item["ticker"]),
+        )
+    )
+    for item in planned_sells:
+        apply_sell_proceeds(float(item["trade_frac"]), float(item["mark_px"]), float(item["qty"]))
+        emit(
+            str(item["ticker"]),
+            str(item["side"]),
+            float(item["trade_frac"]),
+            float(item["mark_px"]),
+            str(item["action"]),
+            float(item["have_shares"]),
+            float(item["target_frac"]),
+            float(item["qty"]),
+            item.get("sell_reason"),
+        )
+
+    for item in planned_buys:
+        ticker = str(item["ticker"])
+        trade_frac = float(item["trade_frac"])
+        mark_px = float(item["mark_px"])
+        notional = trade_frac * allocation
+        fee = notional * cost_bps / 10000.0
+        if notional + fee - reserved_cash > 1e-9:
+            skip(ticker, "cash_constraint")
+            continue
+        if gross_cap is not None and invested_frac + trade_frac > gross_cap + _EPS:
+            skip(ticker, "gross_constraint")
+            continue
+        reserved_cash -= notional + fee
+        invested_frac += trade_frac
         emit(
             ticker,
-            side,
+            "buy",
             trade_frac,
             mark_px,
-            action,
-            have_shares,
-            float(row["target_frac"]),
-            delta_shares,
-            sell_reason,
+            str(item["action"]),
+            float(item["have_shares"]),
+            float(item["target_frac"]),
+            float(item["qty"]),
+            None,
         )
     return tickets, skipped
 
@@ -702,6 +826,7 @@ def proposed_rebalance(
     sell_horizon = None
     sell_decay = None
     sell_soft_stop = None
+    sell_loss_bps = None
     sell_entry_scores: dict[str, float] = {}
     sell_entry_at: dict[str, datetime] = {}
     sell_entry_px: dict[str, float] = {}
@@ -712,6 +837,7 @@ def proposed_rebalance(
         sell_band = CONVICTION_TRIM_BAND
         sell_decay = CONVICTION_DECAY_FLOOR
         sell_soft_stop = CONVICTION_SOFT_STOP
+        sell_loss_bps = CONVICTION_MIN_REALIZE_LOSS_BPS
         sell_horizon = horizon_hours
         if research_report is not None:
             sell_now = parse_aware(research_report.get("research_at"))
@@ -779,8 +905,15 @@ def proposed_rebalance(
         entry_scores=sell_entry_scores or None,
         entry_decision_at=sell_entry_at or None,
         entry_px=sell_entry_px or None,
+        min_realize_loss_bps=sell_loss_bps,
+        max_gross_invest=live_gross if live else None,
     )
     skipped = [*held_skips, *pre_skips, *size_skips, *plan_skips]
+    deferred_exits = [
+        dict(row)
+        for row in plan_skips
+        if isinstance(row, dict) and row.get("reason") == HOLD_UNDERWATER
+    ]
     stamp = operate_stamp()
     safe_clock = sanitize_clock(clock)
     paper_marked = sorted(
@@ -814,8 +947,10 @@ def proposed_rebalance(
         "targets": targets,
         "tickets": tickets,
         "skipped": skipped,
+        "deferred_exits": deferred_exits,
         "n_tickets": len(tickets),
         "n_skipped": len(skipped),
+        "n_deferred": len(deferred_exits),
         "universe": list(operating),
         "prefer_paper_marks": use_paper_marks,
         "marks": {

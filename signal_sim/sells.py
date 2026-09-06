@@ -1,7 +1,12 @@
 """Declared research-live exits. Not fitted. Not alpha.
 
 Priority when more than one rule fires:
-    soft_stop >= horizon_exit >= score_decay >= trim
+    soft_stop >= horizon_exit (hard) >= score_decay >= trim / drop_from_book
+
+Hard exits (soft_stop, horizon_exit) still sell when mark-to-market is red.
+Discretionary / rank exits (score_decay, below_min_score, drop_from_book,
+overweight trim) do not crystallize a loss versus paper avg entry beyond
+``min_realize_loss_bps``. Flat or green MTM may realize a gain or scratch.
 
 score_decay covers score'_t < min_score OR score'_t / score'_entry < decay_floor.
 Horizon uses the entry decision clock: now >= entry_decision_at + horizon_hours.
@@ -31,9 +36,16 @@ CLOSE_PRIORITY: tuple[SellReason, ...] = (
     "drop_from_book",
 )
 NOTE = (
-    "Declared paper exits. Priority: soft_stop >= horizon_exit >= "
-    "score_decay >= trim. Not fitted. Not alpha."
+    "Declared paper exits. Priority: soft_stop >= horizon_exit (hard) >= "
+    "score_decay >= trim. Discretionary sells hold underwater. Not fitted. "
+    "Not alpha."
 )
+HARD_CLOSE_REASONS: frozenset[SellReason] = frozenset({"soft_stop", "horizon_exit"})
+DISCRETIONARY_SELL_REASONS: frozenset[SellReason] = frozenset(
+    {"score_decay", "below_min_score", "drop_from_book", "overweight_band"}
+)
+SELL_BLOCKED_UNDERWATER = "underwater_hold"
+HOLD_UNDERWATER = "hold_underwater"
 _EPS = 1e-12
 
 
@@ -81,6 +93,66 @@ def decision_pnl_frac(
     if shares < 0:
         pnl = -pnl
     return pnl
+
+
+def paper_row_pnl_frac(row: dict[str, Any] | None) -> float | None:
+    """MTM from a paper position row (avg entry vs mark). Long default."""
+    if not isinstance(row, dict):
+        return None
+    entry = _finite(row.get("avg_entry_price"))
+    if entry is None:
+        entry = _finite(row.get("entry_px"))
+    mark = _finite(row.get("current_price") or row.get("mark_px"))
+    qty = _finite(row.get("qty") if row.get("qty") is not None else row.get("shares"))
+    if mark is None:
+        market_value = _finite(row.get("market_value"))
+        if market_value is not None and qty is not None and abs(qty) > _EPS:
+            mark = abs(market_value / qty)
+    side = str(row.get("side") or "long").strip().lower()
+    if qty is None:
+        shares = -1.0 if side == "short" else 1.0
+    elif side == "short":
+        shares = -abs(qty)
+    else:
+        shares = abs(qty)
+    return decision_pnl_frac(entry_px=entry, mark_px=mark, shares=shares)
+
+
+def underwater_vs_entry(
+    pnl_frac: float | None,
+    min_realize_loss_bps: float = 0.0,
+) -> bool:
+    """True when decision-time MTM is red beyond the declared noise buffer.
+
+    Unknown MTM (missing entry or mark) is not treated as underwater.
+    """
+    if pnl_frac is None:
+        return False
+    buffer = abs(float(min_realize_loss_bps)) / 10000.0
+    return pnl_frac < -buffer - _EPS
+
+
+def is_hard_exit(reason: SellReason) -> bool:
+    return reason in HARD_CLOSE_REASONS
+
+
+def is_discretionary_sell(reason: SellReason) -> bool:
+    return reason in DISCRETIONARY_SELL_REASONS
+
+
+def allow_sell(
+    *,
+    reason: SellReason,
+    pnl_frac: float | None,
+    min_realize_loss_bps: float = 0.0,
+) -> bool:
+    """Hard exits always fire. Discretionary sells need flat/green MTM."""
+    if reason in HARD_CLOSE_REASONS:
+        return True
+    if reason in DISCRETIONARY_SELL_REASONS:
+        return not underwater_vs_entry(pnl_frac, min_realize_loss_bps)
+    unreachable: SellReason = reason
+    raise ValueError(f"unhandled sell reason: {unreachable}")
 
 
 def select_close_reason(

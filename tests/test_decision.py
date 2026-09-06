@@ -156,6 +156,50 @@ class GoNoGoVerdictTests(unittest.TestCase):
         self.assertFalse(report["recommend_submit"])
         self.assertEqual(report["off_target"], [])
 
+    def test_underwater_leftover_is_deferred_not_trade(self):
+        report = build_go_nogo(
+            root=Path(tempfile.mkdtemp()),
+            when=WHEN,
+            research=_research(),
+            performance=_performance(
+                account={"cash": "63000", "equity": "100000"},
+                positions={
+                    "n": 3,
+                    "symbols": {"NVDA": "1", "XLE": "1", "NFLX": "1"},
+                    "rows": [
+                        {
+                            "symbol": "NVDA",
+                            "market_value": "20000",
+                            "qty": "1",
+                            "avg_entry_price": "200",
+                            "current_price": "200",
+                        },
+                        {
+                            "symbol": "XLE",
+                            "market_value": "12000",
+                            "qty": "1",
+                            "avg_entry_price": "120",
+                            "current_price": "120",
+                        },
+                        {
+                            "symbol": "NFLX",
+                            "market_value": "5000",
+                            "qty": "1",
+                            "avg_entry_price": "100",
+                            "current_price": "90",
+                        },
+                    ],
+                },
+            ),
+        )
+        self.assertEqual(report["verdict"], "HOLD")
+        self.assertFalse(report["recommend_submit"])
+        self.assertFalse(any(row["ticker"] == "NFLX" for row in report["off_target"]))
+        deferred = next(row for row in report["deferred_exits"] if row["ticker"] == "NFLX")
+        self.assertEqual(deferred["sell_reason"], "drop_from_book")
+        self.assertEqual(deferred["sell_blocked_reason"], "underwater_hold")
+        self.assertTrue(any("underwater" in row for row in report["reasons"]))
+
     def test_soft_drawdown_warns_without_blocking(self):
         report = build_go_nogo(
             root=Path(tempfile.mkdtemp()),

@@ -50,6 +50,7 @@ CONVICTION_MIN_SCORE = float(_CONVICTION.get("min_score", 1.0))
 CONVICTION_TRIM_BAND = float(_CONVICTION.get("trim_band", 0.02))
 CONVICTION_DECAY_FLOOR = float(_CONVICTION.get("decay_floor", 0.5))
 CONVICTION_SOFT_STOP = float(_CONVICTION.get("soft_stop", 0.08))
+CONVICTION_MIN_REALIZE_LOSS_BPS = float(_CONVICTION.get("min_realize_loss_bps", 5.0))
 CONVICTION_W_NEWS = float(_CONVICTION.get("w_news", 0.75))
 CONVICTION_W_CONGRESS = float(_CONVICTION.get("w_congress", 3.0))
 CONVICTION_W_INSIDER = float(_CONVICTION.get("w_insider", 3.0))
@@ -115,7 +116,11 @@ def conviction_params() -> dict[str, Any]:
         "trim_band": CONVICTION_TRIM_BAND,
         "decay_floor": CONVICTION_DECAY_FLOOR,
         "soft_stop": CONVICTION_SOFT_STOP,
-        "sell_priority": "soft_stop >= horizon_exit >= score_decay >= trim",
+        "min_realize_loss_bps": CONVICTION_MIN_REALIZE_LOSS_BPS,
+        "sell_priority": (
+            "soft_stop >= horizon_exit (hard; still sell underwater) >= "
+            "score_decay >= trim/drop_from_book (discretionary; underwater hold)"
+        ),
         "w_news": CONVICTION_W_NEWS,
         "w_congress": CONVICTION_W_CONGRESS,
         "w_insider": CONVICTION_W_INSIDER,
@@ -146,5 +151,6 @@ def go_nogo_params() -> dict[str, Any]:
         "hard_dd": GO_NOGO_HARD_DD,
         "hard_dd_blocks": GO_NOGO_HARD_DD_BLOCKS,
         "trim_band": CONVICTION_TRIM_BAND,
+        "min_realize_loss_bps": CONVICTION_MIN_REALIZE_LOSS_BPS,
         "starting_cash": STARTING_CASH,
     }

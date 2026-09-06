@@ -31,6 +31,9 @@ class ParamsManifestTests(unittest.TestCase):
         self.assertAlmostEqual(params.CONVICTION_MAX_GROSS_INVEST, raw["conviction"]["max_gross_invest"])
         self.assertAlmostEqual(params.CONVICTION_W_SENT, raw["conviction"]["w_sent"])
         self.assertAlmostEqual(params.CONVICTION_SOFT_STOP, raw["conviction"]["soft_stop"])
+        self.assertAlmostEqual(
+            params.CONVICTION_MIN_REALIZE_LOSS_BPS, raw["conviction"]["min_realize_loss_bps"]
+        )
         self.assertAlmostEqual(params.CONVICTION_DECAY_FLOOR, raw["conviction"]["decay_floor"])
         self.assertAlmostEqual(params.CONVICTION_W_NEWS, raw["conviction"]["w_news"])
         self.assertIn("not fitted", raw["conviction"]["note"].lower())

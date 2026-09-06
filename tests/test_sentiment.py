@@ -9,7 +9,12 @@ from signal_sim.sentiment import (
     mean_signed_news,
     signed_print,
 )
-from signal_sim.sells import decision_pnl_frac, select_close_reason
+from signal_sim.sells import (
+    allow_sell,
+    decision_pnl_frac,
+    select_close_reason,
+    underwater_vs_entry,
+)
 
 
 UTC = timezone.utc
@@ -105,6 +110,24 @@ class SellSelectorTests(unittest.TestCase):
             -0.08,
         )
         self.assertIsNone(decision_pnl_frac(entry_px=None, mark_px=92.0, shares=10.0))
+
+    def test_underwater_hold_skips_discretionary_not_hard(self):
+        self.assertTrue(underwater_vs_entry(-0.01, 5.0))
+        self.assertFalse(underwater_vs_entry(-0.0003, 5.0))
+        self.assertFalse(underwater_vs_entry(0.01, 5.0))
+        self.assertFalse(underwater_vs_entry(None, 5.0))
+        self.assertTrue(
+            allow_sell(reason="soft_stop", pnl_frac=-0.10, min_realize_loss_bps=5.0)
+        )
+        self.assertFalse(
+            allow_sell(reason="drop_from_book", pnl_frac=-0.01, min_realize_loss_bps=5.0)
+        )
+        self.assertTrue(
+            allow_sell(reason="drop_from_book", pnl_frac=0.01, min_realize_loss_bps=5.0)
+        )
+        self.assertTrue(
+            allow_sell(reason="score_decay", pnl_frac=0.0, min_realize_loss_bps=5.0)
+        )
 
 
 if __name__ == "__main__":
