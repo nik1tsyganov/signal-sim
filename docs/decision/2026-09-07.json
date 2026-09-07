@@ -1,0 +1,117 @@
+{
+  "alpha": false,
+  "cash": 77.98,
+  "clock_is_open": false,
+  "date": "2026-09-07",
+  "decision_path": "/workspace/docs/decision/2026-09-07.json",
+  "deferred_exits": [
+    {
+      "abs_delta": 0.034122317589710294,
+      "held_frac": 0.19791330537397941,
+      "reason": "weight_band",
+      "sell_blocked_reason": "underwater_hold",
+      "sell_reason": "overweight_band",
+      "target_frac": 0.16379098778426912,
+      "ticker": "NVDA"
+    },
+    {
+      "abs_delta": 0.02521730810859371,
+      "held_frac": 0.09966394001464764,
+      "reason": "weight_band",
+      "sell_blocked_reason": "underwater_hold",
+      "sell_reason": "overweight_band",
+      "target_frac": 0.07444663190605393,
+      "ticker": "AAPL"
+    }
+  ],
+  "drawdown": 0.005437200000000012,
+  "equity": 99456.28,
+  "equity_delta": 0.0,
+  "equity_warn": false,
+  "feeds": {
+    "keys_ok": true,
+    "live": true,
+    "min_quiver_n": 1,
+    "min_worldmonitor_n": 1,
+    "quiver_n": 246,
+    "worldmonitor_n": 14
+  },
+  "go_nogo": {
+    "hard_dd": 0.2,
+    "hard_dd_blocks": false,
+    "min_quiver_n": 1,
+    "min_realize_loss_bps": 5.0,
+    "min_worldmonitor_n": 1,
+    "note": "Declared daily go/no-go thresholds. Not fitted. Not searched. Not alpha. Paper only. trim_band is conviction.trim_band.",
+    "soft_dd": 0.05,
+    "starting_cash": 100000.0,
+    "trim_band": 0.02
+  },
+  "held_gross": 0.9992159096439159,
+  "live_money": false,
+  "mode": "paper-go-nogo",
+  "n_open_orders": 0,
+  "not_alpha": true,
+  "not_fitted": true,
+  "note": "Daily paper go/no-go. Declared thresholds only. Not fitted. Not alpha. Paper only. Does not POST. Does not enable live money.",
+  "off_target": [
+    {
+      "abs_delta": 0.02001870775754605,
+      "held_frac": 0.12323116255705523,
+      "reason": "weight_band",
+      "sell_reason": "overweight_band",
+      "target_frac": 0.10321245479950918,
+      "ticker": "XLE"
+    },
+    {
+      "abs_delta": 0.1992159096439159,
+      "held_frac": 0.9992159096439159,
+      "reason": "gross_band",
+      "target_frac": 0.8,
+      "ticker": "_gross"
+    },
+    {
+      "abs_delta": 0.1992159096439159,
+      "held_frac": 0.9992159096439159,
+      "reason": "over_max_gross",
+      "target_frac": 0.8,
+      "ticker": "_max_gross"
+    }
+  ],
+  "ok": true,
+  "order_post": "disabled",
+  "paper_only": true,
+  "params": {
+    "cost_bps": 0.0,
+    "decision_delay_hours": 1.0,
+    "half_life_hours": 24.0,
+    "hawkes_baseline": 0.1,
+    "hawkes_decay": 1.0,
+    "hawkes_excitation": 0.8,
+    "max_drawdown": 0.2,
+    "max_gross_frac": 1.0,
+    "max_name_frac": 1.0,
+    "min_relative_state": 0.5,
+    "note": "Declared operate constants. Not fitted. Not searched. Do not retune to move fixture-mark PnL.",
+    "placebo_seed": 20260902,
+    "starting_cash": 100000.0
+  },
+  "params_sha256": "f74f835690544b976e0ba67243caecdea26719001cbb33bc9ccdac5fc1a38ded",
+  "read_only": true,
+  "reasons": [
+    "research book is fresh for 2026-09-07",
+    "quiver feed healthy n=246",
+    "worldmonitor feed healthy n=14",
+    "equity drawdown inside soft_dd",
+    "market clock is closed; research still OK; wait for open to submit",
+    "2 name(s) held underwater (sell_blocked_reason=underwater_hold; no score-rotation loss)",
+    "book is off-target (3 name/gross band(s) beyond trim_band=0.02)"
+  ],
+  "recommend_submit": false,
+  "research_fresh": true,
+  "submit_flag": "1",
+  "submitted": false,
+  "target_gross": 0.8,
+  "trim_band": 0.02,
+  "verdict": "WAIT_OPEN"
+}
