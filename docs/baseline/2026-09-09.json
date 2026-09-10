@@ -1,0 +1,307 @@
+{
+  "alpha": false,
+  "baseline_path": "/workspace/docs/baseline/2026-09-09.json",
+  "conviction": {
+    "ending_equity": 99905.33913049281,
+    "equity_curve": [
+      {
+        "book": [
+          {
+            "score": 12.0,
+            "target_frac": 0.2,
+            "ticker": "NVDA"
+          },
+          {
+            "score": 6.0,
+            "target_frac": 0.2,
+            "ticker": "XLE"
+          },
+          {
+            "score": 3.0,
+            "target_frac": 0.1142857142857143,
+            "ticker": "MSFT"
+          }
+        ],
+        "cash": 48571.42857142857,
+        "date": "2026-09-02",
+        "decision_at": "2026-09-02T10:15:00Z",
+        "ending_equity": 99767.10921054814,
+        "exit_at": "2026-09-02T18:00:00Z",
+        "held": [
+          {
+            "entry_px": 178.5,
+            "exit_px": 180.0,
+            "exit_value": 20168.067226890755,
+            "notional": 20000.0,
+            "pnl": 168.06722689075468,
+            "target_frac": 0.2,
+            "ticker": "NVDA"
+          },
+          {
+            "entry_px": 90.0,
+            "exit_px": 88.5,
+            "exit_value": 19666.666666666668,
+            "notional": 20000.0,
+            "pnl": -333.3333333333321,
+            "target_frac": 0.2,
+            "ticker": "XLE"
+          },
+          {
+            "entry_px": 42.25,
+            "exit_px": 42.0,
+            "exit_value": 11360.94674556213,
+            "notional": 11428.57142857143,
+            "pnl": -67.62468300929868,
+            "target_frac": 0.1142857142857143,
+            "ticker": "MSFT"
+          }
+        ],
+        "invested": 51428.57142857143,
+        "skipped": [],
+        "starting_equity": 100000.0,
+        "step": 1,
+        "total_pnl": -232.89078945186338
+      },
+      {
+        "book": [
+          {
+            "score": 9.0,
+            "target_frac": 0.2,
+            "ticker": "NVDA"
+          },
+          {
+            "score": 8.0,
+            "target_frac": 0.2,
+            "ticker": "MSFT"
+          },
+          {
+            "score": 3.0,
+            "target_frac": 0.12000000000000002,
+            "ticker": "XLE"
+          }
+        ],
+        "cash": 47888.2124210631,
+        "date": "2026-09-03",
+        "decision_at": "2026-09-03T14:00:00Z",
+        "ending_equity": 99905.33913049281,
+        "exit_at": "2026-09-03T21:00:00Z",
+        "held": [
+          {
+            "entry_px": 180.0,
+            "exit_px": 181.0,
+            "exit_value": 20064.274185676906,
+            "notional": 19953.42184210963,
+            "pnl": 110.85234356727597,
+            "target_frac": 0.2,
+            "ticker": "NVDA"
+          },
+          {
+            "entry_px": 42.0,
+            "exit_px": 42.2,
+            "exit_value": 20048.43813659587,
+            "notional": 19953.42184210963,
+            "pnl": 95.01629448623862,
+            "target_frac": 0.2,
+            "ticker": "MSFT"
+          },
+          {
+            "entry_px": 88.5,
+            "exit_px": 88.0,
+            "exit_value": 11904.414387156932,
+            "notional": 11972.053105265779,
+            "pnl": -67.63871810884666,
+            "target_frac": 0.12000000000000002,
+            "ticker": "XLE"
+          }
+        ],
+        "invested": 51878.896789485036,
+        "skipped": [],
+        "starting_equity": 99767.10921054814,
+        "step": 2,
+        "total_pnl": 138.22991994467156
+      }
+    ],
+    "total_pnl": -94.66086950719182
+  },
+  "conviction_params": {
+    "cash_reserve_frac": 0.2,
+    "decay_floor": 0.5,
+    "formula": "score' = 0.75*log1p(news_breakout) + 3.0*congress_confirm + 3.0*insider_confirm + 2.0*gov_confirm + 3.0*log1p(quiver_count)/log1p(20) + 2.0*(intel_brief+wm_intel+chokepoint) + 2.0*exp(-lag_h/half_life_hours) + 0.5*sent_term",
+    "half_life_hours": 24.0,
+    "max_gross_invest": 0.8,
+    "max_name_frac": 0.2,
+    "min_realize_loss_bps": 5.0,
+    "min_score": 1.0,
+    "note": "Declared research-live score' weights, cash reserve, and exits. Not fitted. Not searched. Not alpha. Replay rank_candidates and locked max_gross_frac/max_name_frac stay unchanged. min_realize_loss_bps is a noise buffer on discretionary sells, not a fitted stop.",
+    "quiver_count_ref": 20.0,
+    "sell_priority": "soft_stop >= horizon_exit (hard; still sell underwater) >= score_decay >= trim/drop_from_book (discretionary; underwater hold)",
+    "sentiment_cap_n": 20,
+    "soft_stop": 0.08,
+    "top_k": 10,
+    "trim_band": 0.02,
+    "w_congress": 3.0,
+    "w_gov": 2.0,
+    "w_insider": 3.0,
+    "w_news": 0.75,
+    "w_quiver": 3.0,
+    "w_recency": 2.0,
+    "w_sent": 0.5,
+    "w_wm": 2.0
+  },
+  "date": "2026-09-09",
+  "delta_conviction_minus_equal": 95.85833919033757,
+  "equal_weight": {
+    "ending_equity": 99809.48079130247,
+    "equity_curve": [
+      {
+        "book": [
+          {
+            "score": 12.0,
+            "target_frac": 0.2,
+            "ticker": "NVDA"
+          },
+          {
+            "score": 6.0,
+            "target_frac": 0.2,
+            "ticker": "XLE"
+          },
+          {
+            "score": 3.0,
+            "target_frac": 0.2,
+            "ticker": "MSFT"
+          }
+        ],
+        "cash": 40000.0,
+        "date": "2026-09-02",
+        "decision_at": "2026-09-02T10:15:00Z",
+        "ending_equity": 99716.39069829116,
+        "exit_at": "2026-09-02T18:00:00Z",
+        "held": [
+          {
+            "entry_px": 178.5,
+            "exit_px": 180.0,
+            "exit_value": 20168.067226890755,
+            "notional": 20000.0,
+            "pnl": 168.06722689075468,
+            "target_frac": 0.2,
+            "ticker": "NVDA"
+          },
+          {
+            "entry_px": 90.0,
+            "exit_px": 88.5,
+            "exit_value": 19666.666666666668,
+            "notional": 20000.0,
+            "pnl": -333.3333333333321,
+            "target_frac": 0.2,
+            "ticker": "XLE"
+          },
+          {
+            "entry_px": 42.25,
+            "exit_px": 42.0,
+            "exit_value": 19881.656804733728,
+            "notional": 20000.0,
+            "pnl": -118.34319526627223,
+            "target_frac": 0.2,
+            "ticker": "MSFT"
+          }
+        ],
+        "invested": 60000.0,
+        "skipped": [],
+        "starting_equity": 100000.0,
+        "step": 1,
+        "total_pnl": -283.6093017088424
+      },
+      {
+        "book": [
+          {
+            "score": 9.0,
+            "target_frac": 0.2,
+            "ticker": "NVDA"
+          },
+          {
+            "score": 8.0,
+            "target_frac": 0.2,
+            "ticker": "MSFT"
+          },
+          {
+            "score": 3.0,
+            "target_frac": 0.2,
+            "ticker": "XLE"
+          }
+        ],
+        "cash": 39886.55627931646,
+        "date": "2026-09-03",
+        "decision_at": "2026-09-03T14:00:00Z",
+        "ending_equity": 99809.48079130247,
+        "exit_at": "2026-09-03T21:00:00Z",
+        "held": [
+          {
+            "entry_px": 180.0,
+            "exit_px": 181.0,
+            "exit_value": 20054.074129323002,
+            "notional": 19943.278139658232,
+            "pnl": 110.79598966476988,
+            "target_frac": 0.2,
+            "ticker": "NVDA"
+          },
+          {
+            "entry_px": 42.0,
+            "exit_px": 42.2,
+            "exit_value": 20038.246130799464,
+            "notional": 19943.278139658232,
+            "pnl": 94.96799114123132,
+            "target_frac": 0.2,
+            "ticker": "MSFT"
+          },
+          {
+            "entry_px": 88.5,
+            "exit_px": 88.0,
+            "exit_value": 19830.60425186355,
+            "notional": 19943.278139658232,
+            "pnl": -112.67388779468092,
+            "target_frac": 0.2,
+            "ticker": "XLE"
+          }
+        ],
+        "invested": 59829.8344189747,
+        "skipped": [],
+        "starting_equity": 99716.39069829116,
+        "step": 2,
+        "total_pnl": 93.090093011313
+      }
+    ],
+    "total_pnl": -190.5192086975294
+  },
+  "equity_delta_conviction": -94.66086950719182,
+  "equity_delta_equal": -190.5192086975294,
+  "live_history_days": 4,
+  "live_history_note": "Live research series has 4 dated day(s). Comparator uses the frozen fixture series until daily research accumulates. Not alpha. Not fitted.",
+  "live_history_thin": false,
+  "live_money": false,
+  "mode": "baseline-compare",
+  "n_steps": 2,
+  "not_alpha": true,
+  "not_fitted": true,
+  "note": "Fixture-mark walk-forward of conviction target_frac versus equal-weight top-K under the same max_gross_invest / max_name_frac. Forward-only marks. Not fitted. Not alpha. Not a live trading path. Paper only.",
+  "ok": true,
+  "paper_only": true,
+  "params": {
+    "cost_bps": 0.0,
+    "decision_delay_hours": 1.0,
+    "half_life_hours": 24.0,
+    "hawkes_baseline": 0.1,
+    "hawkes_decay": 1.0,
+    "hawkes_excitation": 0.8,
+    "max_drawdown": 0.2,
+    "max_gross_frac": 1.0,
+    "max_name_frac": 1.0,
+    "min_relative_state": 0.5,
+    "note": "Declared operate constants. Not fitted. Not searched. Do not retune to move fixture-mark PnL.",
+    "placebo_seed": 20260902,
+    "starting_cash": 100000.0
+  },
+  "params_sha256": "f74f835690544b976e0ba67243caecdea26719001cbb33bc9ccdac5fc1a38ded",
+  "series_path": "/workspace/fixtures/baseline/series.json",
+  "source": "fixtures",
+  "starting_cash": 100000.0
+}
