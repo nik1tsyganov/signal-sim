@@ -1,0 +1,173 @@
+{
+  "alpha": false,
+  "cash": 77.98,
+  "clock_is_open": false,
+  "date": "2026-09-12",
+  "decision_path": "/workspace/docs/decision/2026-09-12.json",
+  "deferred_exits": [
+    {
+      "abs_delta": 0.024924228992823205,
+      "held_frac": 0.19470886192609033,
+      "reason": "weight_band",
+      "sell_blocked_reason": "underwater_hold",
+      "sell_reason": "overweight_band",
+      "target_frac": 0.16978463293326712,
+      "ticker": "NVDA"
+    },
+    {
+      "abs_delta": 0.026921378779005745,
+      "held_frac": 0.09969522923987846,
+      "reason": "weight_band",
+      "sell_blocked_reason": "underwater_hold",
+      "sell_reason": "overweight_band",
+      "target_frac": 0.07277385046087272,
+      "ticker": "AAPL"
+    },
+    {
+      "abs_delta": 0.07700880727736785,
+      "held_frac": 0.07700880727736785,
+      "reason": "drop_from_book",
+      "sell_blocked_reason": "underwater_hold",
+      "sell_reason": "drop_from_book",
+      "target_frac": 0.0,
+      "ticker": "ABT"
+    },
+    {
+      "abs_delta": 0.07676059422640934,
+      "held_frac": 0.07676059422640934,
+      "reason": "drop_from_book",
+      "sell_blocked_reason": "underwater_hold",
+      "sell_reason": "drop_from_book",
+      "target_frac": 0.0,
+      "ticker": "AMZN"
+    },
+    {
+      "abs_delta": 0.07890799959899819,
+      "held_frac": 0.07890799959899819,
+      "reason": "drop_from_book",
+      "sell_blocked_reason": "underwater_hold",
+      "sell_reason": "drop_from_book",
+      "target_frac": 0.0,
+      "ticker": "UNH"
+    }
+  ],
+  "drawdown": 0.018458300000000018,
+  "equity": 98154.17,
+  "equity_delta": null,
+  "equity_warn": false,
+  "feeds": {
+    "keys_ok": null,
+    "live": false,
+    "min_quiver_n": 1,
+    "min_worldmonitor_n": 1,
+    "quiver_n": 206,
+    "worldmonitor_n": 14
+  },
+  "go_nogo": {
+    "hard_dd": 0.2,
+    "hard_dd_blocks": false,
+    "min_quiver_n": 1,
+    "min_realize_loss_bps": 5.0,
+    "min_worldmonitor_n": 1,
+    "note": "Declared daily go/no-go thresholds. Not fitted. Not searched. Not alpha. Paper only. trim_band is conviction.trim_band.",
+    "soft_dd": 0.05,
+    "starting_cash": 100000.0,
+    "trim_band": 0.02
+  },
+  "held_gross": 0.9992055083039264,
+  "live_money": false,
+  "mode": "paper-go-nogo",
+  "n_open_orders": 0,
+  "not_alpha": true,
+  "not_fitted": true,
+  "note": "Daily paper go/no-go. Declared thresholds only. Not fitted. Not alpha. Paper only. Does not POST. Does not enable live money.",
+  "off_target": [
+    {
+      "abs_delta": 0.021167487479163166,
+      "held_frac": 0.12730244684459152,
+      "reason": "weight_band",
+      "sell_reason": "overweight_band",
+      "target_frac": 0.10613495936542836,
+      "ticker": "XLE"
+    },
+    {
+      "abs_delta": 0.06389657369414388,
+      "held_frac": 0.0,
+      "reason": "weight_band",
+      "target_frac": 0.06389657369414388,
+      "ticker": "PG"
+    },
+    {
+      "abs_delta": 0.06083306627172969,
+      "held_frac": 0.0,
+      "reason": "weight_band",
+      "target_frac": 0.06083306627172969,
+      "ticker": "AVGO"
+    },
+    {
+      "abs_delta": 0.06083306627172969,
+      "held_frac": 0.0,
+      "reason": "weight_band",
+      "target_frac": 0.06083306627172969,
+      "ticker": "JNJ"
+    },
+    {
+      "abs_delta": 0.06069763094038932,
+      "held_frac": 0.0,
+      "reason": "weight_band",
+      "target_frac": 0.06069763094038932,
+      "ticker": "NFLX"
+    },
+    {
+      "abs_delta": 0.08232116683376774,
+      "held_frac": 0.08232116683376774,
+      "reason": "drop_from_book",
+      "sell_reason": "drop_from_book",
+      "target_frac": 0.0,
+      "ticker": "AMAT"
+    },
+    {
+      "abs_delta": 0.19920550830392636,
+      "held_frac": 0.9992055083039264,
+      "reason": "gross_band",
+      "target_frac": 0.8,
+      "ticker": "_gross"
+    }
+  ],
+  "ok": true,
+  "order_post": "disabled",
+  "paper_only": true,
+  "params": {
+    "cost_bps": 0.0,
+    "decision_delay_hours": 1.0,
+    "half_life_hours": 24.0,
+    "hawkes_baseline": 0.1,
+    "hawkes_decay": 1.0,
+    "hawkes_excitation": 0.8,
+    "max_drawdown": 0.2,
+    "max_gross_frac": 1.0,
+    "max_name_frac": 1.0,
+    "min_relative_state": 0.5,
+    "note": "Declared operate constants. Not fitted. Not searched. Do not retune to move fixture-mark PnL.",
+    "placebo_seed": 20260902,
+    "starting_cash": 100000.0
+  },
+  "params_sha256": "f74f835690544b976e0ba67243caecdea26719001cbb33bc9ccdac5fc1a38ded",
+  "read_only": true,
+  "reasons": [
+    "research book is fresh for 2026-09-12",
+    "quiver feed healthy n=206",
+    "worldmonitor feed healthy n=14",
+    "equity drawdown inside soft_dd",
+    "market clock is closed; research still OK; wait for open to submit",
+    "5 name(s) held underwater (sell_blocked_reason=underwater_hold; no score-rotation loss)",
+    "book is off-target (7 name/gross band(s) beyond trim_band=0.02)"
+  ],
+  "recommend_submit": false,
+  "research_fresh": true,
+  "submit_flag": "0",
+  "submitted": false,
+  "target_gross": 0.8,
+  "trim_band": 0.02,
+  "verdict": "WAIT_OPEN"
+}
