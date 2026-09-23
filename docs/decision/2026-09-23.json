@@ -1,0 +1,142 @@
+{
+  "alpha": false,
+  "cash": 72992.25,
+  "clock_is_open": false,
+  "date": "2026-09-23",
+  "decision_path": "/workspace/docs/decision/2026-09-23.json",
+  "deferred_exits": [
+    {
+      "abs_delta": 0.0626318836181327,
+      "held_frac": 0.0626318836181327,
+      "reason": "drop_from_book",
+      "sell_blocked_reason": "underwater_hold",
+      "sell_reason": "drop_from_book",
+      "target_frac": 0.0,
+      "ticker": "JNJ"
+    }
+  ],
+  "drawdown": 0.033571100000000006,
+  "equity": 96642.89,
+  "equity_delta": null,
+  "equity_warn": false,
+  "feeds": {
+    "keys_ok": null,
+    "live": false,
+    "min_quiver_n": 1,
+    "min_worldmonitor_n": 1,
+    "quiver_n": 218,
+    "worldmonitor_n": 14
+  },
+  "go_nogo": {
+    "hard_dd": 0.2,
+    "hard_dd_blocks": false,
+    "min_quiver_n": 1,
+    "min_realize_loss_bps": 5.0,
+    "min_worldmonitor_n": 1,
+    "note": "Declared daily go/no-go thresholds. Not fitted. Not searched. Not alpha. Paper only. trim_band is conviction.trim_band.",
+    "soft_dd": 0.05,
+    "starting_cash": 100000.0,
+    "trim_band": 0.02
+  },
+  "held_gross": 0.2447219540206217,
+  "live_money": false,
+  "mode": "paper-go-nogo",
+  "n_open_orders": 0,
+  "not_alpha": true,
+  "not_fitted": true,
+  "note": "Daily paper go/no-go. Declared thresholds only. Not fitted. Not alpha. Paper only. Does not POST. Does not enable live money.",
+  "off_target": [
+    {
+      "abs_delta": 0.164737528891913,
+      "held_frac": 0.0,
+      "reason": "weight_band",
+      "target_frac": 0.164737528891913,
+      "ticker": "NVDA"
+    },
+    {
+      "abs_delta": 0.10475787603097216,
+      "held_frac": 0.0,
+      "reason": "weight_band",
+      "target_frac": 0.10475787603097216,
+      "ticker": "XLE"
+    },
+    {
+      "abs_delta": 0.08273581218951613,
+      "held_frac": 0.0,
+      "reason": "weight_band",
+      "target_frac": 0.08273581218951613,
+      "ticker": "MSFT"
+    },
+    {
+      "abs_delta": 0.07383957927060099,
+      "held_frac": 0.0,
+      "reason": "weight_band",
+      "target_frac": 0.07383957927060099,
+      "ticker": "AAPL"
+    },
+    {
+      "abs_delta": 0.06306752634453214,
+      "held_frac": 0.0,
+      "reason": "weight_band",
+      "target_frac": 0.06306752634453214,
+      "ticker": "GOOGL"
+    },
+    {
+      "abs_delta": 0.06004376741819891,
+      "held_frac": 0.0,
+      "reason": "weight_band",
+      "target_frac": 0.06004376741819891,
+      "ticker": "AMAT"
+    },
+    {
+      "abs_delta": 0.06004376741819891,
+      "held_frac": 0.0,
+      "reason": "weight_band",
+      "target_frac": 0.06004376741819891,
+      "ticker": "HD"
+    },
+    {
+      "abs_delta": 0.5552780459793785,
+      "held_frac": 0.2447219540206217,
+      "reason": "gross_band",
+      "target_frac": 0.8000000000000002,
+      "ticker": "_gross"
+    }
+  ],
+  "ok": true,
+  "order_post": "disabled",
+  "paper_only": true,
+  "params": {
+    "cost_bps": 0.0,
+    "decision_delay_hours": 1.0,
+    "half_life_hours": 24.0,
+    "hawkes_baseline": 0.1,
+    "hawkes_decay": 1.0,
+    "hawkes_excitation": 0.8,
+    "max_drawdown": 0.2,
+    "max_gross_frac": 1.0,
+    "max_name_frac": 1.0,
+    "min_relative_state": 0.5,
+    "note": "Declared operate constants. Not fitted. Not searched. Do not retune to move fixture-mark PnL.",
+    "placebo_seed": 20260902,
+    "starting_cash": 100000.0
+  },
+  "params_sha256": "f74f835690544b976e0ba67243caecdea26719001cbb33bc9ccdac5fc1a38ded",
+  "read_only": true,
+  "reasons": [
+    "research book is fresh for 2026-09-23",
+    "quiver feed healthy n=218",
+    "worldmonitor feed healthy n=14",
+    "equity drawdown inside soft_dd",
+    "market clock is closed; research still OK; wait for open to submit",
+    "1 name(s) held underwater (sell_blocked_reason=underwater_hold; no score-rotation loss)",
+    "book is off-target (8 name/gross band(s) beyond trim_band=0.02)"
+  ],
+  "recommend_submit": false,
+  "research_fresh": true,
+  "submit_flag": "1",
+  "submitted": false,
+  "target_gross": 0.8000000000000002,
+  "trim_band": 0.02,
+  "verdict": "WAIT_OPEN"
+}
