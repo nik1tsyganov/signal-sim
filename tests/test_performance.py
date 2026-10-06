@@ -169,6 +169,14 @@ class PaperPerformanceUnitTests(unittest.TestCase):
         path = default_snapshot_path(root, datetime(2026, 9, 4, tzinfo=timezone.utc))
         self.assertEqual(path, root / "docs" / "performance" / "2026-09-04.json")
 
+    def test_default_snapshot_path_uses_utc_day_for_offset_time(self):
+        from datetime import datetime, timedelta, timezone
+
+        root = Path(tempfile.mkdtemp())
+        when = datetime(2026, 9, 26, 23, 30, tzinfo=timezone(timedelta(hours=-5)))
+        path = default_snapshot_path(root, when)
+        self.assertEqual(path, root / "docs" / "performance" / "2026-09-27.json")
+
     def test_write_snapshot_is_labeled_paper_not_alpha(self):
         tmp = Path(tempfile.mkdtemp()) / "performance" / "2026-09-04.json"
         report = {

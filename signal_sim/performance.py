@@ -42,6 +42,9 @@ def default_snapshot_path(root: Path | None = None, when: datetime | None = None
     """docs/performance/YYYY-MM-DD.json relative to the repo root."""
     base = root if root is not None else Path(__file__).resolve().parent.parent
     stamp = when if when is not None else _utc_now()
+    if stamp.tzinfo is None or stamp.utcoffset() is None:
+        stamp = stamp.replace(tzinfo=timezone.utc)
+    stamp = stamp.astimezone(timezone.utc)
     return base / SNAPSHOT_DIR / f"{stamp.date().isoformat()}.json"
 
 
